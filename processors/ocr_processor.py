@@ -460,40 +460,141 @@ class OCRProcessor:
         return self._run_ocr_engines(image, "full_image")
 
     def _run_ocr_engines(self, image: np.ndarray, region_id: str) -> List[OCRResult]:
-        """Run available OCR engines on an image."""
+        """Run OCR engines with content-aware selection."""
         results = []
 
-        # Try Tesseract
-        if self.tesseract_engine.available:
-            try:
-                result = self.tesseract_engine.process_image(image)
-                result.metadata['region_id'] = region_id
-                results.append(result)
-                logger.debug(f"Tesseract processed {region_id}: {len(result.text)} chars, {result.confidence:.2f} confidence")
-            except Exception as e:
-                logger.warning(f"Tesseract failed for {region_id}: {e}")
+        # Quick content analysis for engine selection
+        content_hints = self._analyze_image_content(image)
 
-        # Try EasyOCR
-        if self.easyocr_engine.available:
+        # Determine optimal engine order based on content
+        engine_priority = self._get_engine_priority(content_hints)
+
+        for engine_name in engine_priority:
             try:
-                result = self.easyocr_engine.process_image(image)
-                result.metadata['region_id'] = region_id
-                results.append(result)
-                logger.debug(f"EasyOCR processed {region_id}: {len(result.text)} chars, {result.confidence:.2f} confidence")
+                if engine_name == 'tesseract' and self.tesseract_engine.available:
+                    result = self.tesseract_engine.process_image(image)
+                    result.metadata['region_id'] = region_id
+                    result.metadata['content_hints'] = content_hints
+                    results.append(result)
+                    logger.debug(
+                        f"Tesseract processed {region_id}: {len(result.text)} chars, {result.confidence:.2f} confidence")
+
+                elif engine_name == 'easyocr' and self.easyocr_engine.available:
+                    result = self.easyocr_engine.process_image(image)
+                    result.metadata['region_id'] = region_id
+                    result.metadata['content_hints'] = content_hints
+                    results.append(result)
+                    logger.debug(
+                        f"EasyOCR processed {region_id}: {len(result.text)} chars, {result.confidence:.2f} confidence")
+
             except Exception as e:
-                logger.warning(f"EasyOCR failed for {region_id}: {e}")
+                logger.warning(f"{engine_name} failed for {region_id}: {e}")
+                continue
+
+        # After the engine loop, add:
+        if not results:
+            logger.warning(f"All OCR engines failed for {region_id}")
+            # Return minimal result instead of crashing
+            return [OCRResult(text="", confidence=0.0, processing_time=0.0, engine="failed")]
+
+        # If primary engine worked well, skip secondary for performance
+        if results and results[0].confidence > 0.8:
+            logger.debug(f"High confidence result from {results[0].engine}, skipping additional engines")
+            return [results[0]]
 
         return results
 
+    def _analyze_image_content(self, image: np.ndarray) -> Dict[str, Any]:
+        """Analyze image content to guide engine selection."""
+        try:
+            # Convert to grayscale for analysis
+            if len(image.shape) == 3:
+                gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+            else:
+                gray = image
+
+            height, width = gray.shape
+
+            # Calculate basic characteristics
+            edge_density = self._calculate_edge_density(gray)
+            aspect_ratio = width / max(height, 1)
+
+            # Estimate character density patterns
+            char_patterns = self._estimate_character_patterns(gray)
+
+            return {
+                'edge_density': edge_density,
+                'aspect_ratio': aspect_ratio,
+                'character_patterns': char_patterns,
+                'image_size': (width, height),
+                'likely_japanese': char_patterns.get('square_chars', 0) > char_patterns.get('tall_chars', 0)
+            }
+
+        except Exception as e:
+            logger.debug(f"Content analysis failed: {e}")
+            return {
+                'edge_density': 0.1,
+                'aspect_ratio': 1.0,
+                'character_patterns': {'square_chars': 0, 'tall_chars': 0},
+                'image_size': (100, 100),
+                'likely_japanese': False
+            }
+
+    def _calculate_edge_density(self, gray: np.ndarray) -> float:
+        """Calculate edge density for content analysis."""
+        edges = cv2.Canny(gray, 50, 150)
+        return np.sum(edges > 0) / (gray.shape[0] * gray.shape[1])
+
+    def _estimate_character_patterns(self, gray: np.ndarray) -> Dict[str, int]:
+        """Estimate character patterns to detect likely script type."""
+        try:
+            # Find contours
+            contours, _ = cv2.findContours(255 - gray, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            square_chars = 0
+            tall_chars = 0
+
+            for contour in contours:
+                x, y, w, h = cv2.boundingRect(contour)
+                if w > 5 and h > 5:  # Ignore tiny contours
+                    aspect_ratio = w / h
+                    if 0.7 <= aspect_ratio <= 1.3:  # Square-ish (Japanese)
+                        square_chars += 1
+                    elif aspect_ratio < 0.7:  # Tall (English)
+                        tall_chars += 1
+
+            return {
+                'square_chars': square_chars,
+                'tall_chars': tall_chars,
+                'total_chars': square_chars + tall_chars
+            }
+
+        except Exception:
+            return {'square_chars': 0, 'tall_chars': 0, 'total_chars': 0}
+
+    def _get_engine_priority(self, content_hints: Dict[str, Any]) -> List[str]:
+        """Determine engine priority based on content analysis."""
+        # For Japanese/mixed content, prefer EasyOCR
+        if content_hints.get('likely_japanese', False):
+            return ['easyocr', 'tesseract']
+
+        # For dense text with high edge density, prefer Tesseract
+        elif content_hints.get('edge_density', 0) > 0.15:
+            return ['tesseract', 'easyocr']
+
+        # For low-quality/sparse content, try both but EasyOCR first
+        else:
+            return ['easyocr', 'tesseract']
+
     def _select_best_ocr_result(self, ocr_results: List[OCRResult]) -> OCRResult:
-        """Select the best OCR result based on confidence and text quality."""
+        """Select best OCR result with improved logic."""
         if not ocr_results:
             raise ValueError("No OCR results to select from")
 
         if len(ocr_results) == 1:
             return ocr_results[0]
 
-        # Score each result
+        # Score each result with content awareness
         scored_results = []
         for result in ocr_results:
             score = self._score_ocr_result(result)
@@ -503,40 +604,67 @@ class OCRProcessor:
         scored_results.sort(key=lambda x: x[0], reverse=True)
 
         best_result = scored_results[0][1]
-        logger.debug(f"Selected best OCR result: {best_result.engine} (score: {scored_results[0][0]:.2f})")
+
+        # Log selection reasoning for debugging
+        logger.debug(f"OCR result selection:")
+        for score, result in scored_results:
+            logger.debug(
+                f"  {result.engine}: score={score:.3f}, conf={result.confidence:.3f}, chars={len(result.text)}")
+
+        logger.debug(f"Selected: {best_result.engine} (score: {scored_results[0][0]:.3f})")
 
         return best_result
 
     def _score_ocr_result(self, result: OCRResult) -> float:
-        """Score an OCR result for quality assessment."""
+        """Score OCR result with content-aware logic."""
         score = 0.0
+        text = result.text.strip()
+        text_length = len(text)
 
-        # Base confidence score (0-1)
-        score += result.confidence * 0.4
+        if text_length == 0:
+            return 0.0
 
-        # Text length bonus (longer text often better)
-        text_length = len(result.text.strip())
-        if text_length > 50:
-            score += 0.2
-        elif text_length > 20:
-            score += 0.1
+        # FIXED: Base confidence (weighted heavily)
+        score += result.confidence * 0.5
 
-        # Word count bonus
-        words = result.text.split()
-        if len(words) > 10:
-            score += 0.1
+        # FIXED: Content quality over raw length
+        words = text.split()
+        word_count = len(words)
 
-        # Penalize for too many special characters
-        if text_length > 0:
-            special_char_ratio = sum(1 for c in result.text if not c.isalnum() and not c.isspace()) / text_length
-            if special_char_ratio > 0.3:
-                score -= 0.2
+        # Reward meaningful word structure
+        if word_count > 3:
+            avg_word_length = text_length / word_count
+            if 2 <= avg_word_length <= 12:  # Reasonable word lengths
+                score += 0.2
+            elif 1 <= avg_word_length <= 20:
+                score += 0.1
 
-        # Engine-specific bonuses
-        if result.engine == 'tesseract':
-            score += 0.1  # Slight preference for Tesseract
+        # FIXED: Smarter character analysis for Japanese content
+        content_hints = result.metadata.get('content_hints', {})
+        if content_hints.get('likely_japanese', False):
+            # For Japanese content, don't penalize special characters
+            japanese_chars = sum(1 for c in text if '\u3040' <= c <= '\u9fff')
+            if japanese_chars > 0:
+                score += 0.15  # Bonus for successfully reading Japanese
+        else:
+            # For English content, mild penalty for excessive special chars
+            if text_length > 0:
+                special_char_ratio = sum(1 for c in text if not c.isalnum() and not c.isspace()) / text_length
+                if special_char_ratio > 0.5:  # Very high threshold
+                    score -= 0.1
 
-        return max(0.0, score)
+        # FIXED: Content-aware engine preferences
+        engine = result.engine
+        if content_hints.get('likely_japanese', False) and engine == 'easyocr':
+            score += 0.1  # EasyOCR better for Japanese
+        elif not content_hints.get('likely_japanese', False) and engine == 'tesseract':
+            score += 0.05  # Slight Tesseract preference for English
+
+        # FIXED: Confidence consistency check
+        if result.confidence > 0.8 and word_count > 5:
+            score += 0.1  # Bonus for high-confidence meaningful results
+
+        return max(0.0, min(1.0, score))
 
     def _extract_images(self, image: np.ndarray, image_regions: List[ImageRegion],
                        base_path: str) -> List[Dict[str, Any]]:
@@ -760,6 +888,12 @@ def process_document(image_path: str, document_id: int = None) -> ProcessingResu
     Returns:
         ProcessingResult with comprehensive analysis
     """
+    if not Path(image_path).exists():
+        raise FileNotFoundError(f"Image file not found: {image_path}")
+
+    if not Path(image_path).suffix.lower() in ['.jpg', '.jpeg', '.png', '.tiff', '.bmp']:
+        raise ValueError(f"Unsupported image format: {image_path}")
+
     processor = OCRProcessor()
     return processor.process_document(image_path, document_id)
 

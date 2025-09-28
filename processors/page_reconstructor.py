@@ -3,6 +3,7 @@ Page Reconstructor for Martial Arts OCR
 Reconstructs document pages with preserved layout, embedded images, and formatted text.
 Generates HTML pages that maintain the original document structure.
 """
+import html
 import logging
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any, Union
@@ -375,44 +376,56 @@ class PageReconstructor:
         return 'paragraph'
 
     def _apply_japanese_markup(self, text: str, japanese_result: JapaneseProcessingResult) -> str:
-        """Apply Japanese text markup for enhanced display."""
-        # This would typically call the Japanese processor's markup method
-        # For now, we'll do basic Japanese text highlighting
+        """Apply Japanese text markup with proper HTML escaping."""
         import re
 
-        # Find Japanese characters and wrap them
-        japanese_pattern = re.compile(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+')
+        if not japanese_result or not japanese_result.segments:
+            return html.escape(text)
 
-        def replace_japanese(match):
-            japanese_text = match.group()
-            # Find corresponding segment in Japanese result
-            for segment in japanese_result.segments:
-                if segment.original_text in japanese_text:
-                    tooltip_parts = []
-                    if segment.romaji:
-                        tooltip_parts.append(f"Romaji: {segment.romaji}")
-                    if segment.translation:
-                        tooltip_parts.append(f"Translation: {segment.translation}")
+        # Escape the base text first
+        escaped_text = html.escape(text)
 
-                    tooltip = " | ".join(tooltip_parts) if tooltip_parts else "Japanese text"
+        # Sort segments by position to avoid overlap issues
+        sorted_segments = sorted(japanese_result.segments, key=lambda s: s.start_pos, reverse=True)
 
-                    return f'<span class="japanese-text" title="{tooltip}" data-confidence="{segment.confidence:.2f}">{japanese_text}</span>'
+        for segment in sorted_segments:
+            if segment.original_text and segment.original_text in text:
+                # Find the escaped version of the Japanese text
+                escaped_japanese = html.escape(segment.original_text)
 
-            return f'<span class="japanese-text">{japanese_text}</span>'
+                # Build tooltip with escaped content
+                tooltip_parts = []
+                if segment.romaji:
+                    tooltip_parts.append(f"Romaji: {html.escape(segment.romaji)}")
+                if segment.translation:
+                    tooltip_parts.append(f"Translation: {html.escape(segment.translation)}")
+                if segment.reading and segment.reading != segment.romaji:
+                    tooltip_parts.append(f"Reading: {html.escape(segment.reading)}")
 
-        return japanese_pattern.sub(replace_japanese, text)
+                tooltip_text = html.escape(" | ".join(tooltip_parts) if tooltip_parts else "Japanese text")
+
+                # Create markup with proper escaping
+                markup = f'<span class="japanese-text" title="{tooltip_text}" data-confidence="{segment.confidence:.2f}" data-type="{html.escape(segment.text_type)}">{escaped_japanese}</span>'
+
+                # Replace in the escaped text
+                escaped_text = escaped_text.replace(escaped_japanese, markup)
+
+        return escaped_text
 
     def _sort_elements_by_layout(self, elements: List[PageElement]) -> List[PageElement]:
         """Sort elements by their position on the page (reading order)."""
         # Sort by Y position first (top to bottom), then by X position (left to right)
         return sorted(elements, key=lambda e: (e.y, e.x))
 
-    def _generate_css_styles(self, page_width: int, page_height: int) -> str:
-        """Generate CSS styles for the reconstructed page."""
-        css = f"""
+    def _generate_css_styles(self, page_width: int, page_height: int, template_type: str = "academic") -> str:
+        """Generate responsive CSS styles with template support."""
+
+        # Base responsive styles
+        base_css = f"""
         .reconstructed-page {{
-            width: {page_width}px;
-            height: {page_height}px;
+            max-width: min({page_width}px, 100vw);
+            width: 100%;
+            min-height: {page_height}px;
             position: relative;
             background: white;
             margin: 0 auto;
@@ -420,34 +433,98 @@ class PageReconstructor:
             font-family: {self.typography['font_family']};
             font-size: {self.typography['base_font_size']}px;
             line-height: {self.typography['line_height']};
+            overflow-x: auto;
+        }}
+
+        /* Responsive container */
+        @media (max-width: {page_width + 100}px) {{
+            .reconstructed-page {{
+                margin: 0 10px;
+                box-shadow: none;
+                border: 1px solid #ddd;
+            }}
         }}
 
         .page-element {{
             position: absolute;
             border: 1px solid transparent;
             transition: all 0.2s ease;
+            overflow: hidden;
         }}
 
+        /* FIXED: Better confidence indicator positioning */
+        .confidence-indicator {{
+            position: absolute;
+            top: -25px;
+            right: 5px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            z-index: 1000;
+            white-space: nowrap;
+            transform: translateY(-100%);
+        }}
+
+        .page-element:hover .confidence-indicator {{
+            opacity: 1;
+        }}
+
+        /* Ensure indicators don't overlap page boundaries */
+        .page-element {{
+            margin-top: 30px;
+        }}
+
+        .page-element:first-child {{
+            margin-top: 0;
+        }}
+
+        .page-element:first-child .confidence-indicator {{
+            top: 5px;
+            right: 5px;
+            transform: none;
+        }}
+
+        .element-content {{
+            width: 100%;
+            height: 100%;
+            overflow-wrap: break-word;
+            word-wrap: break-word;
+        }}
+        """
+
+        # Template-specific styles
+        template_css = self._get_template_css(template_type)
+
+        # Common element styles
+        element_css = f"""
         .page-element:hover {{
             border-color: #007acc;
             background-color: rgba(0, 122, 204, 0.05);
+            z-index: 10;
         }}
 
         .element-heading {{
             font-size: {self.typography['heading_font_size']}px;
             font-weight: bold;
-            margin-bottom: {self.layout_config['heading_spacing']}px;
             color: #2c3e50;
+            line-height: 1.2;
         }}
 
         .element-paragraph {{
-            margin-bottom: {self.layout_config['paragraph_spacing']}px;
             text-align: justify;
             color: #34495e;
+            line-height: 1.6;
         }}
 
         .element-text {{
             color: #2c3e50;
+            line-height: 1.4;
         }}
 
         .element-image {{
@@ -455,12 +532,18 @@ class PageReconstructor:
             background: #f8f9fa;
             border: 1px solid #dee2e6;
             border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }}
 
         .element-image img {{
             max-width: 100%;
+            max-height: 100%;
             height: auto;
+            width: auto;
             display: block;
+            object-fit: contain;
         }}
 
         .japanese-text {{
@@ -469,37 +552,31 @@ class PageReconstructor:
             font-family: {self.typography['japanese_font_family']};
             cursor: help;
             border-bottom: 1px dotted #8e44ad;
+            padding: 1px 2px;
+            border-radius: 2px;
         }}
 
         .japanese-text:hover {{
             background-color: rgba(142, 68, 173, 0.1);
         }}
 
-        .confidence-indicator {{
-            position: absolute;
-            top: -20px;
-            right: 0;
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-size: 10px;
-            opacity: 0;
-            transition: opacity 0.2s ease;
+        .confidence-high {{ 
+            background-color: #27ae60 !important; 
+        }}
+        .confidence-medium {{ 
+            background-color: #f39c12 !important; 
+        }}
+        .confidence-low {{ 
+            background-color: #e74c3c !important; 
         }}
 
-        .page-element:hover .confidence-indicator {{
-            opacity: 1;
-        }}
-
-        .confidence-high {{ background-color: #27ae60 !important; }}
-        .confidence-medium {{ background-color: #f39c12 !important; }}
-        .confidence-low {{ background-color: #e74c3c !important; }}
-
+        /* Print styles */
         @media print {{
             .reconstructed-page {{
                 box-shadow: none;
                 margin: 0;
+                max-width: none;
+                width: 100%;
             }}
 
             .page-element:hover {{
@@ -510,10 +587,112 @@ class PageReconstructor:
             .confidence-indicator {{
                 display: none;
             }}
+
+            .japanese-text {{
+                border-bottom: none;
+                background-color: transparent !important;
+            }}
+        }}
+
+        /* Mobile responsiveness */
+        @media (max-width: 768px) {{
+            .reconstructed-page {{
+                font-size: {max(12, self.typography['base_font_size'] - 2)}px;
+            }}
+
+            .element-heading {{
+                font-size: {max(14, self.typography['heading_font_size'] - 2)}px;
+            }}
+
+            .confidence-indicator {{
+                font-size: 9px;
+                padding: 2px 6px;
+            }}
         }}
         """
 
-        return css
+        return base_css + template_css + element_css
+
+    def _get_template_css(self, template_type: str) -> str:
+        """Get template-specific CSS styles."""
+
+        templates = {
+            "academic": """
+            /* Academic paper template */
+            .reconstructed-page {
+                padding: 40px;
+                background: #fafafa;
+            }
+
+            .element-heading {
+                border-bottom: 2px solid #2c3e50;
+                padding-bottom: 8px;
+                margin-bottom: 20px;
+            }
+
+            .element-paragraph {
+                text-indent: 20px;
+                margin-bottom: 15px;
+            }
+            """,
+
+            "manuscript": """
+            /* Handwritten manuscript template */
+            .reconstructed-page {
+                padding: 60px;
+                background: #f9f7f4;
+                border: 2px solid #d4c5a9;
+            }
+
+            .element-text {
+                font-family: 'Courier New', monospace;
+                line-height: 1.8;
+            }
+
+            .element-paragraph {
+                font-family: 'Courier New', monospace;
+                line-height: 1.8;
+            }
+            """,
+
+            "mixed": """
+            /* Mixed content template */
+            .reconstructed-page {
+                padding: 30px;
+            }
+
+            .element-image {
+                box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+                margin: 10px 0;
+            }
+
+            .element-text {
+                background: rgba(255,255,255,0.8);
+                padding: 5px;
+                border-radius: 3px;
+            }
+            """
+        }
+
+        return templates.get(template_type, templates["academic"])
+
+    def _detect_document_template(self, processing_result: ProcessingResult) -> str:
+        """Detect appropriate template based on document characteristics."""
+
+        # Count different element types
+        has_images = len(processing_result.extracted_images) > 0
+        has_japanese = processing_result.japanese_result is not None
+        text_length = len(processing_result.cleaned_text)
+
+        # Simple heuristics for template selection
+        if has_images and has_japanese:
+            return "mixed"
+        elif text_length < 500 or any(region.confidence < 0.6 for region in processing_result.text_regions):
+            return "manuscript"  # Likely handwritten or poor quality
+        else:
+            return "academic"  # Default for clean typed documents
+
+
 
     def _generate_html_content(self, elements: List[PageElement],
                                processing_result: ProcessingResult) -> str:
@@ -540,31 +719,37 @@ class PageReconstructor:
         return html
 
     def _create_element_html(self, element: PageElement) -> str:
-        """Create HTML for a single page element."""
+        """Create HTML for a single page element with proper escaping."""
+        # FIXED: Escape all user content to prevent HTML injection
+        escaped_content = html.escape(element.content) if element.element_type != 'image' else element.content
+
         # Determine confidence class
         confidence_class = self._get_confidence_class(element.confidence)
 
-        # Create confidence indicator
+        # FIXED: Better confidence indicator positioning
         confidence_indicator = f"""
-        <div class="confidence-indicator {confidence_class}">
+        <div class="confidence-indicator {confidence_class}" data-confidence="{element.confidence:.2f}">
             {element.confidence:.0%}
         </div>
         """
 
         if element.element_type == 'image':
+            # Images don't need escaping, but need proper alt text escaping
+            alt_text = html.escape(element.metadata.get('description', 'Extracted image'))
+            title_text = html.escape(element.metadata.get('description', 'Extracted image'))
+
             return f"""
-            <div class="page-element element-{element.element_type}" 
+            <div class="page-element element-{html.escape(element.element_type)}" 
                  style="left: {element.x}px; top: {element.y}px; width: {element.width}px; height: {element.height}px;">
-                <img src="{element.content}" alt="{element.metadata.get('description', 'Extracted image')}" 
-                     title="{element.metadata.get('description', 'Extracted image')}">
+                <img src="{html.escape(element.content)}" alt="{alt_text}" title="{title_text}">
                 {confidence_indicator}
             </div>
             """
         else:
             return f"""
-            <div class="page-element element-{element.element_type}" 
+            <div class="page-element element-{html.escape(element.element_type)}" 
                  style="left: {element.x}px; top: {element.y}px; width: {element.width}px; min-height: {element.height}px;">
-                {element.content}
+                <div class="element-content">{escaped_content}</div>
                 {confidence_indicator}
             </div>
             """
@@ -729,20 +914,64 @@ class PageReconstructor:
 
 
 # Utility functions
-def reconstruct_page(processing_result: ProcessingResult,
+def reconstruct_page(self, processing_result: ProcessingResult,
                      original_image_path: str = None) -> ReconstructedPage:
-    """
-    Convenient function to reconstruct a page from processing results.
+    """Reconstruct page with template detection and security fixes."""
+    try:
+        logger.info("Starting page reconstruction")
 
-    Args:
-        processing_result: Results from OCR processing
-        original_image_path: Path to original image
+        # Generate page ID
+        page_id = f"page_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-    Returns:
-        ReconstructedPage with layout and content
-    """
-    reconstructor = PageReconstructor()
-    return reconstructor.reconstruct_page(processing_result, original_image_path)
+        # Detect appropriate template
+        template_type = self._detect_document_template(processing_result)
+        logger.debug(f"Selected template: {template_type}")
+
+        # Extract page dimensions
+        page_width, page_height = self._get_page_dimensions(original_image_path, processing_result)
+
+        # Create page elements
+        elements = self._create_page_elements(processing_result, page_width, page_height)
+
+        # Sort elements by layout
+        sorted_elements = self._sort_elements_by_layout(elements)
+
+        # Generate template-aware CSS
+        css_styles = self._generate_css_styles(page_width, page_height, template_type)
+
+        # Generate HTML content with security
+        html_content = self._generate_html_content(sorted_elements, processing_result)
+
+        # Create title with escaping
+        title = html.escape(self._generate_page_title(processing_result))
+
+        # Create metadata
+        reconstruction_metadata = {
+            'reconstruction_date': datetime.now().isoformat(),
+            'source_image': original_image_path,
+            'template_type': template_type,
+            'total_elements': len(elements),
+            'text_elements': len([e for e in elements if e.element_type in ['text', 'paragraph', 'heading']]),
+            'image_elements': len([e for e in elements if e.element_type == 'image']),
+            'japanese_detected': processing_result.japanese_result is not None,
+            'overall_confidence': processing_result.overall_confidence,
+            'processing_time': processing_result.processing_time
+        }
+
+        return ReconstructedPage(
+            page_id=page_id,
+            title=title,
+            elements=sorted_elements,
+            html_content=html_content,
+            css_styles=css_styles,
+            page_width=page_width,
+            page_height=page_height,
+            reconstruction_metadata=reconstruction_metadata
+        )
+
+    except Exception as e:
+        logger.error(f"Page reconstruction failed: {e}")
+        raise
 
 
 def save_page_as_html(page: ReconstructedPage, output_dir: str) -> str:

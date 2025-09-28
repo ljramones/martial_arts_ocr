@@ -202,7 +202,7 @@ class ContentExtractor:
 
     def _classify_regions(self, image: np.ndarray, regions: List[ImageRegion]) -> Dict[str, List[ImageRegion]]:
         """
-        Classify regions into text and image categories with improved accuracy.
+        Classify regions into text and image categories with simplified, robust logic.
 
         Args:
             image: Preprocessed image
@@ -211,23 +211,40 @@ class ContentExtractor:
         Returns:
             Dictionary with 'text' and 'image' region lists
         """
+        if not regions:
+            return {'text': [], 'image': []}
+
         text_regions = []
         image_regions = []
 
+        # Calculate global statistics for relative thresholds
+        all_areas = [r.area for r in regions]
+        all_aspect_ratios = [r.width / max(r.height, 1) for r in regions]
+
+        median_area = np.median(all_areas)
+        median_aspect_ratio = np.median(all_aspect_ratios)
+
         for region in regions:
-            # Extract region from image
-            region_image = extract_image_region(image, region)
+            try:
+                # Extract region from image
+                region_image = extract_image_region(image, region)
 
-            # Calculate classification features
-            features = self._calculate_region_features(region_image, region)
+                # Calculate simplified features
+                features = self._calculate_simple_features(region_image, region, median_area, median_aspect_ratio)
 
-            # Classify based on features
-            classification = self._classify_region_by_features(features)
+                # Classify based on simplified logic
+                classification = self._simple_classification(features)
 
-            if classification == 'text':
-                region.region_type = 'text'
-                text_regions.append(region)
-            else:
+                if classification == 'text':
+                    region.region_type = 'text'
+                    text_regions.append(region)
+                else:
+                    region.region_type = 'image'
+                    image_regions.append(region)
+
+            except Exception as e:
+                logger.warning(f"Failed to classify region {region}: {e}")
+                # Default to image for failed regions (safer choice)
                 region.region_type = 'image'
                 image_regions.append(region)
 
@@ -242,13 +259,17 @@ class ContentExtractor:
             'image': image_regions
         }
 
-    def _calculate_region_features(self, region_image: np.ndarray, region: ImageRegion) -> Dict[str, float]:
+    def _calculate_simple_features(self, region_image: np.ndarray, region: ImageRegion,
+                                   median_area: float, median_aspect_ratio: float) -> Dict[str, float]:
         """
-        Calculate features for region classification.
+        Calculate simplified features for region classification.
+        Uses only 3 robust indicators instead of 9+ complex metrics.
 
         Args:
             region_image: Image data of the region
             region: Region metadata
+            median_area: Median area of all regions (for relative thresholds)
+            median_aspect_ratio: Median aspect ratio of all regions
 
         Returns:
             Dictionary of calculated features
@@ -262,72 +283,41 @@ class ContentExtractor:
 
             height, width = gray.shape
 
-            # Aspect ratio
-            aspect_ratio = width / height if height > 0 else 0
+            # FEATURE 1: Aspect ratio relative to document norm
+            aspect_ratio = width / max(height, 1)
+            relative_aspect_ratio = aspect_ratio / max(median_aspect_ratio, 0.1)
 
-            # Edge density (higher for text)
+            # FEATURE 2: Edge density (simplified Canny edge detection)
             edges = cv2.Canny(gray, 50, 150)
             edge_density = np.sum(edges > 0) / (width * height) if width * height > 0 else 0
 
-            # Variance (higher for text, lower for solid images)
-            variance = np.var(gray) / 255.0
-
-            # Horizontal projection (text has regular patterns)
-            horizontal_projection = np.sum(gray < 128, axis=1)
-            horizontal_variation = np.std(horizontal_projection) / np.mean(horizontal_projection) if np.mean(
-                horizontal_projection) > 0 else 0
-
-            # Vertical projection
-            vertical_projection = np.sum(gray < 128, axis=0)
-            vertical_variation = np.std(vertical_projection) / np.mean(vertical_projection) if np.mean(
-                vertical_projection) > 0 else 0
-
-            # Connected components (text has many small components)
-            _, labels, stats, _ = cv2.connectedComponentsWithStats(255 - gray)
-            num_components = len(stats) - 1  # Exclude background
-            avg_component_size = np.mean(stats[1:, cv2.CC_STAT_AREA]) if num_components > 0 else 0
-
-            # Stroke width (estimate)
-            stroke_width = self._estimate_stroke_width(gray)
-
-            # Regularity (text has more regular patterns)
-            regularity = self._calculate_regularity(gray)
+            # FEATURE 3: Area relative to document norm
+            relative_area = region.area / max(median_area, 1)
 
             return {
-                'aspect_ratio': aspect_ratio,
+                'relative_aspect_ratio': relative_aspect_ratio,
                 'edge_density': edge_density,
-                'variance': variance,
-                'horizontal_variation': horizontal_variation,
-                'vertical_variation': vertical_variation,
-                'num_components': num_components,
-                'avg_component_size': avg_component_size,
-                'stroke_width': stroke_width,
-                'regularity': regularity,
-                'area': region.area,
+                'relative_area': relative_area,
+                'absolute_area': region.area,
                 'width': width,
                 'height': height
             }
 
         except Exception as e:
-            logger.warning(f"Feature calculation failed: {e}")
+            logger.warning(f"Simple feature calculation failed: {e}")
             return {
-                'aspect_ratio': 1.0,
+                'relative_aspect_ratio': 1.0,
                 'edge_density': 0.0,
-                'variance': 0.0,
-                'horizontal_variation': 0.0,
-                'vertical_variation': 0.0,
-                'num_components': 0,
-                'avg_component_size': 0.0,
-                'stroke_width': 0.0,
-                'regularity': 0.0,
-                'area': region.area,
+                'relative_area': 1.0,
+                'absolute_area': region.area,
                 'width': region.width,
                 'height': region.height
             }
 
-    def _classify_region_by_features(self, features: Dict[str, float]) -> str:
+    def _simple_classification(self, features: Dict[str, float]) -> str:
         """
-        Classify a region as text or image based on calculated features.
+        Classify a region as text or image using simplified, robust logic.
+        Uses relative thresholds that adapt to document characteristics.
 
         Args:
             features: Calculated region features
@@ -335,112 +325,47 @@ class ContentExtractor:
         Returns:
             'text' or 'image'
         """
-        score = 0.0
+        # TEXT INDICATORS (each worth 1 point)
+        text_score = 0
 
-        # Aspect ratio (text tends to be wider)
-        if 1.5 <= features['aspect_ratio'] <= 10.0:
-            score += 1.0
-        elif features['aspect_ratio'] > 10.0:
-            score += 0.5
+        # 1. Text tends to be wider than tall (relative to document norm)
+        if features['relative_aspect_ratio'] > 1.2:  # 20% wider than document average
+            text_score += 1
 
-        # Edge density (text has more edges)
-        if features['edge_density'] > 0.1:
-            score += 1.5
-        elif features['edge_density'] > 0.05:
-            score += 1.0
+        # 2. Text has high edge density (lots of character edges)
+        if features['edge_density'] > 0.08:  # Simplified threshold
+            text_score += 1
 
-        # Variance (text has higher variance)
-        if features['variance'] > 0.3:
-            score += 1.0
-        elif features['variance'] > 0.1:
-            score += 0.5
+        # 3. Text regions are typically smaller than large images
+        if features['relative_area'] < 2.0:  # Less than 2x the document average
+            text_score += 1
 
-        # Horizontal variation (text has regular line patterns)
-        if features['horizontal_variation'] > 0.3:
-            score += 1.0
+        # IMAGE INDICATORS (negative points)
+        image_score = 0
 
-        # Component analysis (text has many small components)
-        if features['num_components'] > 10:
-            score += 1.0
-            if features['avg_component_size'] < 500:
-                score += 0.5
+        # 1. Very large regions are likely images
+        if features['relative_area'] > 3.0:  # More than 3x document average
+            image_score += 1
 
-        # Stroke width (text has consistent stroke width)
-        if 1 <= features['stroke_width'] <= 10:
-            score += 0.5
+        # 2. Very low edge density suggests solid image areas
+        if features['edge_density'] < 0.02:
+            image_score += 1
 
-        # Area considerations
-        if features['area'] < 5000:  # Small regions more likely to be text
-            score += 0.5
-        elif features['area'] > 50000:  # Large regions more likely to be images
-            score -= 1.0
+        # 3. Square regions more likely to be images/diagrams
+        if 0.8 <= features['relative_aspect_ratio'] <= 1.2:  # Nearly square
+            image_score += 0.5
 
-        # Regularity (text is more regular)
-        if features['regularity'] > 0.5:
-            score += 0.5
+        # DECISION LOGIC
+        final_score = text_score - image_score
 
-        # Classify based on score
-        return 'text' if score >= 2.0 else 'image'
+        # Default to text if unclear (better for OCR to try than miss)
+        return 'text' if final_score >= 0 else 'image'
 
-    def _estimate_stroke_width(self, gray_image: np.ndarray) -> float:
-        """
-        Estimate the stroke width in the image (useful for text detection).
 
-        Args:
-            gray_image: Grayscale image
 
-        Returns:
-            Estimated stroke width in pixels
-        """
-        try:
-            # Apply morphological operations to estimate stroke width
-            edges = cv2.Canny(gray_image, 50, 150)
 
-            # Distance transform
-            dist_transform = cv2.distanceTransform(255 - edges, cv2.DIST_L2, 3)
 
-            # Estimate stroke width as mean of non-zero distances
-            non_zero_distances = dist_transform[dist_transform > 0]
-            if len(non_zero_distances) > 0:
-                return np.mean(non_zero_distances) * 2  # Approximate stroke width
-            else:
-                return 0.0
 
-        except Exception:
-            return 0.0
-
-    def _calculate_regularity(self, gray_image: np.ndarray) -> float:
-        """
-        Calculate regularity score (higher for text).
-
-        Args:
-            gray_image: Grayscale image
-
-        Returns:
-            Regularity score between 0 and 1
-        """
-        try:
-            # Calculate horizontal and vertical projections
-            h_proj = np.sum(gray_image < 128, axis=1)
-            v_proj = np.sum(gray_image < 128, axis=0)
-
-            # Calculate autocorrelation to find regular patterns
-            if len(h_proj) > 10:
-                h_autocorr = np.correlate(h_proj, h_proj, mode='full')
-                h_regularity = np.max(h_autocorr[len(h_autocorr) // 2 + 5:]) / np.max(h_autocorr)
-            else:
-                h_regularity = 0.0
-
-            if len(v_proj) > 10:
-                v_autocorr = np.correlate(v_proj, v_proj, mode='full')
-                v_regularity = np.max(v_autocorr[len(v_autocorr) // 2 + 5:]) / np.max(v_autocorr)
-            else:
-                v_regularity = 0.0
-
-            return (h_regularity + v_regularity) / 2.0
-
-        except Exception:
-            return 0.0
 
     def _extract_text_content(self, image: np.ndarray, text_regions: List[ImageRegion]) -> List[ExtractedText]:
         """
@@ -561,17 +486,8 @@ class ContentExtractor:
         return extracted_images
 
     def _detect_language_hints(self, region_image: np.ndarray) -> str:
-        """
-        Detect language hints from region image characteristics.
-
-        Args:
-            region_image: Image of text region
-
-        Returns:
-            Language hint ('japanese', 'english', 'mixed', 'unknown')
-        """
+        """Simplified language detection based on character shapes."""
         try:
-            # Analyze character density and shapes
             gray = cv2.cvtColor(region_image, cv2.COLOR_RGB2GRAY) if len(region_image.shape) == 3 else region_image
 
             # Find contours
@@ -580,29 +496,22 @@ class ContentExtractor:
             if not contours:
                 return 'unknown'
 
-            # Analyze contour characteristics
+            # Simple aspect ratio analysis
             aspect_ratios = []
-            areas = []
-
             for contour in contours:
                 x, y, w, h = cv2.boundingRect(contour)
-                if w > 0 and h > 0:
+                if w > 5 and h > 5:  # Ignore tiny contours
                     aspect_ratios.append(w / h)
-                    areas.append(w * h)
 
             if not aspect_ratios:
                 return 'unknown'
 
             avg_aspect_ratio = np.mean(aspect_ratios)
-            avg_area = np.mean(areas)
 
-            # Heuristics for language detection
-            # Japanese characters tend to be more square (aspect ratio closer to 1)
-            # English characters tend to be taller (aspect ratio < 1)
-
-            if 0.8 <= avg_aspect_ratio <= 1.2 and avg_area > 100:
+            # Simple heuristic: Japanese characters more square, English more tall
+            if 0.7 <= avg_aspect_ratio <= 1.3:
                 return 'japanese'
-            elif avg_aspect_ratio < 0.8:
+            elif avg_aspect_ratio < 0.7:
                 return 'english'
             else:
                 return 'mixed'
@@ -611,33 +520,19 @@ class ContentExtractor:
             return 'unknown'
 
     def _estimate_text_quality(self, region_image: np.ndarray) -> float:
-        """
-        Estimate text quality/OCR readiness.
-
-        Args:
-            region_image: Image of text region
-
-        Returns:
-            Quality score between 0 and 1
-        """
+        """Simplified text quality estimation."""
         try:
             gray = cv2.cvtColor(region_image, cv2.COLOR_RGB2GRAY) if len(region_image.shape) == 3 else region_image
 
-            # Calculate sharpness (Laplacian variance)
+            # Simple sharpness measure
             laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
             sharpness_score = min(laplacian_var / 1000.0, 1.0)
 
-            # Calculate contrast
+            # Simple contrast measure
             contrast = gray.std() / 255.0
 
-            # Calculate brightness consistency
-            mean_brightness = gray.mean() / 255.0
-            brightness_score = 1.0 - abs(mean_brightness - 0.5) * 2  # Best around 0.5
-
-            # Combine scores
-            quality_score = (sharpness_score * 0.5 + contrast * 0.3 + brightness_score * 0.2)
-
-            return max(0.0, min(1.0, quality_score))
+            # Combine with equal weights
+            return (sharpness_score + contrast) / 2.0
 
         except Exception:
             return 0.5
