@@ -1,0 +1,737 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Document - Martial Arts OCR{% endblock %}
+{% block description %}Upload and digitize your martial arts documents with advanced OCR technology. Supports Japanese text recognition, embedded image extraction, and layout preservation.{% endblock %}
+
+{% block page_title %}Document Upload{% endblock %}
+{% block page_subtitle %}
+<p class="page-description">Upload your scanned martial arts documents for professional OCR processing with Japanese text support.</p>
+{% endblock %}
+
+{% block body_class %}upload-page{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Upload page specific styles */
+    .upload-hero {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        padding: 3rem 0;
+        border-radius: 12px;
+        margin-bottom: 3rem;
+        text-align: center;
+        border: 1px solid #dee2e6;
+    }
+
+    .hero-content h2 {
+        color: #2c3e50;
+        font-size: 2.5rem;
+        margin-bottom: 1rem;
+        font-weight: 700;
+    }
+
+    .hero-description {
+        font-size: 1.2rem;
+        color: #5a6c7d;
+        max-width: 600px;
+        margin: 0 auto 2rem;
+        line-height: 1.6;
+    }
+
+    .hero-features {
+        display: flex;
+        justify-content: center;
+        gap: 2rem;
+        flex-wrap: wrap;
+        margin-top: 2rem;
+    }
+
+    .feature-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #495057;
+        font-weight: 500;
+    }
+
+    .feature-icon {
+        font-size: 1.2rem;
+    }
+
+    .upload-container {
+        max-width: 800px;
+        margin: 0 auto;
+    }
+
+    .upload-instructions {
+        background: #fff;
+        padding: 2rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        border: 1px solid #e1e8ed;
+    }
+
+    .instructions-title {
+        color: #2c3e50;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .instructions-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .instruction-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 1rem;
+        margin-bottom: 1rem;
+        padding: 1rem;
+        background: #f8f9fa;
+        border-radius: 6px;
+        border-left: 4px solid #3498db;
+    }
+
+    .instruction-number {
+        background: #3498db;
+        color: white;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 0.9rem;
+        flex-shrink: 0;
+    }
+
+    .instruction-content {
+        flex: 1;
+    }
+
+    .instruction-title {
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 0.25rem;
+    }
+
+    .instruction-description {
+        color: #6c757d;
+        font-size: 0.9rem;
+        line-height: 1.4;
+    }
+
+    .supported-formats {
+        background: #e8f4fd;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+        border: 1px solid #bee5eb;
+    }
+
+    .formats-title {
+        color: #2c3e50;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .format-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+    }
+
+    .format-item {
+        background: white;
+        padding: 1rem;
+        border-radius: 6px;
+        text-align: center;
+        border: 1px solid #d1ecf1;
+    }
+
+    .format-icon {
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+        display: block;
+    }
+
+    .format-name {
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 0.25rem;
+    }
+
+    .format-description {
+        font-size: 0.85rem;
+        color: #6c757d;
+    }
+
+    .upload-tips {
+        background: #fff3cd;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-top: 2rem;
+        border: 1px solid #ffeaa7;
+    }
+
+    .tips-title {
+        color: #856404;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .tips-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .tip-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+        color: #856404;
+    }
+
+    .tip-icon {
+        font-size: 1.1rem;
+        margin-top: 0.1rem;
+        flex-shrink: 0;
+    }
+
+    .recent-uploads {
+        margin-top: 3rem;
+        padding-top: 2rem;
+        border-top: 2px solid #e9ecef;
+    }
+
+    .recent-title {
+        color: #2c3e50;
+        margin-bottom: 1.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .recent-list {
+        display: grid;
+        gap: 1rem;
+    }
+
+    .recent-item {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 1rem;
+        background: white;
+        border-radius: 6px;
+        border: 1px solid #e1e8ed;
+        transition: box-shadow 0.2s ease;
+    }
+
+    .recent-item:hover {
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .recent-thumbnail {
+        width: 60px;
+        height: 60px;
+        background: #f8f9fa;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        color: #6c757d;
+        flex-shrink: 0;
+    }
+
+    .recent-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .recent-name {
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 0.25rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .recent-meta {
+        font-size: 0.85rem;
+        color: #6c757d;
+    }
+
+    .recent-status {
+        flex-shrink: 0;
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: 500;
+    }
+
+    .recent-status.completed {
+        background: #d4edda;
+        color: #155724;
+    }
+
+    .recent-status.processing {
+        background: #ffeaa7;
+        color: #856404;
+    }
+
+    .recent-status.failed {
+        background: #f8d7da;
+        color: #721c24;
+    }
+
+    .recent-actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-left: 1rem;
+    }
+
+    /* Responsive design */
+    @media (max-width: 768px) {
+        .hero-content h2 {
+            font-size: 2rem;
+        }
+
+        .hero-description {
+            font-size: 1.1rem;
+        }
+
+        .hero-features {
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .upload-instructions,
+        .supported-formats,
+        .upload-tips {
+            padding: 1.5rem;
+        }
+
+        .format-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .recent-item {
+            flex-direction: column;
+            text-align: center;
+        }
+
+        .recent-actions {
+            margin-left: 0;
+            margin-top: 1rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block header_actions %}
+<div class="action-group">
+    {% if recent_documents %}
+    <a href="{{ url_for('gallery') }}" class="btn btn-secondary">
+        <span aria-hidden="true">📚</span> View Gallery ({{ recent_documents|length }}+)
+    </a>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<div class="upload-hero">
+    <div class="hero-content">
+        <h2>Professional Martial Arts Document OCR</h2>
+        <p class="hero-description">
+            Transform your historical martial arts documents into searchable, accessible digital text with advanced OCR technology specifically designed for academic research.
+        </p>
+
+        <div class="hero-features">
+            <div class="feature-item">
+                <span class="feature-icon" aria-hidden="true">🇯🇵</span>
+                <span>Japanese Text Support</span>
+            </div>
+            <div class="feature-item">
+                <span class="feature-icon" aria-hidden="true">🖼️</span>
+                <span>Image Extraction</span>
+            </div>
+            <div class="feature-item">
+                <span class="feature-icon" aria-hidden="true">📐</span>
+                <span>Layout Preservation</span>
+            </div>
+            <div class="feature-item">
+                <span class="feature-icon" aria-hidden="true">🎯</span>
+                <span>High Accuracy OCR</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="upload-container">
+    <!-- Upload Instructions -->
+    <div class="upload-instructions">
+        <h3 class="instructions-title">
+            <span aria-hidden="true">📋</span>
+            How to Upload Documents
+        </h3>
+
+        <ol class="instructions-list">
+            <li class="instruction-item">
+                <div class="instruction-number">1</div>
+                <div class="instruction-content">
+                    <div class="instruction-title">Select Your Document</div>
+                    <div class="instruction-description">
+                        Choose a high-quality scan of your martial arts document. Best results with 300+ DPI scans.
+                    </div>
+                </div>
+            </li>
+
+            <li class="instruction-item">
+                <div class="instruction-number">2</div>
+                <div class="instruction-content">
+                    <div class="instruction-title">Upload & Process</div>
+                    <div class="instruction-description">
+                        Drag and drop your file or click to browse. The system will automatically detect text and images.
+                    </div>
+                </div>
+            </li>
+
+            <li class="instruction-item">
+                <div class="instruction-number">3</div>
+                <div class="instruction-content">
+                    <div class="instruction-title">Review Results</div>
+                    <div class="instruction-description">
+                        Access your digitized document with searchable text, romanized Japanese, and extracted diagrams.
+                    </div>
+                </div>
+            </li>
+        </ol>
+    </div>
+
+    <!-- Main Upload Area -->
+    <div class="content-section">
+        <form id="upload-form" enctype="multipart/form-data" method="POST" action="{{ url_for('upload_file') }}">
+            <div class="upload-zone" id="upload-zone">
+                <div class="upload-icon" aria-hidden="true">📄</div>
+                <div class="upload-text">Drag and drop your scanned document here</div>
+                <div class="upload-subtext">or click to browse files (JPG, PNG, TIFF, BMP)</div>
+
+                <input type="file"
+                       id="file-input"
+                       name="file"
+                       class="file-input"
+                       accept="image/*"
+                       aria-label="Choose document file">
+
+                <button type="button" class="upload-button">
+                    <span aria-hidden="true">📁</span> Choose File
+                </button>
+            </div>
+        </form>
+
+        <!-- File Preview Container (dynamically populated) -->
+        <div class="file-preview" style="display: none;"></div>
+
+        <!-- Progress Container (dynamically populated) -->
+        <div class="progress-container" style="display: none;"></div>
+    </div>
+
+    <!-- Supported Formats -->
+    <div class="supported-formats">
+        <h3 class="formats-title">
+            <span aria-hidden="true">🎯</span>
+            Supported File Formats
+        </h3>
+
+        <div class="format-grid">
+            <div class="format-item">
+                <span class="format-icon" aria-hidden="true">🖼️</span>
+                <div class="format-name">JPEG / JPG</div>
+                <div class="format-description">Most common image format for scanned documents</div>
+            </div>
+
+            <div class="format-item">
+                <span class="format-icon" aria-hidden="true">🖼️</span>
+                <div class="format-name">PNG</div>
+                <div class="format-description">High quality images with transparency support</div>
+            </div>
+
+            <div class="format-item">
+                <span class="format-icon" aria-hidden="true">📸</span>
+                <div class="format-name">TIFF / TIF</div>
+                <div class="format-description">Professional archival format with high quality</div>
+            </div>
+
+            <div class="format-item">
+                <span class="format-icon" aria-hidden="true">🖼️</span>
+                <div class="format-name">BMP</div>
+                <div class="format-description">Uncompressed bitmap images</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload Tips -->
+    <div class="upload-tips">
+        <h3 class="tips-title">
+            <span aria-hidden="true">💡</span>
+            Tips for Best Results
+        </h3>
+
+        <ul class="tips-list">
+            <li class="tip-item">
+                <span class="tip-icon" aria-hidden="true">📏</span>
+                <span>Scan at 300 DPI or higher for optimal text recognition accuracy</span>
+            </li>
+
+            <li class="tip-item">
+                <span class="tip-icon" aria-hidden="true">🔆</span>
+                <span>Ensure good lighting and contrast between text and background</span>
+            </li>
+
+            <li class="tip-item">
+                <span class="tip-icon" aria-hidden="true">📐</span>
+                <span>Keep documents straight and flat to avoid skew correction issues</span>
+            </li>
+
+            <li class="tip-item">
+                <span class="tip-icon" aria-hidden="true">🧹</span>
+                <span>Clean scans work better - remove dust, shadows, and artifacts</span>
+            </li>
+
+            <li class="tip-item">
+                <span class="tip-icon" aria-hidden="true">🇯🇵</span>
+                <span>Japanese text is automatically detected and processed with romanization</span>
+            </li>
+
+            <li class="tip-item">
+                <span class="tip-icon" aria-hidden="true">🖼️</span>
+                <span>Embedded diagrams and images are automatically extracted and preserved</span>
+            </li>
+
+            <li class="tip-item">
+                <span class="tip-icon" aria-hidden="true">💾</span>
+                <span>Maximum file size: 16MB per document</span>
+            </li>
+        </ul>
+    </div>
+</div>
+
+<!-- Recent Uploads Section -->
+{% if recent_documents %}
+<div class="recent-uploads">
+    <div class="recent-title">
+        <h3>
+            <span aria-hidden="true">🕒</span>
+            Recent Uploads
+        </h3>
+        <a href="{{ url_for('gallery') }}" class="btn btn-sm btn-secondary">
+            View All
+        </a>
+    </div>
+
+    <div class="recent-list">
+        {% for document in recent_documents[:5] %}
+        <div class="recent-item">
+            <div class="recent-thumbnail">
+                {% if document.status == 'completed' %}
+                    <span aria-hidden="true">✅</span>
+                {% elif document.status == 'processing' %}
+                    <span aria-hidden="true">⏳</span>
+                {% elif document.status == 'failed' %}
+                    <span aria-hidden="true">❌</span>
+                {% else %}
+                    <span aria-hidden="true">📄</span>
+                {% endif %}
+            </div>
+
+            <div class="recent-info">
+                <div class="recent-name" title="{{ document.original_filename }}">
+                    {{ document.original_filename }}
+                </div>
+                <div class="recent-meta">
+                    Uploaded {{ document.upload_date.strftime('%Y-%m-%d %H:%M') if document.upload_date else 'Unknown date' }}
+                    {% if document.file_size %}
+                    · {{ (document.file_size / 1024 / 1024)|round(1) }} MB
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="recent-status {{ document.status }}">
+                {% if document.status == 'completed' %}
+                    Completed
+                {% elif document.status == 'processing' %}
+                    Processing
+                {% elif document.status == 'failed' %}
+                    Failed
+                {% elif document.status == 'uploaded' %}
+                    Uploaded
+                {% else %}
+                    {{ document.status|title }}
+                {% endif %}
+            </div>
+
+            <div class="recent-actions">
+                {% if document.status == 'completed' %}
+                    <a href="{{ url_for('view_document', document_id=document.id) }}"
+                       class="btn btn-primary btn-sm"
+                       title="View processed document">
+                        <span aria-hidden="true">👁️</span>
+                    </a>
+                {% elif document.status == 'processing' %}
+                    <button class="btn btn-secondary btn-sm"
+                            onclick="checkStatus({{ document.id }})"
+                            title="Check processing status">
+                        <span aria-hidden="true">🔄</span>
+                    </button>
+                {% elif document.status == 'failed' %}
+                    <button class="btn btn-warning btn-sm"
+                            onclick="retryProcessing({{ document.id }})"
+                            title="Retry processing">
+                        <span aria-hidden="true">🔄</span>
+                    </button>
+                {% elif document.status == 'uploaded' %}
+                    <a href="{{ url_for('process_document', document_id=document.id) }}"
+                       class="btn btn-primary btn-sm"
+                       title="Start processing">
+                        <span aria-hidden="true">⚙️</span>
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<!-- Upload JavaScript -->
+<script src="{{ url_for('static', filename='js/upload.js') }}"></script>
+
+<script>
+// Page-specific functionality
+document.addEventListener('DOMContentLoaded', function() {
+    // Auto-refresh for processing documents
+    const processingDocs = document.querySelectorAll('.recent-status.processing');
+    if (processingDocs.length > 0) {
+        // Refresh every 30 seconds if there are processing documents
+        setTimeout(() => {
+            window.location.reload();
+        }, 30000);
+    }
+
+    // Smooth scroll to upload area after page load
+    if (window.location.hash === '#upload') {
+        document.getElementById('upload-zone').scrollIntoView({
+            behavior: 'smooth',
+            block: 'center'
+        });
+    }
+
+    // Add keyboard shortcut for upload
+    document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'u') {
+            e.preventDefault();
+            const fileInput = document.getElementById('file-input');
+            if (fileInput) {
+                fileInput.click();
+            }
+        }
+    });
+});
+
+// Recent document actions
+function checkStatus(documentId) {
+    fetch(`/api/status/${documentId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'completed') {
+                // Redirect to view page
+                window.location.href = `/view/${documentId}`;
+            } else if (data.status === 'failed') {
+                alert(`Processing failed: ${data.error_message || 'Unknown error'}`);
+                window.location.reload();
+            } else {
+                // Show current status
+                const statusElement = document.querySelector(`[onclick="checkStatus(${documentId})"]`)
+                    .closest('.recent-item')
+                    .querySelector('.recent-status');
+
+                if (statusElement) {
+                    statusElement.textContent = data.status.charAt(0).toUpperCase() + data.status.slice(1);
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Status check failed:', error);
+            alert('Failed to check processing status');
+        });
+}
+
+function retryProcessing(documentId) {
+    if (confirm('Retry processing this document?')) {
+        fetch(`/retry/${documentId}`, { method: 'POST' })
+            .then(response => {
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    alert('Failed to retry processing');
+                }
+            })
+            .catch(error => {
+                console.error('Retry failed:', error);
+                alert('Failed to retry processing');
+            });
+    }
+}
+
+// Analytics (if needed)
+function trackUploadStart() {
+    // Track upload initiation
+    if (typeof gtag !== 'undefined') {
+        gtag('event', 'upload_start', {
+            'event_category': 'document_processing'
+        });
+    }
+}
+
+function trackUploadComplete(documentId) {
+    // Track successful upload
+    if (typeof gtag !== 'undefined') {
+        gtag('event', 'upload_complete', {
+            'event_category': 'document_processing',
+            'custom_parameter_1': documentId
+        });
+    }
+}
+
+// Add event listeners for analytics
+if (typeof uploadManager !== 'undefined') {
+    // These would be triggered by the upload manager
+    document.addEventListener('upload:start', trackUploadStart);
+    document.addEventListener('upload:complete', function(e) {
+        trackUploadComplete(e.detail.documentId);
+    });
+}
+</script>
+{% endblock %}
+
+{% block analytics %}
+<!-- Add analytics tracking if needed -->
+{% endblock %}

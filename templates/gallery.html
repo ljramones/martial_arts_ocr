@@ -1,0 +1,835 @@
+{% extends "base.html" %}
+
+{% block title %}Document Gallery - Martial Arts OCR{% endblock %}
+{% block description %}Browse and manage your digitized martial arts documents. View processing status, search through documents, and access detailed OCR results.{% endblock %}
+
+{% block page_title %}Document Gallery{% endblock %}
+{% block page_subtitle %}
+<p class="page-description">Browse your digitized martial arts documents and access detailed OCR results.</p>
+{% endblock %}
+
+{% block body_class %}gallery-page{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Gallery-specific styles */
+    .gallery-controls {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        border: 1px solid #e1e8ed;
+    }
+
+    .controls-row {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .search-box {
+        flex: 1;
+        min-width: 250px;
+        position: relative;
+    }
+
+    .search-input {
+        width: 100%;
+        padding: 0.75rem 1rem 0.75rem 2.5rem;
+        border: 2px solid #e1e8ed;
+        border-radius: 6px;
+        font-size: 1rem;
+        transition: border-color 0.3s ease;
+    }
+
+    .search-input:focus {
+        outline: none;
+        border-color: #3498db;
+        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+    }
+
+    .search-icon {
+        position: absolute;
+        left: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #7f8c8d;
+        font-size: 1.1rem;
+    }
+
+    .filter-controls {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+    }
+
+    .filter-group {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .filter-label {
+        font-weight: 500;
+        color: #5a6c7d;
+        white-space: nowrap;
+    }
+
+    .filter-select {
+        padding: 0.5rem;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: white;
+        min-width: 120px;
+    }
+
+    .view-toggle {
+        display: flex;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        overflow: hidden;
+    }
+
+    .view-btn {
+        padding: 0.5rem 1rem;
+        border: none;
+        background: white;
+        cursor: pointer;
+        transition: background 0.2s ease;
+        border-right: 1px solid #dee2e6;
+    }
+
+    .view-btn:last-child {
+        border-right: none;
+    }
+
+    .view-btn.active {
+        background: #3498db;
+        color: white;
+    }
+
+    .view-btn:hover:not(.active) {
+        background: #f8f9fa;
+    }
+
+    .gallery-stats {
+        background: #f8f9fa;
+        padding: 1rem 1.5rem;
+        border-radius: 6px;
+        margin-bottom: 2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .stats-group {
+        display: flex;
+        gap: 2rem;
+    }
+
+    .stat-item {
+        text-align: center;
+    }
+
+    .stat-value {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #2c3e50;
+        display: block;
+    }
+
+    .stat-label {
+        font-size: 0.85rem;
+        color: #6c757d;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .gallery-grid.list-view {
+        display: block;
+    }
+
+    .gallery-grid.list-view .document-card {
+        display: flex;
+        margin-bottom: 1rem;
+        max-width: none;
+    }
+
+    .gallery-grid.list-view .card-thumbnail {
+        width: 120px;
+        height: 80px;
+        flex-shrink: 0;
+    }
+
+    .gallery-grid.list-view .card-content {
+        flex: 1;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 1.5rem;
+    }
+
+    .gallery-grid.list-view .card-info {
+        flex: 1;
+    }
+
+    .gallery-grid.list-view .card-meta {
+        margin: 0.5rem 0;
+    }
+
+    .gallery-grid.list-view .card-actions {
+        flex-direction: row;
+        margin: 0;
+    }
+
+    .empty-gallery {
+        text-align: center;
+        padding: 4rem 2rem;
+        color: #6c757d;
+    }
+
+    .empty-icon {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+
+    .empty-title {
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+        color: #495057;
+    }
+
+    .empty-description {
+        margin-bottom: 2rem;
+        max-width: 400px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    @media (max-width: 768px) {
+        .controls-row {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .search-box {
+            min-width: auto;
+        }
+
+        .filter-controls {
+            flex-wrap: wrap;
+        }
+
+        .gallery-stats {
+            text-align: center;
+        }
+
+        .stats-group {
+            justify-content: center;
+        }
+
+        .gallery-grid.list-view .document-card {
+            flex-direction: column;
+        }
+
+        .gallery-grid.list-view .card-thumbnail {
+            width: 100%;
+            height: 150px;
+        }
+
+        .gallery-grid.list-view .card-content {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .gallery-grid.list-view .card-actions {
+            flex-direction: column;
+            margin-top: 1rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block header_actions %}
+<div class="action-group">
+    <a href="{{ url_for('index') }}" class="btn btn-primary">
+        <span aria-hidden="true">📤</span> Upload New Document
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Gallery Controls -->
+<div class="gallery-controls">
+    <div class="controls-row">
+        <!-- Search Box -->
+        <div class="search-box">
+            <span class="search-icon" aria-hidden="true">🔍</span>
+            <input type="text"
+                   class="search-input"
+                   id="document-search"
+                   placeholder="Search documents by filename, content, or processing date..."
+                   aria-label="Search documents">
+        </div>
+
+        <!-- Filter Controls -->
+        <div class="filter-controls">
+            <div class="filter-group">
+                <label for="status-filter" class="filter-label">Status:</label>
+                <select id="status-filter" class="filter-select">
+                    <option value="">All Documents</option>
+                    <option value="completed">Completed</option>
+                    <option value="processing">Processing</option>
+                    <option value="failed">Failed</option>
+                    <option value="uploaded">Uploaded</option>
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label for="sort-filter" class="filter-label">Sort by:</label>
+                <select id="sort-filter" class="filter-select">
+                    <option value="date_desc">Newest First</option>
+                    <option value="date_asc">Oldest First</option>
+                    <option value="name_asc">Name A-Z</option>
+                    <option value="name_desc">Name Z-A</option>
+                    <option value="size_desc">Largest First</option>
+                    <option value="size_asc">Smallest First</option>
+                </select>
+            </div>
+
+            <!-- View Toggle -->
+            <div class="view-toggle">
+                <button class="view-btn active" data-view="grid" title="Grid view">
+                    <span aria-hidden="true">⊞</span>
+                </button>
+                <button class="view-btn" data-view="list" title="List view">
+                    <span aria-hidden="true">☰</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Gallery Statistics -->
+{% if documents %}
+<div class="gallery-stats">
+    <div class="stats-group">
+        <div class="stat-item">
+            <span class="stat-value">{{ documents|length }}</span>
+            <span class="stat-label">Total Documents</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-value">{{ documents|selectattr("status", "equalto", "completed")|list|length }}</span>
+            <span class="stat-label">Processed</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-value">{{ documents|selectattr("status", "equalto", "processing")|list|length }}</span>
+            <span class="stat-label">Processing</span>
+        </div>
+        {% if documents|selectattr("status", "equalto", "failed")|list|length > 0 %}
+        <div class="stat-item">
+            <span class="stat-value stat-error">{{ documents|selectattr("status", "equalto", "failed")|list|length }}</span>
+            <span class="stat-label">Failed</span>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="stats-actions">
+        <button class="btn btn-sm btn-secondary" id="refresh-gallery" title="Refresh gallery">
+            <span aria-hidden="true">🔄</span> Refresh
+        </button>
+    </div>
+</div>
+{% endif %}
+
+<!-- Document Gallery -->
+{% if documents %}
+<div class="gallery-grid" id="document-gallery">
+    {% for document in documents %}
+    <div class="document-card"
+         data-status="{{ document.status }}"
+         data-filename="{{ document.original_filename|lower }}"
+         data-date="{{ document.upload_date.isoformat() if document.upload_date else '' }}"
+         data-size="{{ document.file_size or 0 }}">
+
+        <!-- Document Thumbnail -->
+        <div class="card-thumbnail-container">
+            {% if document.thumbnail_path %}
+            <img src="{{ url_for('static', filename='extracted_content/' + document.thumbnail_path) }}"
+                 alt="Thumbnail of {{ document.original_filename }}"
+                 class="card-thumbnail"
+                 loading="lazy">
+            {% else %}
+            <div class="card-thumbnail placeholder-thumbnail">
+                <span class="placeholder-icon">📄</span>
+                <span class="file-type">{{ document.original_filename.split('.')[-1].upper() if '.' in document.original_filename else 'FILE' }}</span>
+            </div>
+            {% endif %}
+
+            <!-- Status Indicator -->
+            <div class="status-badge status-{{ document.status }}">
+                {% if document.status == 'completed' %}
+                    <span aria-hidden="true">✅</span> Completed
+                {% elif document.status == 'processing' %}
+                    <span aria-hidden="true">⏳</span> Processing
+                {% elif document.status == 'failed' %}
+                    <span aria-hidden="true">❌</span> Failed
+                {% elif document.status == 'uploaded' %}
+                    <span aria-hidden="true">📤</span> Uploaded
+                {% else %}
+                    <span aria-hidden="true">❓</span> {{ document.status|title }}
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Card Content -->
+        <div class="card-content">
+            <div class="card-info">
+                <h3 class="card-title" title="{{ document.original_filename }}">
+                    {{ document.original_filename }}
+                </h3>
+
+                <div class="card-meta">
+                    <div class="meta-item">
+                        <span class="meta-icon" aria-hidden="true">📅</span>
+                        <span class="meta-label">Uploaded:</span>
+                        <time datetime="{{ document.upload_date.isoformat() if document.upload_date else '' }}">
+                            {{ document.upload_date.strftime('%Y-%m-%d %H:%M') if document.upload_date else 'Unknown' }}
+                        </time>
+                    </div>
+
+                    {% if document.processing_date %}
+                    <div class="meta-item">
+                        <span class="meta-icon" aria-hidden="true">⚙️</span>
+                        <span class="meta-label">Processed:</span>
+                        <time datetime="{{ document.processing_date.isoformat() }}">
+                            {{ document.processing_date.strftime('%Y-%m-%d %H:%M') }}
+                        </time>
+                    </div>
+                    {% endif %}
+
+                    {% if document.file_size %}
+                    <div class="meta-item">
+                        <span class="meta-icon" aria-hidden="true">💾</span>
+                        <span class="meta-label">Size:</span>
+                        <span>{{ (document.file_size / 1024 / 1024)|round(1) }} MB</span>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Processing Statistics -->
+                {% if document.status == 'completed' and document.pages %}
+                <div class="card-stats">
+                    {% set page = document.pages[0] %}
+                    {% if page.processing_result %}
+                    <div class="stats-row">
+                        <div class="stat-badge">
+                            <span class="stat-value">{{ page.processing_result.ocr_confidence|round(1) }}%</span>
+                            <span class="stat-label">Confidence</span>
+                        </div>
+
+                        {% if page.processing_result.has_japanese %}
+                        <div class="stat-badge japanese-badge">
+                            <span class="stat-icon" aria-hidden="true">🇯🇵</span>
+                            <span class="stat-label">Japanese Text</span>
+                        </div>
+                        {% endif %}
+
+                        {% if page.processing_result.extracted_images %}
+                        <div class="stat-badge">
+                            <span class="stat-value">{{ page.processing_result.extracted_images|length }}</span>
+                            <span class="stat-label">Images</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <!-- Error Message for Failed Documents -->
+                {% if document.status == 'failed' and document.error_message %}
+                <div class="error-message">
+                    <span class="error-icon" aria-hidden="true">⚠️</span>
+                    <span class="error-text">{{ document.error_message }}</span>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Card Actions -->
+            <div class="card-actions">
+                {% if document.status == 'completed' %}
+                    <a href="{{ url_for('view_document', document_id=document.id) }}"
+                       class="btn btn-primary btn-sm">
+                        <span aria-hidden="true">👁️</span> View Document
+                    </a>
+
+                    <button class="btn btn-secondary btn-sm"
+                            onclick="downloadDocument({{ document.id }})"
+                            title="Download processed document">
+                        <span aria-hidden="true">💾</span> Download
+                    </button>
+
+                {% elif document.status == 'processing' %}
+                    <button class="btn btn-secondary btn-sm"
+                            onclick="checkProcessingStatus({{ document.id }})"
+                            title="Check processing status">
+                        <span aria-hidden="true">🔄</span> Check Status
+                    </button>
+
+                {% elif document.status == 'failed' %}
+                    <button class="btn btn-warning btn-sm"
+                            onclick="retryProcessing({{ document.id }})"
+                            title="Retry processing">
+                        <span aria-hidden="true">🔄</span> Retry
+                    </button>
+
+                {% elif document.status == 'uploaded' %}
+                    <a href="{{ url_for('process_document', document_id=document.id) }}"
+                       class="btn btn-primary btn-sm">
+                        <span aria-hidden="true">⚙️</span> Process
+                    </a>
+                {% endif %}
+
+                <!-- Common actions -->
+                <div class="dropdown">
+                    <button class="btn btn-secondary btn-sm dropdown-toggle"
+                            data-document-id="{{ document.id }}"
+                            title="More actions">
+                        <span aria-hidden="true">⋯</span>
+                    </button>
+                    <div class="dropdown-menu">
+                        <button class="dropdown-item" onclick="renameDocument({{ document.id }})">
+                            <span aria-hidden="true">✏️</span> Rename
+                        </button>
+                        <button class="dropdown-item" onclick="duplicateDocument({{ document.id }})">
+                            <span aria-hidden="true">📋</span> Duplicate
+                        </button>
+                        <div class="dropdown-separator"></div>
+                        <button class="dropdown-item danger" onclick="deleteDocument({{ document.id }})">
+                            <span aria-hidden="true">🗑️</span> Delete
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Pagination -->
+{% if pagination and pagination.pages > 1 %}
+<div class="pagination-container">
+    <nav class="pagination" aria-label="Gallery pagination">
+        {% if pagination.has_prev %}
+        <a href="{{ url_for('gallery', page=pagination.prev_num) }}"
+           class="pagination-link"
+           aria-label="Previous page">
+            <span aria-hidden="true">‹</span> Previous
+        </a>
+        {% endif %}
+
+        <div class="pagination-info">
+            Page {{ pagination.page }} of {{ pagination.pages }}
+            ({{ pagination.total }} documents)
+        </div>
+
+        {% if pagination.has_next %}
+        <a href="{{ url_for('gallery', page=pagination.next_num) }}"
+           class="pagination-link"
+           aria-label="Next page">
+            Next <span aria-hidden="true">›</span>
+        </a>
+        {% endif %}
+    </nav>
+</div>
+{% endif %}
+
+{% else %}
+<!-- Empty Gallery State -->
+<div class="empty-gallery">
+    <div class="empty-icon">📚</div>
+    <h3 class="empty-title">No Documents Found</h3>
+    <p class="empty-description">
+        You haven't uploaded any documents yet. Start by uploading your first martial arts document to begin the OCR process.
+    </p>
+    <a href="{{ url_for('index') }}" class="btn btn-primary btn-lg">
+        <span aria-hidden="true">📤</span> Upload Your First Document
+    </a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Gallery functionality
+document.addEventListener('DOMContentLoaded', function() {
+    // View toggle functionality
+    const viewButtons = document.querySelectorAll('.view-btn');
+    const galleryGrid = document.getElementById('document-gallery');
+
+    viewButtons.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const view = this.dataset.view;
+
+            // Update button states
+            viewButtons.forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+
+            // Update gallery view
+            if (galleryGrid) {
+                galleryGrid.classList.toggle('list-view', view === 'list');
+                localStorage.setItem('gallery-view', view);
+            }
+        });
+    });
+
+    // Restore saved view preference
+    const savedView = localStorage.getItem('gallery-view');
+    if (savedView === 'list') {
+        document.querySelector('[data-view="list"]').click();
+    }
+
+    // Search functionality
+    const searchInput = document.getElementById('document-search');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            debounceSearch(this.value);
+        });
+    }
+
+    // Filter functionality
+    const statusFilter = document.getElementById('status-filter');
+    const sortFilter = document.getElementById('sort-filter');
+
+    if (statusFilter) {
+        statusFilter.addEventListener('change', applyFilters);
+    }
+
+    if (sortFilter) {
+        sortFilter.addEventListener('change', applyFilters);
+    }
+
+    // Refresh button
+    const refreshBtn = document.getElementById('refresh-gallery');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', function() {
+            window.location.reload();
+        });
+    }
+
+    // Setup dropdown menus
+    setupDropdownMenus();
+
+    // Auto-refresh for processing documents
+    setupAutoRefresh();
+});
+
+// Search with debouncing
+let searchTimeout;
+function debounceSearch(query) {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        performSearch(query);
+    }, 300);
+}
+
+function performSearch(query) {
+    const cards = document.querySelectorAll('.document-card');
+    const searchTerm = query.toLowerCase().trim();
+
+    cards.forEach(card => {
+        const filename = card.dataset.filename;
+        const visible = !searchTerm || filename.includes(searchTerm);
+        card.style.display = visible ? '' : 'none';
+    });
+
+    updateVisibleCount();
+}
+
+// Apply filters and sorting
+function applyFilters() {
+    const statusFilter = document.getElementById('status-filter').value;
+    const sortFilter = document.getElementById('sort-filter').value;
+    const cards = Array.from(document.querySelectorAll('.document-card'));
+
+    // Filter by status
+    cards.forEach(card => {
+        const status = card.dataset.status;
+        const visible = !statusFilter || status === statusFilter;
+        card.style.display = visible ? '' : 'none';
+    });
+
+    // Sort cards
+    const visibleCards = cards.filter(card => card.style.display !== 'none');
+    sortCards(visibleCards, sortFilter);
+
+    updateVisibleCount();
+}
+
+function sortCards(cards, sortBy) {
+    const gallery = document.getElementById('document-gallery');
+    if (!gallery) return;
+
+    cards.sort((a, b) => {
+        switch (sortBy) {
+            case 'date_desc':
+                return new Date(b.dataset.date) - new Date(a.dataset.date);
+            case 'date_asc':
+                return new Date(a.dataset.date) - new Date(b.dataset.date);
+            case 'name_asc':
+                return a.dataset.filename.localeCompare(b.dataset.filename);
+            case 'name_desc':
+                return b.dataset.filename.localeCompare(a.dataset.filename);
+            case 'size_desc':
+                return parseInt(b.dataset.size) - parseInt(a.dataset.size);
+            case 'size_asc':
+                return parseInt(a.dataset.size) - parseInt(b.dataset.size);
+            default:
+                return 0;
+        }
+    });
+
+    // Reorder in DOM
+    cards.forEach(card => gallery.appendChild(card));
+}
+
+function updateVisibleCount() {
+    const visibleCards = document.querySelectorAll('.document-card:not([style*="display: none"])');
+    // Could update a count display here
+}
+
+// Document actions
+function downloadDocument(documentId) {
+    window.location.href = `/download/${documentId}`;
+}
+
+function checkProcessingStatus(documentId) {
+    fetch(`/api/status/${documentId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'completed') {
+                window.location.reload();
+            } else {
+                alert(`Status: ${data.status}`);
+            }
+        })
+        .catch(error => {
+            console.error('Status check failed:', error);
+            alert('Failed to check processing status');
+        });
+}
+
+function retryProcessing(documentId) {
+    if (confirm('Retry processing this document?')) {
+        fetch(`/retry/${documentId}`, { method: 'POST' })
+            .then(response => {
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    alert('Failed to retry processing');
+                }
+            })
+            .catch(error => {
+                console.error('Retry failed:', error);
+                alert('Failed to retry processing');
+            });
+    }
+}
+
+function renameDocument(documentId) {
+    const newName = prompt('Enter new document name:');
+    if (newName && newName.trim()) {
+        fetch(`/rename/${documentId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: newName.trim() })
+        })
+        .then(response => {
+            if (response.ok) {
+                window.location.reload();
+            } else {
+                alert('Failed to rename document');
+            }
+        })
+        .catch(error => {
+            console.error('Rename failed:', error);
+            alert('Failed to rename document');
+        });
+    }
+}
+
+function duplicateDocument(documentId) {
+    if (confirm('Create a copy of this document?')) {
+        fetch(`/duplicate/${documentId}`, { method: 'POST' })
+            .then(response => {
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    alert('Failed to duplicate document');
+                }
+            })
+            .catch(error => {
+                console.error('Duplicate failed:', error);
+                alert('Failed to duplicate document');
+            });
+    }
+}
+
+function deleteDocument(documentId) {
+    if (confirm('Are you sure you want to delete this document? This action cannot be undone.')) {
+        fetch(`/delete/${documentId}`, { method: 'DELETE' })
+            .then(response => {
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    alert('Failed to delete document');
+                }
+            })
+            .catch(error => {
+                console.error('Delete failed:', error);
+                alert('Failed to delete document');
+            });
+    }
+}
+
+// Dropdown menu functionality
+function setupDropdownMenus() {
+    document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('dropdown-toggle')) {
+            e.stopPropagation();
+            const menu = e.target.nextElementSibling;
+
+            // Close all other dropdowns
+            document.querySelectorAll('.dropdown-menu.show').forEach(m => {
+                if (m !== menu) m.classList.remove('show');
+            });
+
+            // Toggle this dropdown
+            menu.classList.toggle('show');
+        } else {
+            // Close all dropdowns when clicking outside
+            document.querySelectorAll('.dropdown-menu.show').forEach(m => {
+                m.classList.remove('show');
+            });
+        }
+    });
+}
+
+// Auto-refresh for processing documents
+function setupAutoRefresh() {
+    const processingCards = document.querySelectorAll('[data-status="processing"]');
+
+    if (processingCards.length > 0) {
+        // Refresh every 30 seconds if there are processing documents
+        setTimeout(() => {
+            window.location.reload();
+        }, 30000);
+    }
+}
+</script>
+{% endblock %}

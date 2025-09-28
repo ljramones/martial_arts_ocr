@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <!-- Title with dynamic content -->
+    <title>{% block title %}Martial Arts OCR - Document Digitization{% endblock %}</title>
+
+    <!-- Meta description for SEO -->
+    <meta name="description" content="{% block description %}Professional OCR system for digitizing martial arts documents with Japanese text support. Specialized for academic research and historical preservation.{% endblock %}">
+
+    <!-- Open Graph meta tags for social sharing -->
+    <meta property="og:title" content="{% block og_title %}{{ self.title() }}{% endblock %}">
+    <meta property="og:description" content="{% block og_description %}{{ self.description() }}{% endblock %}">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ request.url }}">
+
+    <!-- Favicon and app icons -->
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon-32x32.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon-16x16.png') }}">
+
+    <!-- Preconnect to external domains for performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <!-- Core CSS files -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    {% block extra_css %}{% endblock %}
+
+    <!-- Critical inline CSS for above-the-fold content -->
+    <style>
+        /* Critical CSS for faster initial render */
+        .no-js .js-only { display: none !important; }
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #f8f9fa;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f4;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+
+    <!-- Theme and color scheme meta -->
+    <meta name="theme-color" content="#2c3e50">
+    <meta name="color-scheme" content="light">
+
+    <!-- Prevent zoom on iOS Safari -->
+    <meta name="format-detection" content="telephone=no">
+
+    <!-- Block for additional head content -->
+    {% block head %}{% endblock %}
+</head>
+
+<body class="{% block body_class %}{% endblock %}">
+    <!-- Loading screen for better perceived performance -->
+    <div class="loading-screen js-only" id="loading-screen">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Skip link for accessibility -->
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <!-- Main application header -->
+    <header class="header" role="banner">
+        <div class="container">
+            <div class="header-content">
+                <h1 class="header-title">
+                    <a href="{{ url_for('index') }}" class="logo-link">
+                        <span class="logo">
+                            <!-- Logo icon (could be SVG or text) -->
+                            <span class="logo-icon" aria-hidden="true">🥋</span>
+                            <span class="logo-text">Martial Arts OCR</span>
+                        </span>
+                        <span class="subtitle">Document Digitization System</span>
+                    </a>
+                </h1>
+
+                <!-- Header actions -->
+                <div class="header-actions">
+                    {% block header_actions %}
+                    <!-- Default header actions -->
+                    <div class="action-group">
+                        {% if request.endpoint != 'index' %}
+                        <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm">
+                            <span aria-hidden="true">📤</span> New Upload
+                        </a>
+                        {% endif %}
+
+                        {% if request.endpoint != 'gallery' %}
+                        <a href="{{ url_for('gallery') }}" class="btn btn-secondary btn-sm">
+                            <span aria-hidden="true">📚</span> Gallery
+                        </a>
+                        {% endif %}
+                    </div>
+                    {% endblock %}
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main navigation -->
+    <nav class="nav" role="navigation" aria-label="Main navigation">
+        <div class="container">
+            <ul class="nav-list">
+                <li class="nav-item">
+                    <a href="{{ url_for('index') }}"
+                       class="nav-link {{ 'active' if request.endpoint == 'index' else '' }}"
+                       {% if request.endpoint == 'index' %}aria-current="page"{% endif %}>
+                        Upload
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="{{ url_for('gallery') }}"
+                       class="nav-link {{ 'active' if request.endpoint == 'gallery' else '' }}"
+                       {% if request.endpoint == 'gallery' %}aria-current="page"{% endif %}>
+                        Gallery
+                    </a>
+                </li>
+                {% block extra_nav %}{% endblock %}
+
+                <!-- Japanese mode toggle (if supported) -->
+                <li class="nav-item nav-item-right js-only">
+                    <button class="nav-link japanese-toggle"
+                            id="japanese-mode-toggle"
+                            title="Toggle Japanese text processing (Ctrl+J)"
+                            aria-pressed="false">
+                        <span class="toggle-text">日本語</span>
+                    </button>
+                </li>
+
+                <!-- Accessibility controls -->
+                <li class="nav-item nav-item-right">
+                    <div class="accessibility-controls">
+                        <button class="nav-link"
+                                id="font-size-toggle"
+                                title="Increase font size"
+                                aria-label="Increase font size">
+                            <span aria-hidden="true">A+</span>
+                        </button>
+                        <button class="nav-link"
+                                id="high-contrast-toggle"
+                                title="Toggle high contrast mode"
+                                aria-label="Toggle high contrast mode">
+                            <span aria-hidden="true">◐</span>
+                        </button>
+                    </div>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Flash messages container -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div class="flash-messages" role="alert" aria-live="polite">
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }} flash-message" data-category="{{ category }}">
+                <span class="alert-icon" aria-hidden="true">
+                    {% if category == 'error' %}⚠️
+                    {% elif category == 'success' %}✅
+                    {% elif category == 'warning' %}⚠️
+                    {% elif category == 'info' %}ℹ️
+                    {% else %}💬
+                    {% endif %}
+                </span>
+                <span class="alert-text">{{ message }}</span>
+                <button class="alert-close" aria-label="Close message" title="Close">
+                    <span aria-hidden="true">×</span>
+                </button>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    {% endwith %}
+
+    <!-- Main content area -->
+    <main class="main" id="main-content" role="main">
+        <div class="{% block container_class %}container{% endblock %}">
+            <!-- Page title and breadcrumbs -->
+            {% block page_header %}
+            {% if self.page_title() %}
+            <div class="page-header">
+                {% block breadcrumbs %}{% endblock %}
+                <h2 class="page-title">{% block page_title %}{% endblock %}</h2>
+                {% block page_subtitle %}{% endblock %}
+            </div>
+            {% endif %}
+            {% endblock %}
+
+            <!-- Main page content -->
+            {% block content %}
+            <div class="content-section">
+                <p>This page is under construction.</p>
+            </div>
+            {% endblock %}
+        </div>
+    </main>
+
+    <!-- Application footer -->
+    <footer class="footer" role="contentinfo">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <p class="footer-text">
+                        &copy; {{ moment().format('YYYY') if moment else '2024' }} Martial Arts OCR System.
+                        Built for academic research and historical preservation.
+                    </p>
+                </div>
+
+                <div class="footer-section">
+                    <div class="footer-links">
+                        <a href="#" class="footer-link">Documentation</a>
+                        <a href="#" class="footer-link">Privacy Policy</a>
+                        <a href="#" class="footer-link">Contact</a>
+                    </div>
+                </div>
+
+                <div class="footer-section">
+                    <div class="footer-info">
+                        <span class="footer-meta">
+                            Powered by Tesseract OCR, MeCab, and modern web technologies
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Core JavaScript -->
+    <script>
+        // Remove no-js class and add js class for progressive enhancement
+        document.documentElement.classList.remove('no-js');
+        document.documentElement.classList.add('js');
+
+        // Hide loading screen when page is ready
+        document.addEventListener('DOMContentLoaded', function() {
+            const loadingScreen = document.getElementById('loading-screen');
+            if (loadingScreen) {
+                loadingScreen.style.opacity = '0';
+                setTimeout(() => {
+                    loadingScreen.style.display = 'none';
+                }, 300);
+            }
+        });
+
+        // Flash message auto-dismiss
+        document.addEventListener('DOMContentLoaded', function() {
+            const flashMessages = document.querySelectorAll('.flash-message');
+
+            flashMessages.forEach(function(message) {
+                // Auto-dismiss after 5 seconds for success/info messages
+                const category = message.dataset.category;
+                if (category === 'success' || category === 'info') {
+                    setTimeout(function() {
+                        if (message.parentNode) {
+                            message.style.opacity = '0';
+                            setTimeout(() => message.remove(), 300);
+                        }
+                    }, 5000);
+                }
+
+                // Manual dismiss on close button click
+                const closeBtn = message.querySelector('.alert-close');
+                if (closeBtn) {
+                    closeBtn.addEventListener('click', function() {
+                        message.style.opacity = '0';
+                        setTimeout(() => message.remove(), 300);
+                    });
+                }
+            });
+        });
+
+        // Japanese mode toggle functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const japaneseToggle = document.getElementById('japanese-mode-toggle');
+            if (japaneseToggle) {
+                japaneseToggle.addEventListener('click', function() {
+                    if (typeof japaneseTextManager !== 'undefined') {
+                        japaneseTextManager.toggleJapaneseMode();
+                        const isEnabled = japaneseTextManager.isEnabled;
+                        japaneseToggle.setAttribute('aria-pressed', isEnabled);
+                        japaneseToggle.classList.toggle('active', isEnabled);
+                    }
+                });
+            }
+        });
+
+        // Accessibility controls
+        document.addEventListener('DOMContentLoaded', function() {
+            // Font size toggle
+            const fontSizeToggle = document.getElementById('font-size-toggle');
+            if (fontSizeToggle) {
+                fontSizeToggle.addEventListener('click', function() {
+                    document.body.classList.toggle('large-font');
+                    localStorage.setItem('large-font', document.body.classList.contains('large-font'));
+                });
+
+                // Restore font size preference
+                if (localStorage.getItem('large-font') === 'true') {
+                    document.body.classList.add('large-font');
+                }
+            }
+
+            // High contrast toggle
+            const contrastToggle = document.getElementById('high-contrast-toggle');
+            if (contrastToggle) {
+                contrastToggle.addEventListener('click', function() {
+                    document.body.classList.toggle('high-contrast');
+                    localStorage.setItem('high-contrast', document.body.classList.contains('high-contrast'));
+                });
+
+                // Restore contrast preference
+                if (localStorage.getItem('high-contrast') === 'true') {
+                    document.body.classList.add('high-contrast');
+                }
+            }
+        });
+
+        // Global error handling
+        window.addEventListener('error', function(e) {
+            console.error('JavaScript error:', e.error);
+
+            // Show user-friendly error message for critical failures
+            if (e.error && e.error.message && e.error.message.includes('network')) {
+                const errorMessage = document.createElement('div');
+                errorMessage.className = 'alert alert-error flash-message';
+                errorMessage.innerHTML = `
+                    <span class="alert-icon">⚠️</span>
+                    <span class="alert-text">Network error. Please check your connection and try again.</span>
+                    <button class="alert-close" onclick="this.parentNode.remove()">×</button>
+                `;
+
+                const flashContainer = document.querySelector('.flash-messages') || document.body;
+                flashContainer.appendChild(errorMessage);
+            }
+        });
+
+        // Service worker registration for PWA support (future enhancement)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(function(registration) {
+                        console.log('ServiceWorker registration successful');
+                    })
+                    .catch(function(err) {
+                        console.log('ServiceWorker registration failed');
+                    });
+            });
+        }
+    </script>
+
+    <!-- Page-specific JavaScript -->
+    {% block scripts %}{% endblock %}
+
+    <!-- Analytics or tracking scripts (if needed) -->
+    {% block analytics %}{% endblock %}
+
+    <!-- Structured data for SEO -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Martial Arts OCR",
+        "description": "Professional OCR system for digitizing martial arts documents with Japanese text support",
+        "url": "{{ request.url_root }}",
+        "applicationCategory": "EducationalApplication",
+        "operatingSystem": "Any",
+        "browserRequirements": "Requires JavaScript. Modern browser recommended.",
+        "softwareVersion": "1.0.0",
+        "author": {
+            "@type": "Organization",
+            "name": "Martial Arts OCR Team"
+        }
+    }
+    </script>
+</body>
+</html>

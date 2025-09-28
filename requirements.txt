@@ -1,0 +1,61 @@
+Flask==3.0.3
+Werkzeug==3.0.4
+pytesseract==0.3.13
+easyocr==1.7.2
+opencv-python==4.10.0.84
+Pillow==10.4.0
+scikit-image==0.24.0
+numpy==1.26.4
+matplotlib==3.8.4
+mecab-python3==1.0.9
+unidic-lite==1.0.8
+pykakasi==2.2.1
+jaconv==0.3.4
+SQLAlchemy==2.0.36
+regex==2024.9.11
+langdetect==1.0.9
+python-magic==0.4.27
+requests==2.32.3
+urllib3==2.2.3
+pytest==8.3.3
+pytest-cov==5.0.0
+black==24.8.0
+flake8==7.1.1
+mypy==1.11.2
+loguru==0.7.2
+python-dotenv==1.0.1
+pydantic==2.9.2
+tqdm==4.66.5
+click==8.1.7
+cryptography==43.0.1
+argostranslate==1.9.1
+sentencepiece==0.2.0
+
+ctranslate2==3.20.0
+sacremoses==0.0.53
+stanza==1.1.1
+sentencepiece==0.2.0
+argostranslate==1.9.1
+
+
+# Optional: PDF support
+# PyPDF2==3.0.1
+# pdf2image==1.17.0
+
+# Optional: If EasyOCR needs torch explicitly pinned (it usually pulls one automatically):
+# torch==2.4.1 ; platform_system == "Darwin"
+# torchvision==0.19.1 ; platform_system == "Darwin"
+
+
+# Optional: Advanced image processing
+# Uncomment if needed for complex layout analysis
+# tensorflow==2.13.0
+# torch==2.8.0
+#torchvision==0.23.0
+# opencv-python-headless==4.10.0.84
+
+
+# Optional: PDF support
+# Uncomment if processing PDF files
+# PyPDF2==3.0.1
+# pdf2image==1.16.3

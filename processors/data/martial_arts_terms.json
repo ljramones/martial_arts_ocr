@@ -1,0 +1,87 @@
+{
+  "advanced_terms": {
+    "無心": {"romaji": "mushin", "translation": "no-mind", "category": "philosophy"},
+    "残心": {"romaji": "zanshin", "translation": "lingering mind", "category": "philosophy"},
+    "正座": {"romaji": "seiza", "translation": "formal sitting", "category": "etiquette"},
+    "黙想": {"romaji": "mokusō", "translation": "meditation", "category": "philosophy"},
+    "精神": {"romaji": "seishin", "translation": "spirit/mind", "category": "philosophy"},
+    "修行": {"romaji": "shugyō", "translation": "ascetic practice", "category": "training"},
+    "鍛錬": {"romaji": "tanren", "translation": "forging/training", "category": "training"},
+    "呼吸": {"romaji": "kokyū", "translation": "breathing", "category": "technique"},
+    "間合い": {"romaji": "maai", "translation": "spacing/distance", "category": "technique"},
+    "構え": {"romaji": "kamae", "translation": "stance/posture", "category": "technique"}
+  },
+  "classical_terms": {
+    "古武道": {"romaji": "kobudō", "translation": "classical martial arts", "category": "martial_arts"},
+    "古流": {"romaji": "koryū", "translation": "old school", "category": "school"},
+    "伝書": {"romaji": "densho", "translation": "transmission scroll", "category": "document"},
+    "秘伝": {"romaji": "hiden", "translation": "secret tradition", "category": "knowledge"},
+    "口伝": {"romaji": "kuden", "translation": "oral transmission", "category": "knowledge"},
+    "印可": {"romaji": "inka", "translation": "seal of approval", "category": "rank"},
+    "皆伝": {"romaji": "kaiden", "translation": "complete transmission", "category": "rank"},
+    "目録": {"romaji": "mokuroku", "translation": "catalog/curriculum", "category": "rank"},
+    "初伝": {"romaji": "shoden", "translation": "initial transmission", "category": "rank"},
+    "中伝": {"romaji": "chūden", "translation": "middle transmission", "category": "rank"},
+    "奥伝": {"romaji": "okuden", "translation": "inner transmission", "category": "rank"}
+  },
+  "weapon_arts": {
+    "槍術": {"romaji": "sōjutsu", "translation": "spear art", "category": "weapon_art"},
+    "薙刀術": {"romaji": "naginatajutsu", "translation": "naginata art", "category": "weapon_art"},
+    "弓術": {"romaji": "kyūjutsu", "translation": "archery", "category": "weapon_art"},
+    "馬術": {"romaji": "bajutsu", "translation": "horsemanship", "category": "weapon_art"},
+    "砲術": {"romaji": "hōjutsu", "translation": "gunnery", "category": "weapon_art"},
+    "鎖鎌術": {"romaji": "kusarigamajutsu", "translation": "chain-sickle art", "category": "weapon_art"},
+    "手裏剣術": {"romaji": "shurikenjutsu", "translation": "throwing blade art", "category": "weapon_art"},
+    "棒術": {"romaji": "bōjutsu", "translation": "staff art", "category": "weapon_art"},
+    "杖術": {"romaji": "jōjutsu", "translation": "stick art", "category": "weapon_art"},
+    "鉄扇術": {"romaji": "tessenjutsu", "translation": "iron fan art", "category": "weapon_art"}
+  },
+  "draeger_research_terms": {
+    "武芸": {"romaji": "bugei", "translation": "martial arts", "category": "academic"},
+    "軍事": {"romaji": "gunji", "translation": "military affairs", "category": "academic"},
+    "戦術": {"romaji": "senjutsu", "translation": "tactics", "category": "academic"},
+    "兵法": {"romaji": "heihō", "translation": "strategy", "category": "academic"},
+    "武学": {"romaji": "bugaku", "translation": "martial studies", "category": "academic"},
+    "武道学": {"romaji": "budōgaku", "translation": "martial way studies", "category": "academic"},
+    "体育": {"romaji": "taiiku", "translation": "physical education", "category": "academic"},
+    "身体文化": {"romaji": "shintai bunka", "translation": "body culture", "category": "academic"},
+    "社会学": {"romaji": "shakaigaku", "translation": "sociology", "category": "academic"},
+    "人類学": {"romaji": "jinruigaku", "translation": "anthropology", "category": "academic"}
+  },
+  "institutional_terms": {
+    "講道館": {"romaji": "Kōdōkan", "translation": "Kodokan", "category": "institution"},
+    "武徳会": {"romaji": "Butokukai", "translation": "Butokukai", "category": "institution"},
+    "全日本": {"romaji": "Zen Nihon", "translation": "All Japan", "category": "organization"},
+    "国際": {"romaji": "kokusai", "translation": "international", "category": "organization"},
+    "連盟": {"romaji": "renmei", "translation": "federation", "category": "organization"},
+    "協会": {"romaji": "kyōkai", "translation": "association", "category": "organization"},
+    "同盟": {"romaji": "dōmei", "translation": "alliance", "category": "organization"},
+    "大学": {"romaji": "daigaku", "translation": "university", "category": "institution"},
+    "学院": {"romaji": "gakuin", "translation": "academy", "category": "institution"},
+    "研究所": {"romaji": "kenkyūjo", "translation": "research institute", "category": "institution"}
+  },
+  "competition_terms": {
+    "試合": {"romaji": "shiai", "translation": "match/competition", "category": "competition"},
+    "大会": {"romaji": "taikai", "translation": "tournament", "category": "competition"},
+    "選手権": {"romaji": "senshuken", "translation": "championship", "category": "competition"},
+    "審判": {"romaji": "shinpan", "translation": "referee", "category": "competition"},
+    "勝負": {"romaji": "shōbu", "translation": "contest", "category": "competition"},
+    "勝利": {"romaji": "shōri", "translation": "victory", "category": "competition"},
+    "敗北": {"romaji": "haiboku", "translation": "defeat", "category": "competition"},
+    "引き分け": {"romaji": "hikiwake", "translation": "draw", "category": "competition"},
+    "優勝": {"romaji": "yūshō", "translation": "championship victory", "category": "competition"},
+    "準優勝": {"romaji": "jun-yūshō", "translation": "runner-up", "category": "competition"}
+  },
+  "geographic_terms": {
+    "本土": {"romaji": "hondo", "translation": "mainland", "category": "geography"},
+    "沖縄": {"romaji": "Okinawa", "translation": "Okinawa", "category": "geography"},
+    "琉球": {"romaji": "Ryūkyū", "translation": "Ryukyu", "category": "geography"},
+    "九州": {"romaji": "Kyūshū", "translation": "Kyushu", "category": "geography"},
+    "本州": {"romaji": "Honshū", "translation": "Honshu", "category": "geography"},
+    "関東": {"romaji": "Kantō", "translation": "Kanto region", "category": "geography"},
+    "関西": {"romaji": "Kansai", "translation": "Kansai region", "category": "geography"},
+    "東京": {"romaji": "Tōkyō", "translation": "Tokyo", "category": "geography"},
+    "京都": {"romaji": "Kyōto", "translation": "Kyoto", "category": "geography"},
+    "奈良": {"romaji": "Nara", "translation": "Nara", "category": "geography"}
+  }
+}

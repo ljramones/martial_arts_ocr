@@ -1,0 +1,2 @@
+sentencepiece==0.2.0
+argostranslate==1.9.1

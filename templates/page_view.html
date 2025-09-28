@@ -1,0 +1,738 @@
+{% extends "base.html" %}
+
+{% block title %}{{ document.original_filename }} - Document Viewer{% endblock %}
+{% block description %}View and interact with the digitized martial arts document "{{ document.original_filename }}" featuring OCR text extraction, Japanese text processing, and embedded image preservation.{% endblock %}
+
+{% block page_title %}{{ document.original_filename }}{% endblock %}
+
+{% block body_class %}viewer-page{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/viewer.css') }}">
+<style>
+    /* Page-specific viewer styles */
+    .document-header {
+        background: white;
+        padding: 1.5rem 2rem;
+        margin-bottom: 2rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        border: 1px solid #e1e8ed;
+    }
+
+    .document-info {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 2rem;
+        align-items: start;
+    }
+
+    .document-details {
+        min-width: 0;
+    }
+
+    .document-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 0.5rem;
+        word-break: break-word;
+    }
+
+    .document-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.5rem;
+        color: #6c757d;
+        font-size: 0.9rem;
+        margin-bottom: 1rem;
+    }
+
+    .meta-group {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .meta-icon {
+        font-size: 1rem;
+        color: #adb5bd;
+    }
+
+    .document-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        font-weight: 500;
+        font-size: 0.9rem;
+    }
+
+    .document-status.completed {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+    }
+
+    .document-status.processing {
+        background: #fff3cd;
+        color: #856404;
+        border: 1px solid #ffeaa7;
+    }
+
+    .document-status.failed {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+    }
+
+    .document-actions {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .processing-info {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 6px;
+        margin-top: 1rem;
+        border-left: 4px solid #3498db;
+    }
+
+    .processing-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+
+    .stat-card {
+        text-align: center;
+        padding: 1rem;
+        background: white;
+        border-radius: 6px;
+        border: 1px solid #dee2e6;
+    }
+
+    .stat-value {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #2c3e50;
+        display: block;
+        margin-bottom: 0.25rem;
+    }
+
+    .stat-label {
+        font-size: 0.8rem;
+        color: #6c757d;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .error-info {
+        background: #f8d7da;
+        color: #721c24;
+        padding: 1rem;
+        border-radius: 6px;
+        margin-top: 1rem;
+        border-left: 4px solid #dc3545;
+    }
+
+    .error-title {
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+
+    .retry-section {
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid #dee2e6;
+    }
+
+    @media (max-width: 768px) {
+        .document-info {
+            grid-template-columns: 1fr;
+            gap: 1rem;
+        }
+
+        .document-header {
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .document-meta {
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .document-actions {
+            justify-content: stretch;
+        }
+
+        .document-actions .btn {
+            flex: 1;
+        }
+
+        .processing-stats {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<nav aria-label="Breadcrumb" class="breadcrumb">
+    <ol class="breadcrumb-list">
+        <li class="breadcrumb-item">
+            <a href="{{ url_for('index') }}">Upload</a>
+        </li>
+        <li class="breadcrumb-item">
+            <a href="{{ url_for('gallery') }}">Gallery</a>
+        </li>
+        <li class="breadcrumb-item active" aria-current="page">
+            {{ document.original_filename }}
+        </li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block header_actions %}
+<div class="action-group">
+    <a href="{{ url_for('gallery') }}" class="btn btn-secondary">
+        <span aria-hidden="true">📚</span> Back to Gallery
+    </a>
+
+    {% if document.status == 'completed' %}
+    <button class="btn btn-secondary" onclick="downloadDocument({{ document.id }})">
+        <span aria-hidden="true">💾</span> Download
+    </button>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block container_class %}container-fluid{% endblock %}
+
+{% block content %}
+<!-- Document Header -->
+<div class="document-header">
+    <div class="document-info">
+        <div class="document-details">
+            <h2 class="document-title">{{ document.original_filename }}</h2>
+
+            <div class="document-meta">
+                <div class="meta-group">
+                    <span class="meta-icon" aria-hidden="true">📅</span>
+                    <span>Uploaded: {{ document.upload_date.strftime('%Y-%m-%d %H:%M') if document.upload_date else 'Unknown' }}</span>
+                </div>
+
+                {% if document.processing_date %}
+                <div class="meta-group">
+                    <span class="meta-icon" aria-hidden="true">⚙️</span>
+                    <span>Processed: {{ document.processing_date.strftime('%Y-%m-%d %H:%M') }}</span>
+                </div>
+                {% endif %}
+
+                {% if document.file_size %}
+                <div class="meta-group">
+                    <span class="meta-icon" aria-hidden="true">💾</span>
+                    <span>Size: {{ (document.file_size / 1024 / 1024)|round(1) }} MB</span>
+                </div>
+                {% endif %}
+
+                <div class="meta-group">
+                    <span class="meta-icon" aria-hidden="true">🆔</span>
+                    <span>ID: {{ document.id }}</span>
+                </div>
+            </div>
+
+            <div class="document-status {{ document.status }}">
+                {% if document.status == 'completed' %}
+                    <span aria-hidden="true">✅</span> Processing Completed
+                {% elif document.status == 'processing' %}
+                    <span aria-hidden="true">⏳</span> Processing in Progress
+                {% elif document.status == 'failed' %}
+                    <span aria-hidden="true">❌</span> Processing Failed
+                {% elif document.status == 'uploaded' %}
+                    <span aria-hidden="true">📤</span> Awaiting Processing
+                {% else %}
+                    <span aria-hidden="true">❓</span> {{ document.status|title }}
+                {% endif %}
+            </div>
+
+            <!-- Processing Information -->
+            {% if document.status == 'completed' and page and result %}
+            <div class="processing-info">
+                <h4>Processing Results</h4>
+                <div class="processing-stats">
+                    <div class="stat-card">
+                        <span class="stat-value">{{ result.ocr_confidence|round(1) }}%</span>
+                        <span class="stat-label">OCR Confidence</span>
+                    </div>
+
+                    <div class="stat-card">
+                        <span class="stat-value">{{ result.processing_time|round(1) }}s</span>
+                        <span class="stat-label">Processing Time</span>
+                    </div>
+
+                    {% if result.has_japanese %}
+                    <div class="stat-card">
+                        <span class="stat-value japanese-indicator">🇯🇵</span>
+                        <span class="stat-label">Japanese Text</span>
+                    </div>
+                    {% endif %}
+
+                    {% if result.extracted_images %}
+                    <div class="stat-card">
+                        <span class="stat-value">{{ result.extracted_images|length }}</span>
+                        <span class="stat-label">Extracted Images</span>
+                    </div>
+                    {% endif %}
+
+                    <div class="stat-card">
+                        <span class="stat-value">{{ result.ocr_text|length if result.ocr_text else 0 }}</span>
+                        <span class="stat-label">Characters</span>
+                    </div>
+
+                    <div class="stat-card">
+                        <span class="stat-value">{{ result.ocr_text.split()|length if result.ocr_text else 0 }}</span>
+                        <span class="stat-label">Words</span>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Error Information -->
+            {% if document.status == 'failed' %}
+            <div class="error-info">
+                <div class="error-title">Processing Error</div>
+                <div class="error-message">
+                    {{ document.error_message or 'An unknown error occurred during processing.' }}
+                </div>
+
+                <div class="retry-section">
+                    <button class="btn btn-warning" onclick="retryProcessing({{ document.id }})">
+                        <span aria-hidden="true">🔄</span> Retry Processing
+                    </button>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="document-actions">
+            {% if document.status == 'completed' %}
+                <button class="btn btn-primary" onclick="printDocument()">
+                    <span aria-hidden="true">🖨️</span> Print
+                </button>
+
+                <button class="btn btn-secondary" onclick="shareDocument({{ document.id }})">
+                    <span aria-hidden="true">🔗</span> Share
+                </button>
+
+            {% elif document.status == 'processing' %}
+                <button class="btn btn-secondary" onclick="refreshStatus()" id="refresh-btn">
+                    <span aria-hidden="true">🔄</span> Refresh Status
+                </button>
+
+            {% elif document.status == 'uploaded' %}
+                <a href="{{ url_for('process_document', document_id=document.id) }}" class="btn btn-primary">
+                    <span aria-hidden="true">⚙️</span> Start Processing
+                </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Document Viewer -->
+{% if document.status == 'completed' and page and result %}
+<div class="document-viewer">
+    <!-- Viewer Toolbar -->
+    <div class="viewer-toolbar">
+        <div class="viewer-info">
+            <h3 class="document-title">{{ document.original_filename }}</h3>
+            <div class="document-meta">
+                <div class="meta-item">
+                    <span class="meta-icon" aria-hidden="true">🎯</span>
+                    <span>Confidence: {{ result.ocr_confidence|round(1) }}%</span>
+                </div>
+                {% if result.has_japanese %}
+                <div class="meta-item">
+                    <span class="meta-icon" aria-hidden="true">🇯🇵</span>
+                    <span>Japanese Text Detected</span>
+                </div>
+                {% endif %}
+                {% if result.extracted_images %}
+                <div class="meta-item">
+                    <span class="meta-icon" aria-hidden="true">🖼️</span>
+                    <span>{{ result.extracted_images|length }} Images</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="viewer-actions">
+            <!-- View Mode Controls -->
+            <div class="action-group">
+                <button class="viewer-btn view-original active" title="Original layout view">
+                    <span aria-hidden="true">📄</span> Original
+                </button>
+                <button class="viewer-btn view-text-only" title="Text-only view">
+                    <span aria-hidden="true">📝</span> Text Only
+                </button>
+                <button class="viewer-btn view-side-by-side" title="Side-by-side view">
+                    <span aria-hidden="true">🔀</span> Compare
+                </button>
+            </div>
+
+            <!-- Zoom Controls -->
+            <div class="zoom-controls">
+                <button class="zoom-btn zoom-out" title="Zoom out" aria-label="Zoom out">
+                    <span aria-hidden="true">−</span>
+                </button>
+                <span class="zoom-level">100%</span>
+                <button class="zoom-btn zoom-in" title="Zoom in" aria-label="Zoom in">
+                    <span aria-hidden="true">+</span>
+                </button>
+                <button class="zoom-btn zoom-reset" title="Reset zoom" aria-label="Reset zoom">
+                    <span aria-hidden="true">⌂</span>
+                </button>
+            </div>
+
+            <!-- Additional Controls -->
+            <div class="action-group">
+                <button class="viewer-btn sidebar-toggle" title="Toggle sidebar">
+                    <span aria-hidden="true">📋</span> Info
+                </button>
+                <button class="viewer-btn fullscreen-btn" title="Toggle fullscreen">
+                    <span aria-hidden="true">⛶</span> Fullscreen
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Viewer Main Area -->
+    <div class="viewer-main">
+        <!-- Sidebar -->
+        <div class="viewer-sidebar">
+            <!-- Document Information -->
+            <div class="sidebar-section">
+                <h4 class="sidebar-title">
+                    <span aria-hidden="true">📊</span> Document Info
+                </h4>
+                <div class="sidebar-content">
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">Filename:</span>
+                            <span class="info-value">{{ document.original_filename }}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Status:</span>
+                            <span class="info-value">{{ document.status|title }}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Upload Date:</span>
+                            <span class="info-value">{{ document.upload_date.strftime('%Y-%m-%d') if document.upload_date else 'Unknown' }}</span>
+                        </div>
+                        {% if document.file_size %}
+                        <div class="info-item">
+                            <span class="info-label">File Size:</span>
+                            <span class="info-value">{{ (document.file_size / 1024 / 1024)|round(1) }} MB</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Processing Statistics -->
+            <div class="sidebar-section">
+                <h4 class="sidebar-title">
+                    <span aria-hidden="true">📈</span> Processing Stats
+                </h4>
+                <div class="sidebar-content">
+                    <ul class="stats-list">
+                        <li class="stats-item">
+                            <span class="stats-label">OCR Confidence:</span>
+                            <span class="stats-value">{{ result.ocr_confidence|round(1) }}%</span>
+                        </li>
+                        <li class="stats-item">
+                            <span class="stats-label">Processing Time:</span>
+                            <span class="stats-value">{{ result.processing_time|round(1) }}s</span>
+                        </li>
+                        <li class="stats-item">
+                            <span class="stats-label">Character Count:</span>
+                            <span class="stats-value">{{ result.ocr_text|length if result.ocr_text else 0 }}</span>
+                        </li>
+                        <li class="stats-item">
+                            <span class="stats-label">Word Count:</span>
+                            <span class="stats-value">{{ result.ocr_text.split()|length if result.ocr_text else 0 }}</span>
+                        </li>
+                        {% if result.has_japanese %}
+                        <li class="stats-item">
+                            <span class="stats-label">Japanese Text:</span>
+                            <span class="stats-value">Yes</span>
+                        </li>
+                        {% endif %}
+                        {% if result.extracted_images %}
+                        <li class="stats-item">
+                            <span class="stats-label">Extracted Images:</span>
+                            <span class="stats-value">{{ result.extracted_images|length }}</span>
+                        </li>
+                        {% endif %}
+                    </ul>
+
+                    <!-- Confidence Bar -->
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" style="width: {{ result.ocr_confidence }}%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Search -->
+            <div class="sidebar-section">
+                <h4 class="sidebar-title">
+                    <span aria-hidden="true">🔍</span> Search Text
+                </h4>
+                <div class="sidebar-content">
+                    <div class="search-container">
+                        <input type="text" class="search-input" placeholder="Search in document..."
+                               aria-label="Search document text">
+                        <div class="search-results"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Content Area -->
+        <div class="viewer-content">
+            <div class="content-container original-view">
+                <!-- OCR Text Content -->
+                <div class="ocr-content">
+                    {% if result.ocr_text %}
+                        {{ result.ocr_text|safe }}
+                    {% else %}
+                        <div class="no-content">
+                            <p>No text content available for this document.</p>
+                        </div>
+                    {% endif %}
+                </div>
+
+                <!-- Extracted Images -->
+                {% if result.extracted_images %}
+                <div class="extracted-images">
+                    <h3>Extracted Images and Diagrams</h3>
+                    {% for image in result.extracted_images %}
+                    <div class="embedded-content">
+                        {% if image.path %}
+                        <img src="{{ url_for('static', filename='extracted_content/' + image.path) }}"
+                             alt="Extracted image {{ loop.index }}"
+                             class="embedded-image"
+                             loading="lazy">
+                        {% else %}
+                        <div class="image-placeholder">
+                            <span class="placeholder-icon">🖼️</span>
+                            <div class="placeholder-text">Image {{ loop.index }}</div>
+                            <div class="placeholder-details">
+                                Type: {{ image.type or 'Unknown' }}<br>
+                                Position: ({{ image.x or 0 }}, {{ image.y or 0 }})<br>
+                                Size: {{ image.width or 0 }} × {{ image.height or 0 }}
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {% if image.caption %}
+                        <div class="image-caption">{{ image.caption }}</div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% elif document.status == 'processing' %}
+<!-- Processing State -->
+<div class="viewer-loading">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">Processing document... This may take a few minutes.</div>
+    <div class="loading-details">
+        <p>The system is analyzing your document and extracting text and images.</p>
+        <button class="btn btn-secondary" onclick="refreshStatus()">Check Status</button>
+    </div>
+</div>
+
+{% elif document.status == 'uploaded' %}
+<!-- Unprocessed State -->
+<div class="viewer-loading">
+    <div class="loading-text">Document uploaded but not yet processed.</div>
+    <div class="loading-details">
+        <p>Click the button below to start OCR processing.</p>
+        <a href="{{ url_for('process_document', document_id=document.id) }}" class="btn btn-primary">
+            <span aria-hidden="true">⚙️</span> Start Processing
+        </a>
+    </div>
+</div>
+
+{% else %}
+<!-- Error State -->
+<div class="viewer-error">
+    <div class="error-icon">⚠️</div>
+    <div class="error-message">Unable to display document</div>
+    <div class="error-details">
+        Status: {{ document.status }}<br>
+        {% if document.error_message %}
+        Error: {{ document.error_message }}
+        {% endif %}
+    </div>
+    <div class="error-actions">
+        <button class="btn btn-warning" onclick="retryProcessing({{ document.id }})">
+            <span aria-hidden="true">🔄</span> Retry Processing
+        </button>
+        <a href="{{ url_for('gallery') }}" class="btn btn-secondary">
+            <span aria-hidden="true">📚</span> Back to Gallery
+        </a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<!-- Viewer JavaScript -->
+{% if document.status == 'completed' %}
+<script src="{{ url_for('static', filename='js/viewer.js') }}"></script>
+<script src="{{ url_for('static', filename='js/japanese.js') }}"></script>
+{% endif %}
+
+<script>
+// Page-specific functionality
+document.addEventListener('DOMContentLoaded', function() {
+    // Auto-refresh for processing documents
+    {% if document.status == 'processing' %}
+    // Check status every 10 seconds
+    setInterval(refreshStatus, 10000);
+    {% endif %}
+
+    // Add document data for JavaScript access
+    window.documentData = {
+        id: {{ document.id }},
+        status: '{{ document.status }}',
+        filename: '{{ document.original_filename }}',
+        {% if result %}
+        hasJapanese: {{ result.has_japanese|lower }},
+        confidence: {{ result.ocr_confidence }},
+        {% endif %}
+    };
+});
+
+// Document actions
+function downloadDocument(documentId) {
+    window.open(`/download/${documentId}`, '_blank');
+}
+
+function shareDocument(documentId) {
+    const url = window.location.href;
+    if (navigator.share) {
+        navigator.share({
+            title: '{{ document.original_filename }}',
+            text: 'View this digitized martial arts document',
+            url: url
+        });
+    } else {
+        // Fallback: copy to clipboard
+        navigator.clipboard.writeText(url).then(() => {
+            alert('Document link copied to clipboard');
+        });
+    }
+}
+
+function printDocument() {
+    window.print();
+}
+
+function refreshStatus() {
+    const refreshBtn = document.getElementById('refresh-btn');
+    if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.innerHTML = '<span aria-hidden="true">🔄</span> Checking...';
+    }
+
+    fetch(`/api/status/{{ document.id }}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'completed') {
+                window.location.reload();
+            } else if (data.status === 'failed') {
+                window.location.reload();
+            } else {
+                // Update status display
+                setTimeout(() => {
+                    if (refreshBtn) {
+                        refreshBtn.disabled = false;
+                        refreshBtn.innerHTML = '<span aria-hidden="true">🔄</span> Refresh Status';
+                    }
+                }, 2000);
+            }
+        })
+        .catch(error => {
+            console.error('Status check failed:', error);
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.innerHTML = '<span aria-hidden="true">🔄</span> Refresh Status';
+            }
+        });
+}
+
+function retryProcessing(documentId) {
+    if (confirm('Retry processing this document? This will start the OCR process again.')) {
+        fetch(`/retry/${documentId}`, { method: 'POST' })
+            .then(response => {
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    alert('Failed to retry processing. Please try again.');
+                }
+            })
+            .catch(error => {
+                console.error('Retry failed:', error);
+                alert('Failed to retry processing. Please try again.');
+            });
+    }
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+    if (e.target.tagName === 'INPUT') return;
+
+    switch (e.key) {
+        case 'r':
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                refreshStatus();
+            }
+            break;
+        case 'p':
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                printDocument();
+            }
+            break;
+        case 'Escape':
+            // Close any open modals or return to gallery
+            if (!document.querySelector('.modal.active')) {
+                window.history.back();
+            }
+            break;
+    }
+});
+
+// Page visibility API for auto-refresh
+document.addEventListener('visibilitychange', function() {
+    if (!document.hidden && window.documentData.status === 'processing') {
+        // Refresh when page becomes visible and document is processing
+        setTimeout(refreshStatus, 1000);
+    }
+});
+</script>
+{% endblock %}
