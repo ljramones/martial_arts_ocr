@@ -31,6 +31,8 @@ class Config:
     UPLOAD_FOLDER = str(UPLOAD_DIR)
     ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png', 'tiff', 'tif', 'bmp'}
 
+    ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
+
     # Database settings
     DATABASE_URL = f"sqlite:///{BASE_DIR / 'martial_arts_ocr.db'}"
 
@@ -58,6 +60,8 @@ class Config:
         'resize_factor': 1.5,  # Upscale factor for better OCR
         'min_image_size': (100, 100),  # Minimum size to consider as image
         'max_image_size': (2000, 2000),  # Maximum size before downscaling
+        "illumination_correct": True,
+        "morph_close": False,  # set True if strokes look broken
     }
 
     # Layout detection settings

@@ -55,7 +55,7 @@ brew install mecab mecab-ipadic
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone https://github.com/ljramones/martial_arts_ocr
 cd martial_arts_ocr
 ```
 

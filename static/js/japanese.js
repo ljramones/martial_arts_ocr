@@ -8,7 +8,7 @@ class JapaneseTextManager {
         this.tooltips = new Map();
         this.romajiCache = new Map();
         this.translationCache = new Map();
-        this.isEnabled = true;
+        this.isEnabled = true;  // will be gated by data-japanese-detected
         this.showRomaji = true;
         this.showTranslations = true;
         this.autoDetect = true;
@@ -78,8 +78,7 @@ class JapaneseTextManager {
         });
 
         observer.observe(document.body, {
-            childList: true,
-            subtree: true
+            childList: true, subtree: true
         });
     }
 
@@ -116,27 +115,19 @@ class JapaneseTextManager {
 
     getTextNodes(element) {
         const textNodes = [];
-        const walker = document.createTreeWalker(
-            element,
-            NodeFilter.SHOW_TEXT,
-            {
-                acceptNode: (node) => {
-                    // Skip already processed nodes and script/style elements
-                    const parent = node.parentElement;
-                    if (!parent) return NodeFilter.FILTER_REJECT;
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+            acceptNode: (node) => {
+                // Skip already processed nodes and script/style elements
+                const parent = node.parentElement;
+                if (!parent) return NodeFilter.FILTER_REJECT;
 
-                    if (parent.classList.contains('japanese-text') ||
-                        parent.classList.contains('romaji') ||
-                        parent.classList.contains('translation') ||
-                        parent.tagName === 'SCRIPT' ||
-                        parent.tagName === 'STYLE') {
-                        return NodeFilter.FILTER_REJECT;
-                    }
-
-                    return node.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+                if (parent.classList.contains('japanese-text') || parent.classList.contains('romaji') || parent.classList.contains('translation') || parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE') {
+                    return NodeFilter.FILTER_REJECT;
                 }
+
+                return node.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
             }
-        );
+        });
 
         let node;
         while (node = walker.nextNode()) {
@@ -153,9 +144,7 @@ class JapaneseTextManager {
 
         while ((match = japaneseRegex.exec(text)) !== null) {
             segments.push({
-                text: match[0],
-                start: match.index,
-                end: match.index + match[0].length
+                text: match[0], start: match.index, end: match.index + match[0].length
             });
         }
 
@@ -220,10 +209,7 @@ class JapaneseTextManager {
     async processJapaneseTextAsync(text, container) {
         try {
             // Get romanization and translation
-            const [romaji, translation] = await Promise.all([
-                this.getRomanization(text),
-                this.getTranslation(text)
-            ]);
+            const [romaji, translation] = await Promise.all([this.getRomanization(text), this.getTranslation(text)]);
 
             this.removeLoadingIndicator(container);
 
@@ -264,11 +250,9 @@ class JapaneseTextManager {
 
             // Fallback to server-side romanization
             const response = await fetch('/api/romanize', {
-                method: 'POST',
-                headers: {
+                method: 'POST', headers: {
                     'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ text: text })
+                }, body: JSON.stringify({text: text})
             });
 
             if (response.ok) {
@@ -292,13 +276,10 @@ class JapaneseTextManager {
 
         try {
             const response = await fetch('/api/translate', {
-                method: 'POST',
-                headers: {
+                method: 'POST', headers: {
                     'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    text: text,
-                    target_language: this.currentLanguage
+                }, body: JSON.stringify({
+                    text: text, target_language: this.currentLanguage
                 })
             });
 
@@ -319,24 +300,85 @@ class JapaneseTextManager {
         // Simple client-side romanization for common characters
         // This is a fallback - server-side processing is preferred
         const romajiMap = {
-            'あ': 'a', 'い': 'i', 'う': 'u', 'え': 'e', 'お': 'o',
-            'か': 'ka', 'き': 'ki', 'く': 'ku', 'け': 'ke', 'こ': 'ko',
-            'が': 'ga', 'ぎ': 'gi', 'ぐ': 'gu', 'げ': 'ge', 'ご': 'go',
-            'さ': 'sa', 'し': 'shi', 'す': 'su', 'せ': 'se', 'そ': 'so',
-            'ざ': 'za', 'じ': 'ji', 'ず': 'zu', 'ぜ': 'ze', 'ぞ': 'zo',
-            'た': 'ta', 'ち': 'chi', 'つ': 'tsu', 'て': 'te', 'と': 'to',
-            'だ': 'da', 'ぢ': 'ji', 'づ': 'zu', 'で': 'de', 'ど': 'do',
-            'な': 'na', 'に': 'ni', 'ぬ': 'nu', 'ね': 'ne', 'の': 'no',
-            'は': 'ha', 'ひ': 'hi', 'ふ': 'fu', 'へ': 'he', 'ほ': 'ho',
-            'ば': 'ba', 'び': 'bi', 'ぶ': 'bu', 'べ': 'be', 'ぼ': 'bo',
-            'ぱ': 'pa', 'ぴ': 'pi', 'ぷ': 'pu', 'ぺ': 'pe', 'ぽ': 'po',
-            'ま': 'ma', 'み': 'mi', 'む': 'mu', 'め': 'me', 'も': 'mo',
-            'や': 'ya', 'ゆ': 'yu', 'よ': 'yo',
-            'ら': 'ra', 'り': 'ri', 'る': 'ru', 'れ': 're', 'ろ': 'ro',
-            'わ': 'wa', 'を': 'wo', 'ん': 'n',
-            // Common kanji
-            '武': 'bu', '道': 'dō', '空': 'kara', '手': 'te',
-            '柔': 'jū', '術': 'jutsu', '剣': 'ken', '型': 'kata'
+            'あ': 'a',
+            'い': 'i',
+            'う': 'u',
+            'え': 'e',
+            'お': 'o',
+            'か': 'ka',
+            'き': 'ki',
+            'く': 'ku',
+            'け': 'ke',
+            'こ': 'ko',
+            'が': 'ga',
+            'ぎ': 'gi',
+            'ぐ': 'gu',
+            'げ': 'ge',
+            'ご': 'go',
+            'さ': 'sa',
+            'し': 'shi',
+            'す': 'su',
+            'せ': 'se',
+            'そ': 'so',
+            'ざ': 'za',
+            'じ': 'ji',
+            'ず': 'zu',
+            'ぜ': 'ze',
+            'ぞ': 'zo',
+            'た': 'ta',
+            'ち': 'chi',
+            'つ': 'tsu',
+            'て': 'te',
+            'と': 'to',
+            'だ': 'da',
+            'ぢ': 'ji',
+            'づ': 'zu',
+            'で': 'de',
+            'ど': 'do',
+            'な': 'na',
+            'に': 'ni',
+            'ぬ': 'nu',
+            'ね': 'ne',
+            'の': 'no',
+            'は': 'ha',
+            'ひ': 'hi',
+            'ふ': 'fu',
+            'へ': 'he',
+            'ほ': 'ho',
+            'ば': 'ba',
+            'び': 'bi',
+            'ぶ': 'bu',
+            'べ': 'be',
+            'ぼ': 'bo',
+            'ぱ': 'pa',
+            'ぴ': 'pi',
+            'ぷ': 'pu',
+            'ぺ': 'pe',
+            'ぽ': 'po',
+            'ま': 'ma',
+            'み': 'mi',
+            'む': 'mu',
+            'め': 'me',
+            'も': 'mo',
+            'や': 'ya',
+            'ゆ': 'yu',
+            'よ': 'yo',
+            'ら': 'ra',
+            'り': 'ri',
+            'る': 'ru',
+            'れ': 're',
+            'ろ': 'ro',
+            'わ': 'wa',
+            'を': 'wo',
+            'ん': 'n', // Common kanji
+            '武': 'bu',
+            '道': 'dō',
+            '空': 'kara',
+            '手': 'te',
+            '柔': 'jū',
+            '術': 'jutsu',
+            '剣': 'ken',
+            '型': 'kata'
         };
 
         let result = '';
@@ -361,9 +403,7 @@ class JapaneseTextManager {
     }
 
     isJapaneseElement(element) {
-        return element.classList.contains('japanese-text') ||
-               element.classList.contains('japanese-container') ||
-               element.closest('.japanese-segment');
+        return element.classList.contains('japanese-text') || element.classList.contains('japanese-container') || element.closest('.japanese-segment');
     }
 
     enhanceJapaneseElement(element) {
@@ -503,9 +543,7 @@ class JapaneseTextManager {
 
         if (!japaneseText || (!romaji && !translation)) return;
 
-        const tooltip = this.createTooltip(japaneseText.textContent,
-                                         romaji?.textContent,
-                                         translation?.textContent);
+        const tooltip = this.createTooltip(japaneseText.textContent, romaji?.textContent, translation?.textContent);
 
         this.positionTooltip(tooltip, event);
         this.tooltips.set(container, tooltip);
@@ -523,15 +561,28 @@ class JapaneseTextManager {
         const tooltip = document.createElement('div');
         tooltip.className = 'japanese-tooltip';
 
-        let content = `<div class="tooltip-japanese">${japanese}</div>`;
-        if (romaji) content += `<div class="tooltip-romaji">${romaji}</div>`;
-        if (translation) content += `<div class="tooltip-translation">${translation}</div>`;
+        const tj = document.createElement('div');
+        tj.className = 'tooltip-japanese';
+        tj.textContent = japanese;
+        tooltip.appendChild(tj);
 
-        tooltip.innerHTML = content;
+        if (romaji) {
+            const tr = document.createElement('div');
+            tr.className = 'tooltip-romaji';
+            tr.textContent = romaji;
+            tooltip.appendChild(tr);
+        }
+        if (translation) {
+            const tt = document.createElement('div');
+            tt.className = 'tooltip-translation';
+            tt.textContent = translation;
+            tooltip.appendChild(tt);
+        }
+
         document.body.appendChild(tooltip);
-
         return tooltip;
     }
+
 
     positionTooltip(tooltip, event) {
         const rect = event.target.getBoundingClientRect();
@@ -573,11 +624,11 @@ class JapaneseTextManager {
 
         menu.addEventListener('click', (e) => {
             const action = e.target.dataset.action;
-            this.handleContextMenuAction(action, { japaneseText, romaji, translation });
+            this.handleContextMenuAction(action, {japaneseText, romaji, translation});
             menu.remove();
         });
 
-        document.addEventListener('click', () => menu.remove(), { once: true });
+        document.addEventListener('click', () => menu.remove(), {once: true});
 
         menu.style.left = `${event.clientX}px`;
         menu.style.top = `${event.clientY}px`;
@@ -970,19 +1021,13 @@ class JapaneseTextManager {
 
     async processText(text) {
         if (!this.containsJapanese(text)) {
-            return { text, hasJapanese: false };
+            return {text, hasJapanese: false};
         }
 
-        const [romaji, translation] = await Promise.all([
-            this.getRomanization(text),
-            this.getTranslation(text)
-        ]);
+        const [romaji, translation] = await Promise.all([this.getRomanization(text), this.getTranslation(text)]);
 
         return {
-            text,
-            romaji,
-            translation,
-            hasJapanese: true
+            text, romaji, translation, hasJapanese: true
         };
     }
 
@@ -1066,8 +1111,7 @@ const JapaneseUtils = {
             katakana,
             kanji,
             total: hiragana + katakana + kanji,
-            primaryScript: hiragana > katakana && hiragana > kanji ? 'hiragana' :
-                          katakana > hiragana && katakana > kanji ? 'katakana' : 'kanji'
+            primaryScript: hiragana > katakana && hiragana > kanji ? 'hiragana' : katakana > hiragana && katakana > kanji ? 'katakana' : 'kanji'
         };
     },
 
@@ -1075,26 +1119,26 @@ const JapaneseUtils = {
      * Common martial arts terms dictionary
      */
     martialArtsTerms: {
-        '武道': { romaji: 'budō', translation: 'martial way' },
-        '武術': { romaji: 'bujutsu', translation: 'martial art/technique' },
-        '空手': { romaji: 'karate', translation: 'empty hand' },
-        '柔道': { romaji: 'jūdō', translation: 'gentle way' },
-        '剣道': { romaji: 'kendō', translation: 'way of the sword' },
-        '合気道': { romaji: 'aikidō', translation: 'way of harmonious spirit' },
-        '型': { romaji: 'kata', translation: 'form/pattern' },
-        '組手': { romaji: 'kumite', translation: 'sparring' },
-        '道場': { romaji: 'dōjō', translation: 'training hall' },
-        '先生': { romaji: 'sensei', translation: 'teacher' },
-        '弟子': { romaji: 'deshi', translation: 'student/disciple' },
-        '段': { romaji: 'dan', translation: 'rank/degree' },
-        '級': { romaji: 'kyū', translation: 'grade' },
-        '帯': { romaji: 'obi', translation: 'belt' },
-        '黒帯': { romaji: 'kuro-obi', translation: 'black belt' },
-        '白帯': { romaji: 'shiro-obi', translation: 'white belt' },
-        '気': { romaji: 'ki', translation: 'spirit/energy' },
-        '心': { romaji: 'kokoro/shin', translation: 'heart/mind' },
-        '礼': { romaji: 'rei', translation: 'bow/respect' },
-        '和': { romaji: 'wa', translation: 'harmony' }
+        '武道': {romaji: 'budō', translation: 'martial way'},
+        '武術': {romaji: 'bujutsu', translation: 'martial art/technique'},
+        '空手': {romaji: 'karate', translation: 'empty hand'},
+        '柔道': {romaji: 'jūdō', translation: 'gentle way'},
+        '剣道': {romaji: 'kendō', translation: 'way of the sword'},
+        '合気道': {romaji: 'aikidō', translation: 'way of harmonious spirit'},
+        '型': {romaji: 'kata', translation: 'form/pattern'},
+        '組手': {romaji: 'kumite', translation: 'sparring'},
+        '道場': {romaji: 'dōjō', translation: 'training hall'},
+        '先生': {romaji: 'sensei', translation: 'teacher'},
+        '弟子': {romaji: 'deshi', translation: 'student/disciple'},
+        '段': {romaji: 'dan', translation: 'rank/degree'},
+        '級': {romaji: 'kyū', translation: 'grade'},
+        '帯': {romaji: 'obi', translation: 'belt'},
+        '黒帯': {romaji: 'kuro-obi', translation: 'black belt'},
+        '白帯': {romaji: 'shiro-obi', translation: 'white belt'},
+        '気': {romaji: 'ki', translation: 'spirit/energy'},
+        '心': {romaji: 'kokoro/shin', translation: 'heart/mind'},
+        '礼': {romaji: 'rei', translation: 'bow/respect'},
+        '和': {romaji: 'wa', translation: 'harmony'}
     },
 
     /**
@@ -1108,12 +1152,22 @@ const JapaneseUtils = {
 // Initialize Japanese text manager when DOM is ready
 let japaneseTextManager;
 
-document.addEventListener('DOMContentLoaded', function() {
-    // Only initialize if there's Japanese content or if we're on a viewer page
-    if (document.querySelector('.japanese-text, .japanese-segment') ||
-        document.querySelector('.document-viewer')) {
-        japaneseTextManager = new JapaneseTextManager();
+document.addEventListener('DOMContentLoaded', function () {
+    // read flag from data-attribute, meta, or global
+    const container = document.querySelector('.viewer-content');
+    const dsFlag = container?.dataset?.japaneseDetected;
+    const metaFlag = document.querySelector('meta[name="x-japanese-detected"]')?.getAttribute('content');
+    const globalFlag = (typeof window !== 'undefined' && window.__processingMeta) ? window.__processingMeta.has_japanese : undefined;
+
+    const hasJapanese = (typeof globalFlag !== 'undefined' ? !!globalFlag : (typeof dsFlag !== 'undefined' ? /^(true|1|yes)$/i.test(dsFlag) : (typeof metaFlag !== 'undefined' && metaFlag !== null ? /^(true|1|yes)$/i.test(metaFlag) : false)));
+
+    if (!hasJapanese) {
+        // gate: do not initialize tools/UI if there is no real kana/kanji
+        return;
     }
+
+    japaneseTextManager = new JapaneseTextManager();
+    japaneseTextManager.init();
 });
 
 // CSS for Japanese text interactions (injected dynamically)
@@ -1401,5 +1455,5 @@ document.head.appendChild(styleSheet);
 
 // Export for use in other scripts
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { JapaneseTextManager, JapaneseUtils };
+    module.exports = {JapaneseTextManager, JapaneseUtils};
 }

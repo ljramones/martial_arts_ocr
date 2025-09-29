@@ -193,7 +193,7 @@ class UploadManager {
             };
         }
 
-        return { valid: true };
+        return {valid: true};
     }
 
     showFilePreview(file) {
@@ -251,12 +251,12 @@ class UploadManager {
         }
     }
 
+    // Replace your startUpload with this one
     async startUpload() {
-        if (this.currentFiles.length === 0) {
+        if (!this.currentFiles || this.currentFiles.length === 0) {
             this.showError('No file selected');
             return;
         }
-
         if (this.uploadInProgress) {
             console.warn('Upload already in progress');
             return;
@@ -265,21 +265,60 @@ class UploadManager {
         this.uploadInProgress = true;
         this.showProgress(true);
 
+        const file = this.currentFiles[0];
+        let succeeded = false;
+
         try {
+            // Build payload
             const formData = new FormData();
-            formData.append('file', this.currentFiles[0]);
+            formData.append('file', file);
 
-            const response = await this.uploadWithProgress(formData);
+            // Kick off upload (with your progress handler)
+            const res = await this.uploadWithProgress(formData);
 
-            if (response.success) {
-                this.handleUploadSuccess(response);
+            // Support both: Response instance OR already-parsed object
+            let payload;
+            if (res && typeof res === 'object' && typeof res.ok === 'boolean') {
+                // It's a fetch Response
+                if (!res.ok) {
+                    const text = await res.text().catch(() => '');
+                    throw new Error(text || `Upload failed (${res.status})`);
+                }
+                payload = await res.json().catch(() => ({}));
             } else {
-                this.handleUploadError(response.error || 'Upload failed');
+                // It's your custom result object
+                payload = res || {};
             }
-        } catch (error) {
-            this.handleUploadError(error.message);
+
+            // Normalize success/error
+            const success = Boolean(payload.success ?? (typeof payload.documentId === 'number'));
+            if (!success) {
+                const msg = payload.error || 'Upload failed';
+                throw new Error(msg);
+            }
+
+            // Optional UX: nudge progress into processing phase
+            this.updateProgress?.(25, 'Analyzing document…');
+
+            // Hand off to success flow (should start status polling / redirect)
+            this.handleUploadSuccess(payload);
+            succeeded = true; // keep progress visible; polling takes over
+        } catch (err) {
+            // Show a friendly message and reset UI
+            const message = (err && err.message) ? err.message : 'Upload failed';
+            this.handleUploadError
+                ? this.handleUploadError(message)
+                : this.showError(message);
+
+            // Optional: clear the bar on failure
+            this.updateProgress?.(0, '');
+            this.showProgress(false);
+        } finally {
+            // If we didn’t hand off to the processing monitor, unlock the button
+            if (!succeeded) this.uploadInProgress = false;
         }
     }
+
 
     async uploadWithProgress(formData) {
         return new Promise((resolve, reject) => {
@@ -304,7 +343,7 @@ class UploadManager {
                             if (match) {
                                 const documentId = match[1];
                                 this.startProcessingMonitor(documentId);
-                                resolve({ success: true, documentId });
+                                resolve({success: true, documentId});
                             } else {
                                 window.location.href = xhr.responseURL;
                             }
@@ -571,7 +610,7 @@ function formatProcessingTime(seconds) {
 
 function createImagePreview(file, container) {
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = function (e) {
         const img = document.createElement('img');
         img.src = e.target.result;
         img.className = 'preview-image';
@@ -585,11 +624,11 @@ function createImagePreview(file, container) {
 // Initialize upload manager when DOM is ready
 let uploadManager;
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     uploadManager = new UploadManager();
 
     // Global error handler for upload failures
-    window.addEventListener('error', function(e) {
+    window.addEventListener('error', function (e) {
         if (uploadManager && uploadManager.uploadInProgress) {
             console.error('Global error during upload:', e.error);
             uploadManager.handleUploadError('An unexpected error occurred');
@@ -597,7 +636,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Handle browser back/forward buttons during upload
-    window.addEventListener('beforeunload', function(e) {
+    window.addEventListener('beforeunload', function (e) {
         if (uploadManager && uploadManager.uploadInProgress) {
             e.preventDefault();
             e.returnValue = 'Upload in progress. Are you sure you want to leave?';
@@ -608,5 +647,5 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Export for use in other scripts
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { UploadManager, formatProcessingTime, createImagePreview };
+    module.exports = {UploadManager, formatProcessingTime, createImagePreview};
 }

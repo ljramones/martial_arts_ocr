@@ -48,13 +48,18 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
     cursor.close()
 
 
-# Create session factory
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Create scoped session for thread safety
+# Create the session factory
+SessionLocal = sessionmaker(
+    bind=engine,
+    autoflush=False,
+    autocommit=False,
+    expire_on_commit=False,
+    future=True,
+)
+# Create a scoped session for thread safety
 Session = scoped_session(SessionLocal)
 
-# Create declarative base for models
+# Create a declarative base for models
 Base = declarative_base()
 
 

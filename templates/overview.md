@@ -105,7 +105,7 @@ The templates are architected around the specific needs of academic martial arts
 **Hero Section**:
 ```html
 <div class="upload-hero">
-    <h2>Professional Martial Arts Document OCR</h2>
+    <h2>Martial Arts Document OCR</h2>
     <div class="hero-features">
         <div class="feature-item">
             <span class="feature-icon">🇯🇵</span>

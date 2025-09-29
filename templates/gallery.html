@@ -22,235 +22,69 @@
         border: 1px solid #e1e8ed;
     }
 
-    .controls-row {
-        display: flex;
-        gap: 1rem;
-        align-items: center;
-        flex-wrap: wrap;
-    }
-
-    .search-box {
-        flex: 1;
-        min-width: 250px;
-        position: relative;
-    }
+    .controls-row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+    .search-box { flex: 1; min-width: 250px; position: relative; }
 
     .search-input {
-        width: 100%;
-        padding: 0.75rem 1rem 0.75rem 2.5rem;
-        border: 2px solid #e1e8ed;
-        border-radius: 6px;
-        font-size: 1rem;
+        width: 100%; padding: 0.75rem 1rem 0.75rem 2.5rem;
+        border: 2px solid #e1e8ed; border-radius: 6px; font-size: 1rem;
         transition: border-color 0.3s ease;
     }
+    .search-input:focus { outline: none; border-color: #3498db; box-shadow: 0 0 0 3px rgba(52,152,219,.1); }
+    .search-icon { position: absolute; left: .75rem; top: 50%; transform: translateY(-50%); color: #7f8c8d; font-size: 1.1rem; }
 
-    .search-input:focus {
-        outline: none;
-        border-color: #3498db;
-        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
-    }
+    .filter-controls { display: flex; gap: 1rem; align-items: center; }
+    .filter-group { display: flex; align-items: center; gap: .5rem; }
+    .filter-label { font-weight: 500; color: #5a6c7d; white-space: nowrap; }
+    .filter-select { padding: .5rem; border: 1px solid #dee2e6; border-radius: 4px; background: white; min-width: 120px; }
 
-    .search-icon {
-        position: absolute;
-        left: 0.75rem;
-        top: 50%;
-        transform: translateY(-50%);
-        color: #7f8c8d;
-        font-size: 1.1rem;
-    }
-
-    .filter-controls {
-        display: flex;
-        gap: 1rem;
-        align-items: center;
-    }
-
-    .filter-group {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .filter-label {
-        font-weight: 500;
-        color: #5a6c7d;
-        white-space: nowrap;
-    }
-
-    .filter-select {
-        padding: 0.5rem;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        background: white;
-        min-width: 120px;
-    }
-
-    .view-toggle {
-        display: flex;
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        overflow: hidden;
-    }
-
-    .view-btn {
-        padding: 0.5rem 1rem;
-        border: none;
-        background: white;
-        cursor: pointer;
-        transition: background 0.2s ease;
-        border-right: 1px solid #dee2e6;
-    }
-
-    .view-btn:last-child {
-        border-right: none;
-    }
-
-    .view-btn.active {
-        background: #3498db;
-        color: white;
-    }
-
-    .view-btn:hover:not(.active) {
-        background: #f8f9fa;
-    }
+    .view-toggle { display: flex; border: 1px solid #dee2e6; border-radius: 6px; overflow: hidden; }
+    .view-btn { padding: .5rem 1rem; border: none; background: white; cursor: pointer; transition: background .2s ease; border-right: 1px solid #dee2e6; }
+    .view-btn:last-child { border-right: none; }
+    .view-btn.active { background: #3498db; color: white; }
+    .view-btn:hover:not(.active) { background: #f8f9fa; }
 
     .gallery-stats {
-        background: #f8f9fa;
-        padding: 1rem 1.5rem;
-        border-radius: 6px;
-        margin-bottom: 2rem;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 1rem;
+        background: #f8f9fa; padding: 1rem 1.5rem; border-radius: 6px; margin-bottom: 2rem;
+        display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;
     }
+    .stats-group { display: flex; gap: 2rem; }
+    .stat-item { text-align: center; }
+    .stat-value { font-size: 1.5rem; font-weight: 600; color: #2c3e50; display: block; }
+    .stat-label { font-size: .85rem; color: #6c757d; text-transform: uppercase; letter-spacing: .5px; }
 
-    .stats-group {
-        display: flex;
-        gap: 2rem;
-    }
+    .gallery-grid.list-view { display: block; }
+    .gallery-grid.list-view .document-card { display: flex; margin-bottom: 1rem; max-width: none; }
+    .gallery-grid.list-view .card-thumbnail { width: 120px; height: 80px; flex-shrink: 0; }
+    .gallery-grid.list-view .card-content { flex: 1; display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; }
+    .gallery-grid.list-view .card-info { flex: 1; }
+    .gallery-grid.list-view .card-meta { margin: .5rem 0; }
+    .gallery-grid.list-view .card-actions { flex-direction: row; margin: 0; }
 
-    .stat-item {
-        text-align: center;
-    }
+    .empty-gallery { text-align: center; padding: 4rem 2rem; color: #6c757d; }
+    .empty-icon { font-size: 4rem; margin-bottom: 1rem; opacity: .5; }
+    .empty-title { font-size: 1.5rem; margin-bottom: 1rem; color: #495057; }
+    .empty-description { margin-bottom: 2rem; max-width: 400px; margin-left: auto; margin-right: auto; }
 
-    .stat-value {
-        font-size: 1.5rem;
-        font-weight: 600;
-        color: #2c3e50;
-        display: block;
+    /* Small stat badges (inside cards) */
+    .card-stats { margin-top: .5rem; }
+    .stats-row { display: flex; gap: .75rem; flex-wrap: wrap; }
+    .stat-badge {
+        display: inline-flex; align-items: center; gap: .4rem;
+        padding: .35rem .6rem; border-radius: 999px; border: 1px solid #dee2e6; background: #fff; font-size: .85rem;
     }
-
-    .stat-label {
-        font-size: 0.85rem;
-        color: #6c757d;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-
-    .gallery-grid.list-view {
-        display: block;
-    }
-
-    .gallery-grid.list-view .document-card {
-        display: flex;
-        margin-bottom: 1rem;
-        max-width: none;
-    }
-
-    .gallery-grid.list-view .card-thumbnail {
-        width: 120px;
-        height: 80px;
-        flex-shrink: 0;
-    }
-
-    .gallery-grid.list-view .card-content {
-        flex: 1;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 1rem 1.5rem;
-    }
-
-    .gallery-grid.list-view .card-info {
-        flex: 1;
-    }
-
-    .gallery-grid.list-view .card-meta {
-        margin: 0.5rem 0;
-    }
-
-    .gallery-grid.list-view .card-actions {
-        flex-direction: row;
-        margin: 0;
-    }
-
-    .empty-gallery {
-        text-align: center;
-        padding: 4rem 2rem;
-        color: #6c757d;
-    }
-
-    .empty-icon {
-        font-size: 4rem;
-        margin-bottom: 1rem;
-        opacity: 0.5;
-    }
-
-    .empty-title {
-        font-size: 1.5rem;
-        margin-bottom: 1rem;
-        color: #495057;
-    }
-
-    .empty-description {
-        margin-bottom: 2rem;
-        max-width: 400px;
-        margin-left: auto;
-        margin-right: auto;
-    }
+    .japanese-badge { border-color: #e1d5f7; }
 
     @media (max-width: 768px) {
-        .controls-row {
-            flex-direction: column;
-            align-items: stretch;
-        }
-
-        .search-box {
-            min-width: auto;
-        }
-
-        .filter-controls {
-            flex-wrap: wrap;
-        }
-
-        .gallery-stats {
-            text-align: center;
-        }
-
-        .stats-group {
-            justify-content: center;
-        }
-
-        .gallery-grid.list-view .document-card {
-            flex-direction: column;
-        }
-
-        .gallery-grid.list-view .card-thumbnail {
-            width: 100%;
-            height: 150px;
-        }
-
-        .gallery-grid.list-view .card-content {
-            flex-direction: column;
-            align-items: stretch;
-        }
-
-        .gallery-grid.list-view .card-actions {
-            flex-direction: column;
-            margin-top: 1rem;
-        }
+        .controls-row { flex-direction: column; align-items: stretch; }
+        .search-box { min-width: auto; }
+        .filter-controls { flex-wrap: wrap; }
+        .gallery-stats { text-align: center; }
+        .stats-group { justify-content: center; }
+        .gallery-grid.list-view .document-card { flex-direction: column; }
+        .gallery-grid.list-view .card-thumbnail { width: 100%; height: 150px; }
+        .gallery-grid.list-view .card-content { flex-direction: column; align-items: stretch; }
+        .gallery-grid.list-view .card-actions { flex-direction: column; margin-top: 1rem; }
     }
 </style>
 {% endblock %}
@@ -304,12 +138,8 @@
 
             <!-- View Toggle -->
             <div class="view-toggle">
-                <button class="view-btn active" data-view="grid" title="Grid view">
-                    <span aria-hidden="true">⊞</span>
-                </button>
-                <button class="view-btn" data-view="list" title="List view">
-                    <span aria-hidden="true">☰</span>
-                </button>
+                <button class="view-btn active" data-view="grid" title="Grid view"><span aria-hidden="true">⊞</span></button>
+                <button class="view-btn" data-view="list" title="List view"><span aria-hidden="true">☰</span></button>
             </div>
         </div>
     </div>
@@ -422,36 +252,34 @@
                     {% endif %}
                 </div>
 
-                <!-- Processing Statistics -->
-                {% if document.status == 'completed' and document.pages %}
+                {# Lightweight stats without ORM relations
+                   If you later add ocr_confidence (0..1) to the gallery payload,
+                   this will render as a real percent. #}
+                {% if document.status == 'completed' %}
                 <div class="card-stats">
-                    {% set page = document.pages[0] %}
-                    {% if page.processing_result %}
                     <div class="stats-row">
+                        {% if document.ocr_confidence is defined %}
                         <div class="stat-badge">
-                            <span class="stat-value">{{ page.processing_result.ocr_confidence|round(1) }}%</span>
+                            <span class="stat-value">{{ (document.ocr_confidence * 100)|round(1) }}%</span>
                             <span class="stat-label">Confidence</span>
                         </div>
-
-                        {% if page.processing_result.has_japanese %}
+                        {% endif %}
+                        {% if document.has_japanese is defined and document.has_japanese %}
                         <div class="stat-badge japanese-badge">
                             <span class="stat-icon" aria-hidden="true">🇯🇵</span>
-                            <span class="stat-label">Japanese Text</span>
+                            <span class="stat-label">Japanese</span>
                         </div>
                         {% endif %}
-
-                        {% if page.processing_result.extracted_images %}
+                        {% if document.images_count is defined and document.images_count %}
                         <div class="stat-badge">
-                            <span class="stat-value">{{ page.processing_result.extracted_images|length }}</span>
+                            <span class="stat-value">{{ document.images_count }}</span>
                             <span class="stat-label">Images</span>
                         </div>
                         {% endif %}
                     </div>
-                    {% endif %}
                 </div>
                 {% endif %}
 
-                <!-- Error Message for Failed Documents -->
                 {% if document.status == 'failed' and document.error_message %}
                 <div class="error-message">
                     <span class="error-icon" aria-hidden="true">⚠️</span>
@@ -463,11 +291,9 @@
             <!-- Card Actions -->
             <div class="card-actions">
                 {% if document.status == 'completed' %}
-                    <a href="{{ url_for('view_document', document_id=document.id) }}"
-                       class="btn btn-primary btn-sm">
+                    <a href="{{ url_for('view_document', document_id=document.id) }}" class="btn btn-primary btn-sm">
                         <span aria-hidden="true">👁️</span> View Document
                     </a>
-
                     <button class="btn btn-secondary btn-sm"
                             onclick="downloadDocument({{ document.id }})"
                             title="Download processed document">
@@ -489,8 +315,7 @@
                     </button>
 
                 {% elif document.status == 'uploaded' %}
-                    <a href="{{ url_for('process_document', document_id=document.id) }}"
-                       class="btn btn-primary btn-sm">
+                    <a href="{{ url_for('process_document', document_id=document.id) }}" class="btn btn-primary btn-sm">
                         <span aria-hidden="true">⚙️</span> Process
                     </a>
                 {% endif %}
@@ -521,27 +346,21 @@
     {% endfor %}
 </div>
 
-<!-- Pagination -->
 {% if pagination and pagination.pages > 1 %}
 <div class="pagination-container">
     <nav class="pagination" aria-label="Gallery pagination">
         {% if pagination.has_prev %}
-        <a href="{{ url_for('gallery', page=pagination.prev_num) }}"
-           class="pagination-link"
-           aria-label="Previous page">
+        <a href="{{ url_for('gallery', page=pagination.prev_num) }}" class="pagination-link" aria-label="Previous page">
             <span aria-hidden="true">‹</span> Previous
         </a>
         {% endif %}
 
         <div class="pagination-info">
-            Page {{ pagination.page }} of {{ pagination.pages }}
-            ({{ pagination.total }} documents)
+            Page {{ pagination.page }} of {{ pagination.pages }} ({{ pagination.total }} documents)
         </div>
 
         {% if pagination.has_next %}
-        <a href="{{ url_for('gallery', page=pagination.next_num) }}"
-           class="pagination-link"
-           aria-label="Next page">
+        <a href="{{ url_for('gallery', page=pagination.next_num) }}" class="pagination-link" aria-label="Next page">
             Next <span aria-hidden="true">›</span>
         </a>
         {% endif %}
@@ -576,11 +395,9 @@ document.addEventListener('DOMContentLoaded', function() {
         btn.addEventListener('click', function() {
             const view = this.dataset.view;
 
-            // Update button states
             viewButtons.forEach(b => b.classList.remove('active'));
             this.classList.add('active');
 
-            // Update gallery view
             if (galleryGrid) {
                 galleryGrid.classList.toggle('list-view', view === 'list');
                 localStorage.setItem('gallery-view', view);
@@ -588,10 +405,10 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Restore saved view preference
     const savedView = localStorage.getItem('gallery-view');
     if (savedView === 'list') {
-        document.querySelector('[data-view="list"]').click();
+        const btn = document.querySelector('[data-view="list"]');
+        if (btn) btn.click();
     }
 
     // Search functionality
@@ -602,19 +419,13 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Filter functionality
+    // Filters
     const statusFilter = document.getElementById('status-filter');
     const sortFilter = document.getElementById('sort-filter');
+    if (statusFilter) statusFilter.addEventListener('change', applyFilters);
+    if (sortFilter) sortFilter.addEventListener('change', applyFilters);
 
-    if (statusFilter) {
-        statusFilter.addEventListener('change', applyFilters);
-    }
-
-    if (sortFilter) {
-        sortFilter.addEventListener('change', applyFilters);
-    }
-
-    // Refresh button
+    // Refresh
     const refreshBtn = document.getElementById('refresh-gallery');
     if (refreshBtn) {
         refreshBtn.addEventListener('click', function() {
@@ -622,20 +433,18 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Setup dropdown menus
+    // Dropdown menus
     setupDropdownMenus();
 
-    // Auto-refresh for processing documents
+    // Auto-refresh when processing docs exist
     setupAutoRefresh();
 });
 
-// Search with debouncing
+// Debounced search
 let searchTimeout;
 function debounceSearch(query) {
     clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => {
-        performSearch(query);
-    }, 300);
+    searchTimeout = setTimeout(() => { performSearch(query); }, 300);
 }
 
 function performSearch(query) {
@@ -643,15 +452,13 @@ function performSearch(query) {
     const searchTerm = query.toLowerCase().trim();
 
     cards.forEach(card => {
-        const filename = card.dataset.filename;
+        const filename = card.dataset.filename || '';
         const visible = !searchTerm || filename.includes(searchTerm);
         card.style.display = visible ? '' : 'none';
     });
-
     updateVisibleCount();
 }
 
-// Apply filters and sorting
 function applyFilters() {
     const statusFilter = document.getElementById('status-filter').value;
     const sortFilter = document.getElementById('sort-filter').value;
@@ -664,10 +471,9 @@ function applyFilters() {
         card.style.display = visible ? '' : 'none';
     });
 
-    // Sort cards
+    // Sort visible
     const visibleCards = cards.filter(card => card.style.display !== 'none');
     sortCards(visibleCards, sortFilter);
-
     updateVisibleCount();
 }
 
@@ -677,30 +483,22 @@ function sortCards(cards, sortBy) {
 
     cards.sort((a, b) => {
         switch (sortBy) {
-            case 'date_desc':
-                return new Date(b.dataset.date) - new Date(a.dataset.date);
-            case 'date_asc':
-                return new Date(a.dataset.date) - new Date(b.dataset.date);
-            case 'name_asc':
-                return a.dataset.filename.localeCompare(b.dataset.filename);
-            case 'name_desc':
-                return b.dataset.filename.localeCompare(a.dataset.filename);
-            case 'size_desc':
-                return parseInt(b.dataset.size) - parseInt(a.dataset.size);
-            case 'size_asc':
-                return parseInt(a.dataset.size) - parseInt(b.dataset.size);
-            default:
-                return 0;
+            case 'date_desc': return new Date(b.dataset.date) - new Date(a.dataset.date);
+            case 'date_asc':  return new Date(a.dataset.date) - new Date(b.dataset.date);
+            case 'name_asc':  return a.dataset.filename.localeCompare(b.dataset.filename);
+            case 'name_desc': return b.dataset.filename.localeCompare(a.dataset.filename);
+            case 'size_desc': return parseInt(b.dataset.size) - parseInt(a.dataset.size);
+            case 'size_asc':  return parseInt(a.dataset.size) - parseInt(b.dataset.size);
+            default:          return 0;
         }
     });
 
-    // Reorder in DOM
     cards.forEach(card => gallery.appendChild(card));
 }
 
 function updateVisibleCount() {
     const visibleCards = document.querySelectorAll('.document-card:not([style*="display: none"])');
-    // Could update a count display here
+    // Could update a counter in UI if desired
 }
 
 // Document actions
@@ -710,16 +508,16 @@ function downloadDocument(documentId) {
 
 function checkProcessingStatus(documentId) {
     fetch(`/api/status/${documentId}`)
-        .then(response => response.json())
+        .then(r => r.json())
         .then(data => {
-            if (data.status === 'completed') {
+            if (data.status === 'completed' || data.status === 'failed') {
                 window.location.reload();
             } else {
                 alert(`Status: ${data.status}`);
             }
         })
-        .catch(error => {
-            console.error('Status check failed:', error);
+        .catch(err => {
+            console.error('Status check failed:', err);
             alert('Failed to check processing status');
         });
 }
@@ -727,17 +525,8 @@ function checkProcessingStatus(documentId) {
 function retryProcessing(documentId) {
     if (confirm('Retry processing this document?')) {
         fetch(`/retry/${documentId}`, { method: 'POST' })
-            .then(response => {
-                if (response.ok) {
-                    window.location.reload();
-                } else {
-                    alert('Failed to retry processing');
-                }
-            })
-            .catch(error => {
-                console.error('Retry failed:', error);
-                alert('Failed to retry processing');
-            });
+            .then(r => { if (r.ok) window.location.reload(); else alert('Failed to retry processing'); })
+            .catch(err => { console.error('Retry failed:', err); alert('Failed to retry processing'); });
     }
 }
 
@@ -749,86 +538,46 @@ function renameDocument(documentId) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: newName.trim() })
         })
-        .then(response => {
-            if (response.ok) {
-                window.location.reload();
-            } else {
-                alert('Failed to rename document');
-            }
-        })
-        .catch(error => {
-            console.error('Rename failed:', error);
-            alert('Failed to rename document');
-        });
+        .then(r => { if (r.ok) window.location.reload(); else alert('Failed to rename document'); })
+        .catch(err => { console.error('Rename failed:', err); alert('Failed to rename document'); });
     }
 }
 
 function duplicateDocument(documentId) {
     if (confirm('Create a copy of this document?')) {
         fetch(`/duplicate/${documentId}`, { method: 'POST' })
-            .then(response => {
-                if (response.ok) {
-                    window.location.reload();
-                } else {
-                    alert('Failed to duplicate document');
-                }
-            })
-            .catch(error => {
-                console.error('Duplicate failed:', error);
-                alert('Failed to duplicate document');
-            });
+            .then(r => { if (r.ok) window.location.reload(); else alert('Failed to duplicate document'); })
+            .catch(err => { console.error('Duplicate failed:', err); alert('Failed to duplicate document'); });
     }
 }
 
 function deleteDocument(documentId) {
     if (confirm('Are you sure you want to delete this document? This action cannot be undone.')) {
         fetch(`/delete/${documentId}`, { method: 'DELETE' })
-            .then(response => {
-                if (response.ok) {
-                    window.location.reload();
-                } else {
-                    alert('Failed to delete document');
-                }
-            })
-            .catch(error => {
-                console.error('Delete failed:', error);
-                alert('Failed to delete document');
-            });
+            .then(r => { if (r.ok) window.location.reload(); else alert('Failed to delete document'); })
+            .catch(err => { console.error('Delete failed:', err); alert('Failed to delete document'); });
     }
 }
 
-// Dropdown menu functionality
+// Dropdowns
 function setupDropdownMenus() {
     document.addEventListener('click', function(e) {
         if (e.target.classList.contains('dropdown-toggle')) {
             e.stopPropagation();
             const menu = e.target.nextElementSibling;
-
-            // Close all other dropdowns
-            document.querySelectorAll('.dropdown-menu.show').forEach(m => {
-                if (m !== menu) m.classList.remove('show');
-            });
-
-            // Toggle this dropdown
+            document.querySelectorAll('.dropdown-menu.show').forEach(m => { if (m !== menu) m.classList.remove('show'); });
             menu.classList.toggle('show');
         } else {
-            // Close all dropdowns when clicking outside
-            document.querySelectorAll('.dropdown-menu.show').forEach(m => {
-                m.classList.remove('show');
-            });
+            document.querySelectorAll('.dropdown-menu.show').forEach(m => m.classList.remove('show'));
         }
     });
 }
 
-// Auto-refresh for processing documents
+// Auto-refresh if anything is processing
 function setupAutoRefresh() {
     const processingCards = document.querySelectorAll('[data-status="processing"]');
-
     if (processingCards.length > 0) {
-        // Refresh every 30 seconds if there are processing documents
-        setTimeout(() => {
-            window.location.reload();
-        }, 30000);
+        setTimeout(() => { window.location.reload(); }, 30000);
     }
 }
 </script>

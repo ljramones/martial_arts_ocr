@@ -6,7 +6,7 @@ from sqlalchemy import Column, Integer, String, DateTime, Text, Float, Boolean, 
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 import json
 
 from database import Base
@@ -136,33 +136,33 @@ class ProcessingResult(Base):
     processing_time = Column(Float, nullable=False)  # Total processing time in seconds
 
     # OCR results
-    raw_ocr_text = Column(Text, nullable=True)  # Raw OCR output
-    cleaned_text = Column(Text, nullable=True)  # Cleaned OCR text
-    ocr_confidence = Column(Float, nullable=True)  # Overall OCR confidence (0-1)
-    ocr_metadata = Column(JSON, nullable=True)  # Engine-specific metadata
+    raw_ocr_text = Column(Text, nullable=True)      # Raw OCR output (plain text)
+    cleaned_text = Column(Text, nullable=True)      # Cleaned OCR text (plain text)
+    ocr_confidence = Column(Float, nullable=True)   # Overall OCR confidence (0-1)
+    ocr_metadata = Column(JSON, nullable=True)      # Engine-specific metadata
 
     # Text processing results
     has_japanese = Column(Boolean, default=False, nullable=False, index=True)
-    japanese_segments = Column(JSON, nullable=True)  # Japanese text segments
-    language_analysis = Column(JSON, nullable=True)  # Language composition analysis
-    martial_arts_terms = Column(JSON, nullable=True)  # Detected martial arts terminology
+    japanese_segments = Column(JSON, nullable=True)     # Japanese text segments
+    language_analysis = Column(JSON, nullable=True)     # Language composition analysis
+    martial_arts_terms = Column(JSON, nullable=True)    # Detected martial arts terminology
 
     # Japanese processing results
-    overall_romaji = Column(Text, nullable=True)  # Overall romanization
-    overall_translation = Column(Text, nullable=True)  # Overall translation
+    overall_romaji = Column(Text, nullable=True)        # Overall romanization
+    overall_translation = Column(Text, nullable=True)   # Overall translation
     japanese_confidence = Column(Float, nullable=True)  # Japanese processing confidence
-    japanese_metadata = Column(JSON, nullable=True)  # Japanese processing metadata
+    japanese_metadata = Column(JSON, nullable=True)     # Japanese processing metadata
 
     # Output formats
-    html_content = Column(Text, nullable=True)  # HTML with markup
+    html_content = Column(Text, nullable=True)      # HTML with markup (preferred for viewer)
     markdown_content = Column(Text, nullable=True)  # Markdown format
 
     # Extracted content
     extracted_images = Column(JSON, nullable=True)  # List of extracted image info
-    text_statistics = Column(JSON, nullable=True)  # Text analysis statistics
+    text_statistics = Column(JSON, nullable=True)   # Text analysis statistics
 
     # Quality metrics
-    quality_score = Column(Float, nullable=True)  # Overall quality assessment (0-1)
+    quality_score = Column(Float, nullable=True)    # Overall quality assessment (0-1)
     confidence_breakdown = Column(JSON, nullable=True)  # Detailed confidence metrics
 
     # Relationships
@@ -203,8 +203,16 @@ class ProcessingResult(Base):
 
     @property
     def text_content(self) -> str:
-        """Get the best available text content."""
+        """Best available plain text."""
         return self.cleaned_text or self.raw_ocr_text or ""
+
+    @property
+    def ocr_text(self) -> str:
+        """
+        Back-compat for templates that expect `result.ocr_text`.
+        Prefer rich HTML; otherwise fall back to cleaned or raw text.
+        """
+        return self.html_content or self.cleaned_text or self.raw_ocr_text or ""
 
     @property
     def has_high_confidence(self) -> bool:
@@ -319,6 +327,5 @@ def document_before_update(mapper, connection, target):
 
 @event.listens_for(ProcessingResult, 'before_insert')
 def processing_result_before_insert(mapper, connection, target):
-    """Automatically update document status when processing result is created."""
-    # This would need to be handled in the application layer to avoid circular imports
+    """Hook reserved for future use (avoid circular imports in app layer)."""
     pass

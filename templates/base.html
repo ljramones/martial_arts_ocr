@@ -9,7 +9,7 @@
     <title>{% block title %}Martial Arts OCR - Document Digitization{% endblock %}</title>
 
     <!-- Meta description for SEO -->
-    <meta name="description" content="{% block description %}Professional OCR system for digitizing martial arts documents with Japanese text support. Specialized for academic research and historical preservation.{% endblock %}">
+    <meta name="description" content="{% block description %} OCR system for digitizing martial arts documents with Japanese text support. Specialized for academic research and historical preservation.{% endblock %}">
 
     <!-- Open Graph meta tags for social sharing -->
     <meta property="og:title" content="{% block og_title %}{{ self.title() }}{% endblock %}">
@@ -18,10 +18,10 @@
     <meta property="og:url" content="{{ request.url }}">
 
     <!-- Favicon and app icons -->
-    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
-    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon-32x32.png') }}">
-    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon-16x16.png') }}">
+<!--    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">-->
+<!--    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='apple-touch-icon.png') }}">-->
+<!--    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon-32x32.png') }}">-->
+<!--    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon-16x16.png') }}">-->
 
     <!-- Preconnect to external domains for performance -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -357,17 +357,17 @@
         });
 
         // Service worker registration for PWA support (future enhancement)
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', function() {
-                navigator.serviceWorker.register('/sw.js')
-                    .then(function(registration) {
-                        console.log('ServiceWorker registration successful');
-                    })
-                    .catch(function(err) {
-                        console.log('ServiceWorker registration failed');
-                    });
-            });
-        }
+        // if ('serviceWorker' in navigator) {
+        //     window.addEventListener('load', function() {
+        //         navigator.serviceWorker.register('/sw.js')
+        //             .then(function(registration) {
+        //                 console.log('ServiceWorker registration successful');
+        //             })
+        //             .catch(function(err) {
+        //                 console.log('ServiceWorker registration failed');
+        //             });
+        //     });
+        // }
     </script>
 
     <!-- Page-specific JavaScript -->

@@ -4,7 +4,7 @@ Handles image preprocessing, enhancement, and manipulation for better OCR result
 """
 import cv2
 import numpy as np
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from pathlib import Path
 import logging
 from typing import Tuple, List, Optional, Dict, Any
@@ -66,14 +66,23 @@ class ImageProcessor:
         self.config = config.IMAGE_PROCESSING
 
     def load_image(self, image_path: str) -> np.ndarray:
-        """Load image from file path."""
+        """Load image from file path (BGR for OpenCV), honoring EXIF orientation."""
         try:
             path = Path(image_path)
             if not path.exists():
                 raise FileNotFoundError(f"Image file not found: {image_path}")
 
-            # Load with OpenCV (BGR format)
-            image = cv2.imread(str(path))
+            # Use PIL to apply EXIF orientation, then convert to OpenCV BGR
+            try:
+                with Image.open(path) as pil:
+                    pil = ImageOps.exif_transpose(pil)
+                    pil = pil.convert("RGB")
+                    arr = np.array(pil)  # RGB
+                image = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)  # -> BGR
+            except Exception as pil_e:
+                logger.warning(f"EXIF-aware load failed ({pil_e}); falling back to cv2.imread")
+                image = cv2.imread(str(path))
+
             if image is None:
                 raise ValueError(f"Could not load image: {image_path}")
 
@@ -110,43 +119,114 @@ class ImageProcessor:
             raise
 
     def preprocess_for_ocr(self, image: np.ndarray) -> np.ndarray:
-        """Apply preprocessing pipeline optimized for OCR."""
+        """Apply preprocessing pipeline optimized for OCR on dense, typewritten pages."""
         try:
-            processed = image.copy()
+            img = image.copy()
 
-            # Convert to RGB if needed
-            if len(processed.shape) == 3 and processed.shape[2] == 3:
-                processed = cv2.cvtColor(processed, cv2.COLOR_BGR2RGB)
+            # 1) BGR->RGB once
+            if img.ndim == 3 and img.shape[2] == 3:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-            # Resize if configured
-            if self.config.get('resize_factor', 1.0) != 1.0:
-                processed = self.resize_image(processed, self.config['resize_factor'])
+            # 2) optional resize up (helps typewriter dots)
+            scale = float(self.config.get('resize_factor', 1.2))
+            if scale and abs(scale - 1.0) > 1e-3:
+                img = self.resize_image(img, scale)
 
-            # Convert to grayscale for processing
-            if len(processed.shape) == 3:
-                gray = cv2.cvtColor(processed, cv2.COLOR_RGB2GRAY)
-            else:
-                gray = processed
+            # 3) grayscale
+            gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY) if img.ndim == 3 else img
 
-            # Apply preprocessing steps
+            # 4) mild deskew (your robust version)
             if self.config.get('deskew', True):
                 gray = self.deskew_image(gray)
 
+            # 5) perspective de-keystone (page contour → homography)
+            try:
+                g = gray
+                # strong edges, close small gaps
+                edges = cv2.Canny(g, 60, 160)
+                edges = cv2.dilate(edges, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)), 1)
+                cnts, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if cnts:
+                    page = max(cnts, key=cv2.contourArea)
+                    peri = cv2.arcLength(page, True)
+                    approx = cv2.approxPolyDP(page, 0.02 * peri, True)
+                    if len(approx) == 4 and cv2.contourArea(approx) > 0.25 * (g.shape[0] * g.shape[1]):
+                        # order corners
+                        pts = approx.reshape(4, 2).astype(np.float32)
+                        s = pts.sum(axis=1);
+                        d = np.diff(pts, axis=1).ravel()
+                        rect = np.zeros((4, 2), dtype=np.float32)
+                        rect[0] = pts[np.argmin(s)]  # top-left
+                        rect[2] = pts[np.max(s.argmax(), initial=0)]  # bottom-right (safe)
+                        rect[1] = pts[np.argmin(d)]  # top-right
+                        rect[3] = pts[np.argmax(d)]  # bottom-left
+                        # target size: keep aspect; push to ~2400px tall max
+                        widthA = np.linalg.norm(rect[2] - rect[3])
+                        widthB = np.linalg.norm(rect[1] - rect[0])
+                        heightA = np.linalg.norm(rect[1] - rect[2])
+                        heightB = np.linalg.norm(rect[0] - rect[3])
+                        W = int(max(widthA, widthB))
+                        H = int(max(heightA, heightB))
+                        scaleH = min(2400 / max(H, 1), 1.0)
+                        W, H = int(W * scaleH), int(H * scaleH)
+                        dst = np.array([[0, 0], [W - 1, 0], [W - 1, H - 1], [0, H - 1]], dtype=np.float32)
+                        M = cv2.getPerspectiveTransform(rect, dst)
+                        gray = cv2.warpPerspective(g, M, (W, H), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+            except Exception as _:
+                pass  # fall back gracefully
+
+            # 6) denoise (light)
             if self.config.get('denoise', True):
-                gray = self.denoise_image(gray)
+                gray = cv2.fastNlMeansDenoising(gray, None, 6, 7, 21)
 
-            if self.config.get('enhance_contrast', True):
-                gray = self.enhance_contrast(gray)
+            # 7) contrast + local binarization for tiny mono glyphs
+            # CLAHE (small tiles) → Sauvola (typewritten-friendly)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            g2 = clahe.apply(gray)
+            try:
+                # Sauvola
+                mean = cv2.boxFilter(g2, ddepth=-1, ksize=(25, 25))
+                sqmean = cv2.boxFilter((g2 * g2).astype(np.float32), ddepth=-1, ksize=(25, 25))
+                var = np.maximum(sqmean - mean.astype(np.float32) ** 2, 0)
+                std = cv2.sqrt(var)
+                R = 128.0
+                k = 0.2
+                thresh = (mean.astype(np.float32) * (1 + k * ((std / R) - 1))).astype(np.uint8)
+                bin_img = (g2 > thresh).astype(np.uint8) * 255
+            except Exception:
+                # Gaussian adaptive fallback
+                bin_img = cv2.adaptiveThreshold(g2, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                                cv2.THRESH_BINARY, 31, 10)
 
-            # Ensure image is in valid range
-            processed = self.normalize_image(gray)
+            # 8) light morphological connect (helps “i/j” dots & broken strokes)
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 1))
+            bin_img = cv2.morphologyEx(bin_img, cv2.MORPH_CLOSE, kernel, iterations=1)
 
-            logger.debug("Image preprocessing completed")
-            return processed
+            # 9) unsharp to crispen edges for OCR
+            blurred = cv2.GaussianBlur(bin_img, (0, 0), 1.0)
+            sharp = cv2.addWeighted(bin_img, 1.5, blurred, -0.5, 0)
+
+            return self.normalize_image(sharp)
 
         except Exception as e:
             logger.error(f"Preprocessing failed: {e}")
             return image
+
+    def correct_illumination(self, gray: np.ndarray) -> np.ndarray:
+        """Flatten background with division normalization (robust for camera shots)."""
+        try:
+            # big blur → estimate background then divide
+            r = max(15, int(0.02 * max(gray.shape)))  # ~2% of max dim
+            if r % 2 == 0: r += 1
+            bg = cv2.GaussianBlur(gray, (r, r), 0)
+            # avoid divide-by-zero
+            bg = np.clip(bg, 1, 255).astype(np.float32)
+            norm = (gray.astype(np.float32) / bg) * 128.0
+            norm = np.clip(norm, 0, 255).astype(np.uint8)
+            return norm
+        except Exception as e:
+            logger.debug(f"Illumination correction skipped: {e}")
+            return gray
 
     def resize_image(self, image: np.ndarray, factor: float) -> np.ndarray:
         """Resize image by the given factor."""
@@ -154,10 +234,9 @@ class ImageProcessor:
             return image
 
         height, width = image.shape[:2]
-        new_width = int(width * factor)
-        new_height = int(height * factor)
+        new_width = max(1, int(width * factor))
+        new_height = max(1, int(height * factor))
 
-        # Use appropriate interpolation
         interpolation = cv2.INTER_CUBIC if factor > 1.0 else cv2.INTER_AREA
         resized = cv2.resize(image, (new_width, new_height), interpolation=interpolation)
 
@@ -165,50 +244,65 @@ class ImageProcessor:
         return resized
 
     def deskew_image(self, image: np.ndarray) -> np.ndarray:
-        """Correct skew/rotation in the image."""
+        """Correct skew/rotation in the image (robust to false near-vertical angles)."""
         try:
-            # Find text lines using HoughLinesP
+            # Edge + line detection
             edges = cv2.Canny(image, 50, 150, apertureSize=3)
-            lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=100,
-                                    minLineLength=100, maxLineGap=10)
+            lines = cv2.HoughLinesP(
+                edges, 1, np.pi / 180,
+                threshold=100, minLineLength=100, maxLineGap=10
+            )
 
             if lines is None or len(lines) == 0:
                 return image
 
-            # Calculate angles of all lines
+            # Collect line angles (degrees)
             angles = []
             for line in lines:
                 x1, y1, x2, y2 = line[0]
-                angle = np.arctan2(y2 - y1, x2 - x1) * 180 / np.pi
+                angle = np.degrees(np.arctan2((y2 - y1), (x2 - x1)))
+                # Normalize to [-90, 90] to treat verticals consistently
+                if angle > 90:
+                    angle -= 180
+                elif angle < -90:
+                    angle += 180
                 angles.append(angle)
 
-            # Get median angle (more robust than mean)
-            median_angle = np.median(angles)
+            if not angles:
+                return image
 
-            # Only correct if angle is significant (> 0.5 degrees)
-            if abs(median_angle) > 0.5:
-                # Rotate image
-                height, width = image.shape[:2]
-                center = (width // 2, height // 2)
-                rotation_matrix = cv2.getRotationMatrix2D(center, median_angle, 1.0)
+            median_angle = float(np.median(angles))
 
-                # Calculate new dimensions to avoid cropping
-                cos = np.abs(rotation_matrix[0, 0])
-                sin = np.abs(rotation_matrix[0, 1])
-                new_width = int((height * sin) + (width * cos))
-                new_height = int((height * cos) + (width * sin))
+            # Guardrails
+            if abs(median_angle) > 85:
+                logger.debug(f"Deskew: ignoring near-vertical angle {median_angle:.2f}°")
+                return image
+            if abs(median_angle) > 30:
+                logger.debug(f"Deskew: skipping large angle {median_angle:.2f}° as likely false")
+                return image
+            if abs(median_angle) <= 0.5:
+                return image
 
-                # Adjust translation
-                rotation_matrix[0, 2] += (new_width / 2) - center[0]
-                rotation_matrix[1, 2] += (new_height / 2) - center[1]
+            # Rotate with canvas expansion to avoid cropping
+            h, w = image.shape[:2]
+            center = (w // 2, h // 2)
+            M = cv2.getRotationMatrix2D(center, median_angle, 1.0)
 
-                deskewed = cv2.warpAffine(image, rotation_matrix, (new_width, new_height),
-                                          flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+            cos = abs(M[0, 0])
+            sin = abs(M[0, 1])
+            new_w = int((h * sin) + (w * cos))
+            new_h = int((h * cos) + (w * sin))
 
-                logger.debug(f"Deskewed image by {median_angle:.2f} degrees")
-                return deskewed
+            # Translate to keep image centered
+            M[0, 2] += (new_w / 2) - center[0]
+            M[1, 2] += (new_h / 2) - center[1]
 
-            return image
+            deskewed = cv2.warpAffine(
+                image, M, (new_w, new_h),
+                flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE
+            )
+            logger.debug(f"Deskewed image by {median_angle:.2f} degrees (lines={len(lines)})")
+            return deskewed
 
         except Exception as e:
             logger.warning(f"Deskewing failed: {e}")
@@ -217,7 +311,6 @@ class ImageProcessor:
     def denoise_image(self, image: np.ndarray) -> np.ndarray:
         """Remove noise from the image."""
         try:
-            # Apply Non-local Means Denoising
             if len(image.shape) == 2:  # Grayscale
                 denoised = cv2.fastNlMeansDenoising(image, None, 10, 7, 21)
             else:  # Color
@@ -233,10 +326,8 @@ class ImageProcessor:
     def enhance_contrast(self, image: np.ndarray) -> np.ndarray:
         """Enhance image contrast for better OCR."""
         try:
-            # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
             enhanced = clahe.apply(image)
-
             logger.debug("Enhanced contrast with CLAHE")
             return enhanced
 
@@ -245,21 +336,28 @@ class ImageProcessor:
             return image
 
     def normalize_image(self, image: np.ndarray) -> np.ndarray:
-        """Normalize image values to 0-255 range."""
-        normalized = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-        return normalized
+        """Normalize image values to 0-255 range (uint8)."""
+        if image.dtype != np.uint8:
+            image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX)
+            image = image.astype(np.uint8)
+        return image
 
     def create_binary_image(self, image: np.ndarray) -> np.ndarray:
         """Create binary (black and white) version for OCR."""
         try:
             if len(image.shape) == 3:
-                gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+                # Be defensive: try RGB first, then BGR if needed
+                try:
+                    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+                except cv2.error:
+                    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             else:
                 gray = image
 
-            # Use adaptive thresholding for better results with varying lighting
-            binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                           cv2.THRESH_BINARY, 11, 2)
+            binary = cv2.adaptiveThreshold(
+                gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                cv2.THRESH_BINARY, 11, 2
+            )
 
             logger.debug("Created binary image")
             return binary
@@ -278,37 +376,38 @@ class LayoutAnalyzer:
     def detect_text_regions(self, image: np.ndarray) -> List[ImageRegion]:
         """Detect regions containing text."""
         try:
-            # Convert to grayscale if needed
+            # Convert to grayscale robustly
             if len(image.shape) == 3:
-                gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+                try:
+                    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+                except cv2.error:
+                    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             else:
                 gray = image
 
-            # Use MSER (Maximally Stable Extremal Regions) for text detection
-            mser = cv2.MSER_create(
-                _delta=5,
-                _min_area=self.config.get('text_block_min_area', 1000),
-                _max_area=int(gray.shape[0] * gray.shape[1] * 0.3)
-            )
+            # Ensure uint8
+            if gray.dtype != np.uint8:
+                gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+
+            # MSER
+            min_area = int(self.config.get('text_block_min_area', 1000))
+            max_area = int(gray.shape[0] * gray.shape[1] * 0.3)
+            # delta, min_area, max_area, max_variation, min_diversity, max_evolution, area_threshold, min_margin, edge_blur_size
+            mser = cv2.MSER_create(5, min_area, max_area, 0.25, 0.2, 200, 1.01, 0.003, 5)
 
             regions, _ = mser.detectRegions(gray)
-            text_regions = []
+            text_regions: List[ImageRegion] = []
 
             for region in regions:
-                # Get bounding rectangle
                 x, y, w, h = cv2.boundingRect(region.reshape(-1, 1, 2))
-
-                # Filter by size and aspect ratio
                 area = w * h
-                aspect_ratio = w / h if h > 0 else 0
+                aspect_ratio = (w / h) if h > 0 else 0.0
 
-                if (area >= self.config.get('text_block_min_area', 1000) and
-                        0.1 <= aspect_ratio <= 20):  # Reasonable aspect ratios for text
-
+                if (area >= min_area) and (0.1 <= aspect_ratio <= 20.0):
                     text_regions.append(ImageRegion(
                         x=x, y=y, width=w, height=h,
                         region_type="text",
-                        confidence=0.8  # MSER is generally reliable for text
+                        confidence=0.8
                     ))
 
             logger.debug(f"Detected {len(text_regions)} text regions")
@@ -321,26 +420,25 @@ class LayoutAnalyzer:
     def detect_image_regions(self, image: np.ndarray) -> List[ImageRegion]:
         """Detect regions containing images/diagrams."""
         try:
-            # Convert to grayscale
             if len(image.shape) == 3:
-                gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+                try:
+                    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+                except cv2.error:
+                    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             else:
                 gray = image
 
-            # Find contours that might be images
             edges = cv2.Canny(gray, 50, 150)
             contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            image_regions = []
+            image_regions: List[ImageRegion] = []
             min_area = self.config.get('image_block_min_area', 2500)
 
             for contour in contours:
                 area = cv2.contourArea(contour)
                 if area >= min_area:
                     x, y, w, h = cv2.boundingRect(contour)
-
-                    # Check if region looks like an image (not too elongated)
-                    aspect_ratio = w / h if h > 0 else 0
+                    aspect_ratio = (w / h) if h > 0 else 0.0
                     if 0.2 <= aspect_ratio <= 5.0:
                         image_regions.append(ImageRegion(
                             x=x, y=y, width=w, height=h,
@@ -368,7 +466,6 @@ class LayoutAnalyzer:
             current = remaining.pop(0)
             overlapping = [current]
 
-            # Find overlapping regions
             i = 0
             while i < len(remaining):
                 if self._calculate_overlap(current, remaining[i]) > overlap_threshold:
@@ -376,7 +473,6 @@ class LayoutAnalyzer:
                 else:
                     i += 1
 
-            # Merge overlapping regions
             if len(overlapping) > 1:
                 merged_region = self._merge_regions(overlapping)
                 merged.append(merged_region)
@@ -390,15 +486,12 @@ class LayoutAnalyzer:
         x1_min, y1_min, x1_max, y1_max = region1.bbox
         x2_min, y2_min, x2_max, y2_max = region2.bbox
 
-        # Calculate intersection
         x_overlap = max(0, min(x1_max, x2_max) - max(x1_min, x2_min))
         y_overlap = max(0, min(y1_max, y2_max) - max(y1_min, y2_min))
         intersection_area = x_overlap * y_overlap
 
-        # Calculate union
         union_area = region1.area + region2.area - intersection_area
-
-        return intersection_area / union_area if union_area > 0 else 0
+        return intersection_area / union_area if union_area > 0 else 0.0
 
     def _merge_regions(self, regions: List[ImageRegion]) -> ImageRegion:
         """Merge multiple regions into one."""
@@ -407,7 +500,6 @@ class LayoutAnalyzer:
         max_x = max(r.x + r.width for r in regions)
         max_y = max(r.y + r.height for r in regions)
 
-        # Use the most common type and highest confidence
         types = [r.region_type for r in regions]
         most_common_type = max(set(types), key=types.count)
         max_confidence = max(r.confidence for r in regions)
@@ -420,24 +512,148 @@ class LayoutAnalyzer:
         )
 
 
-# Utility functions
+# ---------- Line-merging utilities (group small boxes into lines) ----------
+
+@dataclass
+class _Box:
+    x: int; y: int; w: int; h: int
+    @property
+    def x2(self): return self.x + self.w
+    @property
+    def y2(self): return self.y + self.h
+
+def _y_overlap_ratio(a: _Box, b: _Box) -> float:
+    top = max(a.y, b.y)
+    bot = min(a.y2, b.y2)
+    inter = max(0, bot - top)
+    return inter / max(1, min(a.h, b.h))
+
+def _merge_horizontal(a: _Box, b: _Box) -> _Box:
+    x1, y1 = min(a.x, b.x), min(a.y, b.y)
+    x2, y2 = max(a.x2, b.x2), max(a.y2, b.y2)
+    return _Box(x1, y1, x2 - x1, y2 - y1)
+
+def merge_regions_into_lines(regions: List[ImageRegion],
+                             max_gap_px: int = 28,
+                             min_y_overlap: float = 0.45) -> List[ImageRegion]:
+    """
+    Greedy left-to-right line merge:
+    - Two regions are merged if their vertical overlap ratio >= min_y_overlap
+      and the horizontal gap between them <= max_gap_px.
+    - Produces wider, line-level boxes that OCR much better than tiny blobs.
+    """
+    if not regions:
+        return []
+
+    # sort by y, then x (top-to-bottom, then left-to-right)
+    regs = sorted(regions, key=lambda r: (r.y, r.x))
+    lines: List[List[ImageRegion]] = []
+
+    for r in regs:
+        placed = False
+        for line in lines:
+            last = line[-1]
+            # vertical overlap ratio based on min height
+            y1a, y2a = last.y, last.y + last.height
+            y1b, y2b = r.y, r.y + r.height
+            overlap = max(0, min(y2a, y2b) - max(y1a, y1b))
+            min_h = max(1, min(last.height, r.height))
+            y_overlap_ratio = overlap / min_h
+
+            # horizontal gap (r is to the right because of sort, but be safe)
+            gap = r.x - (last.x + last.width)
+            if y_overlap_ratio >= min_y_overlap and gap <= max_gap_px:
+                line.append(r)
+                placed = True
+                break
+        if not placed:
+            lines.append([r])
+
+    # fuse each line into one region
+    merged: List[ImageRegion] = []
+    for line in lines:
+        x1 = min(rr.x for rr in line)
+        y1 = min(rr.y for rr in line)
+        x2 = max(rr.x + rr.width for rr in line)
+        y2 = max(rr.y + rr.height for rr in line)
+        merged.append(ImageRegion(
+            x=x1, y=y1, width=x2 - x1, height=y2 - y1,
+            confidence=max(rr.confidence for rr in line),
+            region_type="text"
+        ))
+
+    return merged
+
+def _post_ocr_fixups(self, text: str) -> str:
+    """
+    Light, deterministic cleanups:
+    - join hyphenated line breaks: 'thrust-\ning' -> 'thrusting'
+    - merge soft wraps when the next line continues the same sentence
+    - drop consecutive duplicate lines (from overlapping regions)
+    """
+    if not text:
+        return text
+
+    lines = [ln.rstrip() for ln in text.splitlines()]
+
+    # 1) join hyphenated breaks
+    out = []
+    i = 0
+    while i < len(lines):
+        ln = lines[i]
+        if ln.endswith('-') and i + 1 < len(lines):
+            nxt = lines[i + 1].lstrip()
+            if nxt and (nxt[0].islower() or nxt[0].isdigit()):
+                out.append(ln[:-1] + nxt)
+                i += 2
+                continue
+        out.append(ln)
+        i += 1
+
+    # 2) merge soft wraps (if next line looks like a continuation)
+    merged = []
+    for ln in out:
+        if merged and ln and ln[0].islower() and not merged[-1].endswith(('.', '!', '?', ':', ';')):
+            merged[-1] = (merged[-1] + ' ' + ln).strip()
+        else:
+            merged.append(ln)
+
+    # 3) drop immediate duplicates
+    dedup = []
+    for ln in merged:
+        if not dedup or ln != dedup[-1]:
+            dedup.append(ln)
+
+    # 4) collapse excess blank lines
+    final_lines = []
+    for ln in dedup:
+        if ln.strip() == "":
+            if final_lines and final_lines[-1].strip() == "":
+                continue
+        final_lines.append(ln)
+
+    return "\n".join(final_lines).strip()
+
+
+# ----------------------------- Utility functions -----------------------------
+
 def save_image(image: np.ndarray, output_path: str, quality: int = 95) -> bool:
     """Save image to file with specified quality."""
     try:
         path = Path(output_path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Convert from RGB to BGR for OpenCV
-        if len(image.shape) == 3:
+        # If it's RGB, convert to BGR for cv2.imwrite; if grayscale, keep as is
+        if len(image.shape) == 3 and image.shape[2] == 3:
             image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         else:
             image_bgr = image
 
-        # Save with quality settings
         if path.suffix.lower() in ['.jpg', '.jpeg']:
-            cv2.imwrite(str(path), image_bgr, [cv2.IMWRITE_JPEG_QUALITY, quality])
+            cv2.imwrite(str(path), image_bgr, [cv2.IMWRITE_JPEG_QUALITY, int(np.clip(quality, 1, 100))])
         elif path.suffix.lower() == '.png':
-            compression = int((100 - quality) / 10)  # Convert to PNG compression (0-9)
+            # PNG compression is 0..9 (higher = smaller)
+            compression = int(np.clip((100 - quality) / 10, 0, 9))
             cv2.imwrite(str(path), image_bgr, [cv2.IMWRITE_PNG_COMPRESSION, compression])
         else:
             cv2.imwrite(str(path), image_bgr)
@@ -455,7 +671,6 @@ def extract_image_region(image: np.ndarray, region: ImageRegion) -> np.ndarray:
     try:
         x, y, x2, y2 = region.bbox
 
-        # Ensure coordinates are within image bounds
         height, width = image.shape[:2]
         x = max(0, min(x, width))
         y = max(0, min(y, height))
@@ -477,10 +692,9 @@ def create_thumbnail(image: np.ndarray, size: Tuple[int, int] = (200, 300)) -> n
         height, width = image.shape[:2]
         target_width, target_height = size
 
-        # Calculate scaling to maintain aspect ratio
         scale = min(target_width / width, target_height / height)
-        new_width = int(width * scale)
-        new_height = int(height * scale)
+        new_width = max(1, int(width * scale))
+        new_height = max(1, int(height * scale))
 
         thumbnail = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_AREA)
 
@@ -499,14 +713,12 @@ def validate_image_file(file_path: str) -> bool:
         if not path.exists():
             return False
 
-        # Check file extension
         valid_extensions = {'.jpg', '.jpeg', '.png', '.tiff', '.tif', '.bmp'}
         if path.suffix.lower() not in valid_extensions:
             return False
 
-        # Try to load the image
         with Image.open(path) as img:
-            img.verify()  # Verify it's a valid image
+            img.verify()
 
         return True
 
