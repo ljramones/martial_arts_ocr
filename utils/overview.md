@@ -7,7 +7,13 @@ This directory contains utility modules for image and text processing in the Mar
 ```
 utils/
 ├── __init__.py          # Package initialization
-├── image_utils.py       # Image processing and layout analysis
+├── image/               # Image processing package (refactored from image_utils.py)
+│   ├── __init__.py      # Package exports
+│   ├── core.py          # Core image data structures
+│   ├── preprocessing.py # OCR preprocessing pipeline
+│   ├── layout.py        # Layout analysis & region detection
+│   ├── regions.py       # Region manipulation utilities
+│   └── io.py           # Image I/O operations
 ├── text_utils.py        # Text cleaning and language processing
 └── OVERVIEW.md          # This documentation file
 ```
@@ -23,14 +29,22 @@ The utilities are designed around the specific challenges of digitizing historic
 
 ---
 
-## Image Utils (`image_utils.py`)
+## Image Package (`utils/image/`)
 
 ### Purpose
-Handles all image-related operations including preprocessing for OCR, layout analysis, and region extraction.
+Handles all image-related operations including preprocessing for OCR, layout analysis, and region extraction. Recently refactored into modular components for better maintainability.
+
+### Module Organization
+
+- **`core.py`**: Core data structures (`ImageRegion`, `ImageInfo`)
+- **`io.py`**: File I/O operations (loading, saving, validation)
+- **`preprocessing.py`**: OCR preprocessing (`ImageProcessor`)
+- **`layout.py`**: Layout analysis (`LayoutAnalyzer`)
+- **`regions.py`**: Region manipulation utilities
 
 ### Key Classes
 
-#### `ImageProcessor`
+#### `ImageProcessor` (from `preprocessing.py`)
 Main class for preparing images for OCR processing.
 
 **Features:**
@@ -38,35 +52,39 @@ Main class for preparing images for OCR processing.
 - Noise reduction and contrast enhancement
 - Optimal resizing for OCR accuracy
 - Binary conversion for text recognition
+- Perspective correction for keystoned images
 
 **Example Usage:**
 ```python
-from utils.image_utils import ImageProcessor
+from utils.image import ImageProcessor, load_image, get_image_info
 
 processor = ImageProcessor()
 
 # Load and preprocess an image
-image = processor.load_image("draeger_lecture_page1.jpg")
+image = load_image("draeger_lecture_page1.jpg")
 processed = processor.preprocess_for_ocr(image)
 
 # Get image information
-info = processor.get_image_info("draeger_lecture_page1.jpg")
+info = get_image_info("draeger_lecture_page1.jpg")
 print(f"Image size: {info.width}x{info.height}")
 print(f"File format: {info.format}")
 ```
 
-#### `LayoutAnalyzer`
-Detects and separates text regions from diagrams/images.
+#### `LayoutAnalyzer` (from `layout.py`)
+Detects and separates text regions from diagrams/images using multiple strategies.
 
 **Features:**
 - Text region detection using MSER (Maximally Stable Extremal Regions)
-- Image/diagram region detection using contour analysis
-- Overlap detection and region merging
+- Multi-strategy image detection:
+  - Contour-based for line art and diagrams
+  - Variance-based for photographs
+  - Uniform region detection
+- Intelligent text filtering
 - Confidence scoring for detected regions
 
 **Example Usage:**
 ```python
-from utils.image_utils import LayoutAnalyzer
+from utils.image import LayoutAnalyzer
 
 analyzer = LayoutAnalyzer()
 
@@ -84,37 +102,53 @@ for region in merged_regions:
     print(f"Size: {region.width}x{region.height}, Confidence: {region.confidence}")
 ```
 
-#### `ImageRegion`
-Data class representing a rectangular area in an image.
+#### `ImageRegion` (from `core.py`)
+Enhanced data class representing a rectangular area in an image.
 
 **Properties:**
 ```python
+from utils.image import ImageRegion
+
 region = ImageRegion(x=100, y=50, width=200, height=150, region_type="text")
 
 print(region.area)          # 30000
 print(region.bbox)          # (100, 50, 300, 200)
+print(region.center)        # (200, 125)
+print(region.aspect_ratio)  # 1.333...
 print(region.to_dict())     # Complete region data
+
+# New utility methods
+print(region.iou(other_region))  # Intersection over Union
+print(region.contains_point(150, 100))  # True
 ```
 
 ### Utility Functions
 
 ```python
-from utils.image_utils import (
+from utils.image import (
     save_image, extract_image_region, 
-    create_thumbnail, validate_image_file
+    create_thumbnail, validate_image_file,
+    merge_regions_into_lines, post_ocr_fixups,
+    preprocess_for_captions_np, preprocess_for_fullpage_np
 )
 
 # Save processed image
 save_image(processed_image, "output/processed.jpg", quality=95)
 
-# Extract specific region
-diagram = extract_image_region(image, diagram_region)
+# Extract specific region with padding
+diagram = extract_image_region(image, diagram_region, padding=10)
 
 # Create thumbnail for web interface
 thumb = create_thumbnail(image, size=(200, 300))
 
 # Validate uploaded file
 is_valid = validate_image_file("user_upload.jpg")
+
+# Merge text regions into lines for better OCR
+line_regions = merge_regions_into_lines(text_regions, max_gap_px=28)
+
+# Clean up OCR output text
+cleaned = post_ocr_fixups(ocr_text, fix_hyphens=True)
 ```
 
 ---
@@ -254,12 +288,12 @@ confidence = confidence_score_text(ocr_output)  # 0.0 to 1.0
 ### Processing a Draeger Lecture Page
 
 ```python
-from utils.image_utils import ImageProcessor, LayoutAnalyzer
+from utils.image import ImageProcessor, LayoutAnalyzer, load_image
 from utils.text_utils import TextCleaner, LanguageDetector
 
 # 1. Load and preprocess image
 processor = ImageProcessor()
-image = processor.load_image("lecture_page.jpg")
+image = load_image("lecture_page.jpg")
 processed_image = processor.preprocess_for_ocr(image)
 
 # 2. Analyze layout
@@ -292,7 +326,7 @@ for segment in segments:
 
 ```python
 from pathlib import Path
-from utils.image_utils import ImageProcessor, validate_image_file
+from utils.image import ImageProcessor, validate_image_file, load_image, save_image
 from utils.text_utils import TextStatistics
 
 processor = ImageProcessor()
@@ -312,12 +346,11 @@ for image_file in scan_directory.glob("*.jpg"):
             total_stats['failed'] += 1
             continue
         
-        # Get image info
-        info = processor.get_image_info(str(image_file))
-        print(f"Processing: {image_file.name} ({info.width}x{info.height})")
+        # Load and get info
+        image = load_image(str(image_file))
+        print(f"Processing: {image_file.name}")
         
         # Preprocess
-        image = processor.load_image(str(image_file))
         processed = processor.preprocess_for_ocr(image)
         
         # Save processed version
@@ -339,14 +372,13 @@ print(f"Failed: {total_stats['failed']}")
 
 ```python
 from utils.text_utils import confidence_score_text, TextStatistics
-from utils.image_utils import ImageProcessor
+from utils.image import get_image_info
 
 def assess_ocr_quality(image_path: str, ocr_text: str) -> dict:
     """Comprehensive quality assessment of OCR results."""
     
     # Image quality metrics
-    processor = ImageProcessor()
-    image_info = processor.get_image_info(image_path)
+    image_info = get_image_info(image_path)
     
     # Text quality metrics
     text_confidence = confidence_score_text(ocr_text)
@@ -426,9 +458,10 @@ The utilities automatically use these settings for consistent processing across 
 All utilities include comprehensive error handling:
 
 ```python
+from utils.image import load_image
+
 try:
-    processor = ImageProcessor()
-    image = processor.load_image("problematic_image.jpg")
+    image = load_image("problematic_image.jpg")
 except FileNotFoundError:
     print("Image file not found")
 except ValueError as e:
@@ -457,5 +490,9 @@ The utility modules are designed to be easily extended:
 - Add specialized martial arts terminology detection
 - Integrate additional language detection libraries
 - Implement custom layout analysis algorithms for specific document types
+
+## Migration Notes
+
+The image utilities were recently refactored from a single `image_utils.py` file into a modular package structure for better maintainability. The public API remains the same through re-exports in the `__init__.py` file, so existing code only needs to update import statements from `utils.image_utils` to `utils.image`.
 
 This modular design allows the system to evolve and improve while maintaining backward compatibility.

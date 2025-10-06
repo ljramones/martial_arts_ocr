@@ -18,7 +18,7 @@ import numpy as np
 from PIL import Image
 
 from config import get_config
-from utils.image_utils import ImageRegion, save_image, extract_image_region
+from utils import ImageRegion, save_image, extract_image_region
 from utils.text_utils import TextFormatter, TextStatistics
 from processors.ocr_processor import ProcessingResult
 from processors.japanese_processor import JapaneseProcessingResult

@@ -1,0 +1,61 @@
+{
+  "term_corrections": {
+    "ryu ha": "ryu-ha",
+    "ryu=ha": "ryu-ha",
+    "ryw": "ryu",
+    "Xyz Ryu": "XYZ Ryū",
+    "geneologists": "genealogists"
+  },
+
+  "common_ocr_errors": {
+    "tock": "took",
+    "nount aoe": "mounted it",
+    " ron ": " for ",
+    "S500": "500",
+    " x ": " an ",
+    "aji®": "aji\"",
+    "c¢)": "c)",
+    " Ys ": " is ",
+    " 1 ": " the ",
+    "peck don't": "but you don't",
+    "peck ": "but you ",
+    " ls ": " is ",
+    "This ls": "This is",
+    "this ls": "this is",
+    "if this ls the": "if this is the",
+    "This ls the": "This is the",
+    "if this ls the founder": "if this is the founder",
+    "This ls the ryu": "This is the ryu"
+  },
+
+  "contextual_corrections": [
+    {
+      "pattern": "\\bls\\b",
+      "replacement": "is",
+      "description": "Fix all standalone ls to is"
+    },
+    {
+      "pattern": "farmer's\\s+you",
+      "replacement": "farmer's, you",
+      "description": "Add comma after farmer's"
+    },
+    {
+      "pattern": "\\.\"(\\w)",
+      "replacement": ".\" \\1",
+      "description": "Add space after period-quote"
+    },
+    {
+      "pattern": "you\\s+always\\s+to",
+      "replacement": "you always have to",
+      "description": "Fix missing 'have'"
+    }
+  ],
+
+  "section_markers": [
+    {
+      "pattern": "\\(Section missing\\.\\)",
+      "replacement": "(Section missing)",
+      "description": "Standardize section missing marker"
+    }
+  ]
+}

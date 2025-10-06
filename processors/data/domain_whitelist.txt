@@ -1,0 +1,11 @@
+ryu
+ryu-ha
+ryu-gi
+budo
+bujutsu
+ninjutsu
+makimono
+kiai
+hoplology
+genealogists
+aji

@@ -13,8 +13,7 @@ import json
 from datetime import datetime
 
 from config import get_config
-from utils.image_utils import ImageProcessor, LayoutAnalyzer, ImageRegion, save_image, extract_image_region
-
+from utils import ImageProcessor, LayoutAnalyzer, ImageRegion, save_image, extract_image_region
 logger = logging.getLogger(__name__)
 
 

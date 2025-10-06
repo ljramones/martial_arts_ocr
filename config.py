@@ -31,6 +31,9 @@ class Config:
     UPLOAD_FOLDER = str(UPLOAD_DIR)
     ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png', 'tiff', 'tif', 'bmp'}
 
+    # Add this line:
+    EXTRACTED_CONTENT_DIR = EXTRACTED_CONTENT_DIR  # Add as class attribute
+
     ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 
     # Database settings
@@ -40,15 +43,14 @@ class Config:
     OCR_ENGINES = {
         'tesseract': {
             'enabled': True,
-            'languages': ['eng', 'jpn'],  # English and Japanese
-            'config': '--psm 6 -c preserve_interword_spaces=1',
-            'timeout': 30,
+            'languages': ['eng'],
+            'config': '--psm 11 --oem 3',  # Use PSM 11 for sparse text
         },
         'easyocr': {
-            'enabled': True,
-            'languages': ['en', 'ja'],
-            'gpu': False,  # Set to True if you have CUDA GPU
-            'confidence_threshold': 0.5,
+            'enabled': False,  # or True if you have it installed
+            'languages': ['en'],
+            'gpu': False,
+            'confidence_threshold': 0.5
         }
     }
 
