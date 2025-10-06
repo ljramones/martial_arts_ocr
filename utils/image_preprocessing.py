@@ -5,6 +5,13 @@ This module contains the main image preprocessing pipeline optimized for OCR
 on martial arts documents, including deskewing, denoising, contrast enhancement,
 and specialized binarization methods.
 """
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
 import cv2
 import numpy as np
 import logging
@@ -33,9 +40,47 @@ class ImageProcessor:
         config = get_config()
         self.config = config.IMAGE_PROCESSING
 
+        # Tesseract binary path (fallback if not in config)
+        self.tesseract_bin = (
+                self.config.get("tesseract_bin")
+                or "/opt/homebrew/bin/tesseract"
+        )
+
         # Apply any config overrides
         if config_override:
             self.config.update(config_override)
+
+    def _guess_tessdata_dir(self) -> str | None:
+        # Prefer repo-local ./tessdata
+        repo_tess = Path(__file__).resolve().parents[1] / "tessdata"
+        if (repo_tess / "osd.traineddata").exists():
+            return str(repo_tess)
+        # Fallbacks
+        for d in (
+                "/opt/homebrew/share/tessdata",
+                "/usr/local/share/tessdata",
+                "/usr/share/tesseract-ocr/5/tessdata",
+                "/usr/share/tesseract-ocr/tessdata",
+        ):
+            if os.path.exists(os.path.join(d, "osd.traineddata")):
+                return d
+        return None
+
+    import shutil
+
+    def _find_tesseract_bin(self) -> str | None:
+        # Config override
+        if getattr(self, "tesseract_bin", None) and os.path.exists(self.tesseract_bin):
+            return self.tesseract_bin
+        # PATH
+        path = shutil.which("tesseract")
+        if path:
+            return path
+        # Common spots
+        for p in ("/opt/homebrew/bin/tesseract", "/usr/local/bin/tesseract", "/usr/bin/tesseract"):
+            if os.path.exists(p):
+                return p
+        return None
 
     def preprocess_for_ocr(self, image: np.ndarray,
                            apply_deskew: Optional[bool] = None,
@@ -315,87 +360,156 @@ class ImageProcessor:
         logger.debug(f"Resized image: {width}x{height} -> {new_width}x{new_height}")
         return resized
 
+    def _tesseract_osd_rotate_deg(self, gray: np.ndarray, timeout_sec: float = 5.0) -> int | None:
+        try:
+            tess = self._find_tesseract_bin()
+            if not tess:
+                logger.debug("OSD: tesseract binary not found")
+                return None
+
+            env = os.environ.copy()
+            tessdata = self._guess_tessdata_dir()
+            if tessdata:
+                env["TESSDATA_PREFIX"] = tessdata
+                logger.debug(f"OSD: TESSDATA_PREFIX={tessdata}")
+
+            with tempfile.TemporaryDirectory() as td:
+                img_path = os.path.join(td, "osd.png")
+                cv2.imwrite(img_path, gray)
+                cmd = [tess, img_path, "stdout", "--psm", "0"]
+                out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_sec, env=env)
+                text = (out.stdout or "") + "\n" + (out.stderr or "")
+
+            # Prefer "Rotate: N"
+            m = re.search(r"Rotate:\s*(\d+)", text)
+            if m:
+                deg = int(m.group(1)) % 360
+                return deg
+
+            # Fallback: "Orientation in degrees: N"
+            m = re.search(r"Orientation in degrees:\s*(\d+)", text)
+            if m:
+                deg = int(m.group(1)) % 360
+                # Tesseract’s "Orientation in degrees" is the detected UP direction;
+                # rotate by (360 - deg) to make text horizontal if needed.
+                return (360 - deg) % 360
+
+            logger.debug(f"OSD: no rotation found in output (first 300 chars):\n{text[:300]}")
+        except subprocess.TimeoutExpired:
+            logger.debug("OSD: tesseract timed out")
+        except Exception as e:
+            logger.debug(f"OSD failed: {e}")
+        return None
+
+    @staticmethod
+    def _rotate_deg(image: np.ndarray, deg: int) -> np.ndarray:
+        """Fast 0/90/180/270° rotation."""
+        if deg == 90:
+            return cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
+        if deg == 180:
+            return cv2.rotate(image, cv2.ROTATE_180)
+        if deg == 270:
+            return cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        return image
+
     def deskew_image(self, image: np.ndarray, max_angle: float = 30.0) -> np.ndarray:
         """
-        Correct skew/rotation in the image.
+        Phase-1 orientation normalization + small-angle deskew.
 
-        Detects dominant line angles and rotates to align with horizontal/vertical.
-        Includes guardrails to prevent false corrections.
-
-        Args:
-            image: Input image (grayscale)
-            max_angle: Maximum rotation angle to apply (degrees)
-
-        Returns:
-            Deskewed image
+        Order:
+          1) OSD (0/90/180/270) with repo tessdata env + robust 'Rotate:' parsing
+          2) Fallback: projection-peakiness chooser if OSD is None/0
+          3) Canvas-expanding small-angle deskew (HoughLinesP) for |angle| <= max_angle
         """
         try:
-            # Detect edges
-            edges = cv2.Canny(image, 50, 150, apertureSize=3)
+            # --- 1) Coarse orientation via OSD ---
+            gray0 = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
+            osd_deg = self._tesseract_osd_rotate_deg(gray0)
+            alt_deg = None
 
-            # Detect lines using Hough transform
-            lines = cv2.HoughLinesP(edges, 1, np.pi / 180,
-                                    threshold=100, minLineLength=100, maxLineGap=10)
+            if osd_deg in (90, 180, 270):
+                image = self._rotate_deg(image, osd_deg)
+                logger.info(f"Phase1: rotated {osd_deg}° by OSD")
+            elif osd_deg in (None, 0):
+                # --- 2) Fallback orientation chooser (no Tesseract) ---
+                alt_deg = self._choose_coarse_orientation(image)
+                if alt_deg in (90, 180, 270):
+                    image = self._rotate_deg(image, alt_deg)
+                    logger.info(f"Phase1: rotated {alt_deg}° by projection fallback")
 
-            if lines is None or len(lines) == 0:
-                return image
+            # Re-derive grayscale after any coarse rotation
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
 
-            # Calculate angles of all lines
+            # --- 3) Small-angle deskew (original logic) ---
+            edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+            linesP = cv2.HoughLinesP(
+                edges, 1, np.pi / 180,
+                threshold=100, minLineLength=100, maxLineGap=10
+            )
+
             angles = []
-            for line in lines:
-                x1, y1, x2, y2 = line[0]
-                angle = np.degrees(np.arctan2((y2 - y1), (x2 - x1)))
-
-                # Normalize to [-90, 90]
-                if angle > 90:
-                    angle -= 180
-                elif angle < -90:
-                    angle += 180
-
-                angles.append(angle)
+            if linesP is not None and len(linesP) > 0:
+                for x1, y1, x2, y2 in linesP[:, 0]:
+                    ang = np.degrees(np.arctan2((y2 - y1), (x2 - x1)))
+                    # normalize to [-90, 90]
+                    if ang > 90:
+                        ang -= 180
+                    elif ang < -90:
+                        ang += 180
+                    angles.append(ang)
 
             if not angles:
+                note = f"OSD={osd_deg}, fallback={alt_deg}, small_deskew=None (no lines)"
+                logger.debug(f"Phase1: {note}")
+                setattr(self, "_last_phase1_debug", note)
                 return image
 
-            # Use median angle for robustness
             median_angle = float(np.median(angles))
+            median_str = f"{median_angle:.2f}"
 
-            # Apply guardrails
+            # Guardrails
             if abs(median_angle) > 85:
-                logger.debug(f"Deskew: ignoring near-vertical angle {median_angle:.2f}°")
+                note = f"OSD={osd_deg}, fallback={alt_deg}, small_deskew={median_str} (ignored near-vertical)"
+                logger.debug(f"Phase1: {note}")
+                setattr(self, "_last_phase1_debug", note)
                 return image
 
             if abs(median_angle) > max_angle:
-                logger.debug(f"Deskew: angle {median_angle:.2f}° exceeds maximum")
+                note = f"OSD={osd_deg}, fallback={alt_deg}, small_deskew={median_str} (exceeds max_angle={max_angle})"
+                logger.debug(f"Phase1: {note}")
+                setattr(self, "_last_phase1_debug", note)
                 return image
 
             if abs(median_angle) <= 0.5:
+                note = f"OSD={osd_deg}, fallback={alt_deg}, small_deskew={median_str} (too small)"
+                logger.debug(f"Phase1: {note}")
+                setattr(self, "_last_phase1_debug", note)
                 return image
 
-            # Apply rotation with canvas expansion
+            # Canvas-expanding rotation (unchanged from your original)
             h, w = image.shape[:2]
             center = (w // 2, h // 2)
             M = cv2.getRotationMatrix2D(center, median_angle, 1.0)
-
-            # Calculate new canvas size to avoid cropping
-            cos = abs(M[0, 0])
-            sin = abs(M[0, 1])
+            cos, sin = abs(M[0, 0]), abs(M[0, 1])
             new_w = int((h * sin) + (w * cos))
             new_h = int((h * cos) + (w * sin))
-
-            # Adjust translation to center image
             M[0, 2] += (new_w / 2) - center[0]
             M[1, 2] += (new_h / 2) - center[1]
 
-            deskewed = cv2.warpAffine(image, M, (new_w, new_h),
-                                      flags=cv2.INTER_CUBIC,
-                                      borderMode=cv2.BORDER_REPLICATE)
+            deskewed = cv2.warpAffine(
+                image, M, (new_w, new_h),
+                flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE
+            )
 
-            logger.debug(f"Deskewed image by {median_angle:.2f} degrees")
+            logger.debug(f"Deskewed image by {median_str} degrees")
+            note = f"OSD={osd_deg}, fallback={alt_deg}, small_deskew={median_str}"
+            logger.debug(f"Phase1: {note}")
+            setattr(self, "_last_phase1_debug", note)
             return deskewed
 
         except Exception as e:
             logger.warning(f"Deskewing failed: {e}")
+            setattr(self, "_last_phase1_debug", f"error: {e}")
             return image
 
     def denoise_image(self, image: np.ndarray, strength: str = 'medium') -> np.ndarray:
