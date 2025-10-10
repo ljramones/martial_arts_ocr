@@ -5,8 +5,8 @@ Handles Japanese text processing including romanization, translation, and analys
 import re
 import json
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Any, Union
-from dataclasses import dataclass, asdict
+from typing import List, Dict, Tuple, Optional, Any
+from dataclasses import dataclass
 from datetime import datetime
 import logging
 
@@ -34,7 +34,7 @@ except ImportError:
     logging.warning("Argos Translate not available - offline translation disabled")
 
 from config import get_config
-from utils.text_utils import TextCleaner, LanguageDetector, JapaneseUtils
+from utils import TextCleaner, LanguageDetector, JapaneseUtils
 
 logger = logging.getLogger(__name__)
 

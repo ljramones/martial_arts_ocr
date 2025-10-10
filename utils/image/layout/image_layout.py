@@ -12,7 +12,7 @@ from typing import List, Optional, Dict, Any
 from scipy.signal import find_peaks
 
 from config import get_config
-from .core_image import ImageRegion
+from utils.image.regions.core_image import ImageRegion
 
 logger = logging.getLogger(__name__)
 

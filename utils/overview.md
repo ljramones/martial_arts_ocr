@@ -55,8 +55,9 @@ Main class for preparing images for OCR processing.
 - Perspective correction for keystoned images
 
 **Example Usage:**
+
 ```python
-from utils.image import ImageProcessor, load_image, get_image_info
+from utils import ImageProcessor, load_image, get_image_info
 
 processor = ImageProcessor()
 
@@ -83,8 +84,9 @@ Detects and separates text regions from diagrams/images using multiple strategie
 - Confidence scoring for detected regions
 
 **Example Usage:**
+
 ```python
-from utils.image import LayoutAnalyzer
+from utils import LayoutAnalyzer
 
 analyzer = LayoutAnalyzer()
 
@@ -106,16 +108,17 @@ for region in merged_regions:
 Enhanced data class representing a rectangular area in an image.
 
 **Properties:**
+
 ```python
-from utils.image import ImageRegion
+from utils import ImageRegion
 
 region = ImageRegion(x=100, y=50, width=200, height=150, region_type="text")
 
-print(region.area)          # 30000
-print(region.bbox)          # (100, 50, 300, 200)
-print(region.center)        # (200, 125)
+print(region.area)  # 30000
+print(region.bbox)  # (100, 50, 300, 200)
+print(region.center)  # (200, 125)
 print(region.aspect_ratio)  # 1.333...
-print(region.to_dict())     # Complete region data
+print(region.to_dict())  # Complete region data
 
 # New utility methods
 print(region.iou(other_region))  # Intersection over Union
@@ -125,8 +128,8 @@ print(region.contains_point(150, 100))  # True
 ### Utility Functions
 
 ```python
-from utils.image import (
-    save_image, extract_image_region, 
+from utils import (
+    save_image, extract_image_region,
     create_thumbnail, validate_image_file,
     merge_regions_into_lines, post_ocr_fixups,
     preprocess_for_captions_np, preprocess_for_fullpage_np
@@ -170,8 +173,9 @@ Cleans and normalizes OCR output to remove artifacts and errors.
 - Aggressive cleaning mode for heavily corrupted text
 
 **Example Usage:**
+
 ```python
-from utils.text_utils import TextCleaner
+from utils import TextCleaner
 
 cleaner = TextCleaner()
 
@@ -205,8 +209,9 @@ Identifies and segments text by language (English vs Japanese).
 - Confidence scoring for language identification
 
 **Example Usage:**
+
 ```python
-from utils.text_utils import LanguageDetector
+from utils import LanguageDetector
 
 detector = LanguageDetector()
 
@@ -230,8 +235,9 @@ is_japanese = detector.is_japanese_text("武道の研究")  # True
 Converts text to different output formats.
 
 **Example Usage:**
+
 ```python
-from utils.text_utils import TextFormatter
+from utils import TextFormatter
 
 formatter = TextFormatter()
 
@@ -247,8 +253,9 @@ plain = formatter.to_plain_text(text, max_line_length=60)
 Calculates comprehensive statistics about text content.
 
 **Example Usage:**
+
 ```python
-from utils.text_utils import TextStatistics
+from utils import TextStatistics
 
 stats = TextStatistics.get_stats(text)
 
@@ -262,7 +269,7 @@ print(f"Language ratio - Japanese: {stats['language_ratio']['japanese']:.2f}")
 ### Utility Functions
 
 ```python
-from utils.text_utils import (
+from utils import (
     extract_martial_arts_terms, split_into_sentences,
     normalize_japanese_text, confidence_score_text
 )
@@ -288,8 +295,8 @@ confidence = confidence_score_text(ocr_output)  # 0.0 to 1.0
 ### Processing a Draeger Lecture Page
 
 ```python
-from utils.image import ImageProcessor, LayoutAnalyzer, load_image
-from utils.text_utils import TextCleaner, LanguageDetector
+from utils import ImageProcessor, LayoutAnalyzer, load_image
+from utils import TextCleaner, LanguageDetector
 
 # 1. Load and preprocess image
 processor = ImageProcessor()
@@ -326,8 +333,8 @@ for segment in segments:
 
 ```python
 from pathlib import Path
-from utils.image import ImageProcessor, validate_image_file, load_image, save_image
-from utils.text_utils import TextStatistics
+from utils import ImageProcessor, validate_image_file, load_image, save_image
+from utils import TextStatistics
 
 processor = ImageProcessor()
 scan_directory = Path("scanned_lectures")
@@ -345,20 +352,20 @@ for image_file in scan_directory.glob("*.jpg"):
             print(f"Invalid image file: {image_file}")
             total_stats['failed'] += 1
             continue
-        
+
         # Load and get info
         image = load_image(str(image_file))
         print(f"Processing: {image_file.name}")
-        
+
         # Preprocess
         processed = processor.preprocess_for_ocr(image)
-        
+
         # Save processed version
         output_path = f"processed/{image_file.stem}_processed.jpg"
         save_image(processed, output_path)
-        
+
         total_stats['processed'] += 1
-        
+
     except Exception as e:
         print(f"Failed to process {image_file}: {e}")
         total_stats['failed'] += 1
@@ -371,41 +378,42 @@ print(f"Failed: {total_stats['failed']}")
 ### Quality Assessment Pipeline
 
 ```python
-from utils.text_utils import confidence_score_text, TextStatistics
-from utils.image import get_image_info
+from utils import confidence_score_text, TextStatistics
+from utils import get_image_info
+
 
 def assess_ocr_quality(image_path: str, ocr_text: str) -> dict:
     """Comprehensive quality assessment of OCR results."""
-    
+
     # Image quality metrics
     image_info = get_image_info(image_path)
-    
+
     # Text quality metrics
     text_confidence = confidence_score_text(ocr_text)
     text_stats = TextStatistics.get_stats(ocr_text)
-    
+
     # Quality assessment
     quality_score = text_confidence
-    
+
     # Penalize very short text (likely failed OCR)
     if text_stats['words'] < 10:
         quality_score *= 0.5
-    
+
     # Boost score for reasonable text length
     if 50 <= text_stats['words'] <= 1000:
         quality_score *= 1.1
-    
+
     # Assessment report
     assessment = {
         'overall_quality': 'excellent' if quality_score > 0.8 else
-                          'good' if quality_score > 0.6 else
-                          'fair' if quality_score > 0.4 else 'poor',
+        'good' if quality_score > 0.6 else
+        'fair' if quality_score > 0.4 else 'poor',
         'confidence_score': quality_score,
         'text_stats': text_stats,
         'image_info': image_info.to_dict(),
         'recommendations': []
     }
-    
+
     # Recommendations
     if quality_score < 0.6:
         assessment['recommendations'].append("Consider re-scanning with higher resolution")
@@ -413,8 +421,9 @@ def assess_ocr_quality(image_path: str, ocr_text: str) -> dict:
         assessment['recommendations'].append("Japanese text detected - verify romanization")
     if image_info.width < 1500:
         assessment['recommendations'].append("Low resolution image - OCR accuracy may be limited")
-    
+
     return assessment
+
 
 # Usage
 quality = assess_ocr_quality("lecture_page.jpg", ocr_output)
@@ -458,7 +467,7 @@ The utilities automatically use these settings for consistent processing across 
 All utilities include comprehensive error handling:
 
 ```python
-from utils.image import load_image
+from utils import load_image
 
 try:
     image = load_image("problematic_image.jpg")

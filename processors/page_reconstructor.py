@@ -6,20 +6,15 @@ Generates HTML pages that maintain the original document structure.
 import html
 import logging
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Any, Union
+from typing import List, Dict, Tuple, Any
 from dataclasses import dataclass
 from datetime import datetime
 import json
-import base64
-from io import BytesIO
 
 import cv2
-import numpy as np
-from PIL import Image
 
 from config import get_config
-from utils import ImageRegion, save_image, extract_image_region
-from utils.text_utils import TextFormatter, TextStatistics
+from utils import TextFormatter, TextStatistics
 from processors.ocr_processor import ProcessingResult
 from processors.japanese_processor import JapaneseProcessingResult
 
@@ -377,7 +372,6 @@ class PageReconstructor:
 
     def _apply_japanese_markup(self, text: str, japanese_result: JapaneseProcessingResult) -> str:
         """Apply Japanese text markup with proper HTML escaping."""
-        import re
 
         if not japanese_result or not japanese_result.segments:
             return html.escape(text)

@@ -4,10 +4,9 @@ Extracts and separates text and image content from scanned documents.
 """
 import cv2
 import numpy as np
-from PIL import Image
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Any
-from dataclasses import dataclass, asdict
+from typing import List, Dict, Optional, Any
+from dataclasses import dataclass
 import logging
 import json
 from datetime import datetime

@@ -59,11 +59,58 @@ class Config:
         'enhance_contrast': True,
         'denoise': True,
         'deskew': True,
-        'resize_factor': 1.5,  # Upscale factor for better OCR
-        'min_image_size': (100, 100),  # Minimum size to consider as image
-        'max_image_size': (2000, 2000),  # Maximum size before downscaling
+        'resize_factor': 1.5,
+        'min_image_size': (100, 100),
+        'max_image_size': (2000, 2000),
         "illumination_correct": True,
-        "morph_close": False,  # set True if strokes look broken
+        "morph_close": False,
+
+        # For ocr_osd.py: Languages for the 0-vs-180 degree sniff
+        'OCR_SNIFF_LANGUAGES': 'eng+jpn',
+
+        # For denoise.py: Threshold for applying pre-boost sharpening
+        'BLUR_PREBOOST_THRESHOLD': 180.0,
+
+        # For geometry.py: Parameters for the small-angle deskew
+        'DESKEW_HOUGH_THRESHOLD': 100,
+        'DESKEW_HOUGH_MIN_LINE_LENGTH': 100,
+        'DESKEW_HOUGH_MAX_LINE_GAP': 10,
+
+        # For orientation.py: Weights for the coarse orientation score
+        'ORIENTATION_PROJ_WEIGHT': 1.0,
+        'ORIENTATION_HORIZ_WEIGHT': 0.8,
+
+        # --- BINARIZE PARAMETERS ---
+
+        # For binarize.py: Sauvola thresholding parameters
+        'SAUVOLA_WINDOW': 25,
+        'SAUVOLA_K': 0.2,
+
+        # For binarize.py: Unsharp masking parameters
+        'UNSHARP_STRENGTH': 1.5,
+        'UNSHARP_SIGMA': 1.0,
+
+        # --- DENOISE PARAMETERS ---
+        # For denoise.py: Unsharp masking parameters for the pre-boost step
+        'PREBOOST_UNSHARP_STRENGTH': 1.8,
+        'PREBOOST_UNSHARP_BLUR_WEIGHT': -0.8,
+
+        'SCRIPT_DETECTION_ENABLED': True,  # Auto-detect CJK vs Latin
+        'MIXED_CONTENT_MODE': 'auto',  # 'text_only', 'mixed', 'auto'
+        'CJK_SAUVOLA_K': 0.15,  # Gentler for complex strokes
+        'IMAGE_REGION_PRESERVATION': True,  # Mask non-text areas
+
+        # --- DEBUG PARAMETERS ---
+        'DEBUG_DIR': 'debug_output',  # Assuming you have this or similar
+        'DEBUG_FILE_PREFIX': '',  # Optional prefix for debug filenames
+        'DEBUG_FILE_LIMIT': 100,  # Max number of debug files to save
+
+        'ORIENT_CKPT_CONVNEXT': 'orientation_model/checkpoints/orient_convnext_tiny.pth',
+        'ORIENT_CKPT_EFFNET': 'orientation_model/checkpoints/orient_effnetv2s.pth',  # or None
+        'ORIENT_ENS_MARGIN': 0.55,
+
+        # honor this in facade; you already set True in your file
+        'DISABLE_HEURISTIC_FALLBACK': True,
     }
 
     # Layout detection settings

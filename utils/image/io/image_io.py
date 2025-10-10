@@ -9,9 +9,9 @@ import numpy as np
 from PIL import Image, ImageOps
 from pathlib import Path
 import logging
-from typing import Optional, Tuple, Union
+from typing import Tuple, Union
 
-from .core_image import ImageInfo, ImageRegion
+from utils.image.regions.core_image import ImageInfo, ImageRegion
 
 logger = logging.getLogger(__name__)
 

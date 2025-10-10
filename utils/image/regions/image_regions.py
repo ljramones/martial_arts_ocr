@@ -7,10 +7,9 @@ lines and cleaning up OCR output.
 """
 import numpy as np
 import logging
-from typing import List, Optional, Tuple, Dict, Any
-from dataclasses import dataclass
+from typing import List, Optional, Dict
 
-from .core_image import ImageRegion, _Box
+from utils.image.regions.core_image import ImageRegion, _Box
 
 logger = logging.getLogger(__name__)
 

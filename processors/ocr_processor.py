@@ -6,11 +6,10 @@ import time
 import os
 import re
 from pathlib import Path
-from typing import List, Dict, Optional, Any, Tuple
+from typing import List, Dict, Optional, Any
 from datetime import datetime
 
 import numpy as np
-import cv2
 
 try:
     import pytesseract
@@ -21,10 +20,9 @@ from config import get_config
 from utils import (
     ImageProcessor, LayoutAnalyzer, ImageRegion,
     load_image,  # Add load_image here
-    save_image, extract_image_region, merge_regions_into_lines,
-    validate_image_file, preprocess_for_fullpage_np, preprocess_for_captions_np
+    save_image, extract_image_region
 )
-from utils.text_utils import TextCleaner, LanguageDetector, TextStatistics
+from utils import TextCleaner, LanguageDetector, TextStatistics
 from processors.japanese_processor import JapaneseProcessor
 from processors.image_preprocessor import AdvancedImagePreprocessor
 
@@ -401,6 +399,6 @@ class OCRProcessor:
 
     def _generate_markdown_content(self, text: str, title: str) -> str:
         """Generate markdown content."""
-        from utils.text_utils import TextFormatter
+        from utils import TextFormatter
         formatter = TextFormatter()
         return formatter.to_markdown(text or "", title or "Document")
