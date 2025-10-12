@@ -1,0 +1,5 @@
+path: dataset
+train: lists/train.txt
+val: lists/val.txt
+test: images/test
+names: [figure]

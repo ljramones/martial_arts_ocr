@@ -209,6 +209,11 @@ class ImageInfo:
     dpi: Optional[int] = None
     color_space: Optional[str] = None
 
+    orientation: Optional[int] = None     # 0|90|180|270 (after CNN + tie-break)
+    skew_angle: Optional[float] = None    # small-angle deskew (deg, +CCW)
+    extras: Optional[Dict[str, Any]] = None   # free-form stash (e.g., debug, margins)
+
+
     @property
     def aspect_ratio(self) -> float:
         """Calculate aspect ratio (width/height) of the image."""

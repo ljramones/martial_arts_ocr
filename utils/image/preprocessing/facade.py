@@ -20,8 +20,10 @@ import cv2
 import numpy as np
 from PIL import Image  # NEW: for polarity tie-break visual sampling
 
-from utils.image.preprocessing import binarize, denoise, debug_io, geometry, ocr_osd, orientation
+from utils.image.preprocessing import binarize, denoise, debug_io, geometry, ocr_osd, orientation, textmask
 from utils.image.shared_utils import _to_gray_u8
+
+from utils.image.preprocessing.textmask import build_nontext_mask
 
 # NEW: CNN orientation wrapper (ConvNeXt default + optional ensemble)
 try:
@@ -29,6 +31,7 @@ try:
         init_orientation_model as _cnn_init,
         predict_degrees as _cnn_predict,
     )
+
     _HAS_CNN = True
 except Exception:
     _HAS_CNN = False
@@ -58,6 +61,10 @@ class ImageProcessor:
         self._last_osd_deg_hint: Optional[int] = None
         self._last_phase1_debug: Optional[str] = None
         self._last_choose_scores: Dict[str, Any] = {}
+
+        # Phase-2 text mask switch
+        self._textmask_enabled: bool = bool(self.config.get("TEXTMASK_ENABLED", True))
+        self._last_nontext_mask: Optional[np.ndarray] = None  # storage for downstream use
 
         # ---------------- CNN orientation init (lazy-safe) ----------------
         self._cnn_ready = False
@@ -98,9 +105,9 @@ class ImageProcessor:
             horiz_weight = self.config.get('ORIENTATION_HORIZ_WEIGHT', 0.8)
 
             # Polarity tie-break knobs (portrait 0 vs 180 only)
-            tie_margin  = float(self.config.get('POLARITY_TIE_MARGIN', 0.10))
-            tie_frac    = float(self.config.get('POLARITY_TIE_FRAC',   0.18))
-            tie_thresh  = float(self.config.get('POLARITY_TIE_THRESH', 0.08))
+            tie_margin = float(self.config.get('POLARITY_TIE_MARGIN', 0.10))
+            tie_frac = float(self.config.get('POLARITY_TIE_FRAC', 0.18))
+            tie_thresh = float(self.config.get('POLARITY_TIE_THRESH', 0.08))
 
             work = image.copy()
             gray_raw = _to_gray_u8(work)
@@ -125,13 +132,13 @@ class ImageProcessor:
             def _bottom_heavier(pil_img: Image.Image, frac=tie_frac, thresh=tie_thresh) -> int | None:
                 w, h = pil_img.size
                 bh = max(8, int(frac * h))
-                top    = np.asarray(pil_img.crop((0, 0, w, bh)).convert("L"))
+                top = np.asarray(pil_img.crop((0, 0, w, bh)).convert("L"))
                 bottom = np.asarray(pil_img.crop((0, h - bh, w, h)).convert("L"))
                 # darker == ink; normalize 0..1
                 ink_top = 1.0 - top.mean() / 255.0
                 ink_bot = 1.0 - bottom.mean() / 255.0
                 diff = ink_bot - ink_top
-                if diff > thresh:   # bottom clearly heavier -> 180
+                if diff > thresh:  # bottom clearly heavier -> 180
                     return 180
                 if diff < -thresh:  # top clearly heavier -> 0
                     return 0
@@ -156,7 +163,7 @@ class ImageProcessor:
 
                     # --- NEW: portrait polarity tie-break for 0 vs 180 when nearly tied ---
                     if chosen in (0, 180) and cnn_scores:
-                        p0   = float(cnn_scores.get(0,   0.0))
+                        p0 = float(cnn_scores.get(0, 0.0))
                         p180 = float(cnn_scores.get(180, 0.0))
                         if abs(p0 - p180) < tie_margin:
                             # Build a PIL image for sampling (RGB)
@@ -166,9 +173,9 @@ class ImageProcessor:
                                 pil = Image.fromarray(cv2.cvtColor(work, cv2.COLOR_BGR2RGB))
                             guess = _bottom_heavier(pil)
                             if guess is not None and guess != chosen:
-                                work   = geometry.rotate_deg(work, 180)
+                                work = geometry.rotate_deg(work, 180)
                                 chosen = guess
-                                path  += "; polarity-tie"
+                                path += "; polarity-tie"
                 except Exception as e:
                     logger.warning("CNN orientation failed, falling back: %s", e)
                     chosen = None
@@ -187,7 +194,8 @@ class ImageProcessor:
                         horiz_weight=horiz_weight
                     )
                     self._last_choose_scores = scores if isinstance(scores, dict) else {}
-                    combo = self._last_choose_scores.get("combo", {}) if isinstance(self._last_choose_scores, dict) else {}
+                    combo = self._last_choose_scores.get("combo", {}) if isinstance(self._last_choose_scores,
+                                                                                    dict) else {}
                     sorted_vals = sorted(combo.values(), reverse=True) if combo else []
                     margin = (sorted_vals[0] - sorted_vals[1]) if len(sorted_vals) > 1 else (
                         sorted_vals[0] if sorted_vals else 0.0)
@@ -197,7 +205,8 @@ class ImageProcessor:
                         h, w = work.shape[:2]
                         for tweak in (-2.0, 2.0):
                             M = cv2.getRotationMatrix2D((w // 2, h // 2), tweak, 1.0)
-                            tmp = cv2.warpAffine(work, M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+                            tmp = cv2.warpAffine(work, M, (w, h), flags=cv2.INTER_LINEAR,
+                                                 borderMode=cv2.BORDER_REPLICATE)
                             d2, s2 = orientation.choose_coarse_orientation(
                                 tmp,
                                 osd_hint=self._last_osd_deg_hint,
@@ -248,12 +257,54 @@ class ImageProcessor:
                 f"blur={blur0:.1f}; osd=({osd_deg},{osd_conf})"
             )
             self._last_phase1_debug = note
+
+            skew_deg = float(angle_meta.get("median", 0.0))
+            self._last_phase1_meta = {
+                "orientation": int(chosen if chosen is not None else 0),
+                "skew_angle": skew_deg,
+            }
+
+            # ---------------- Phase-2: build non-text mask (optional) ----------------
+            self._last_nontext_mask = None
+            if self._textmask_enabled:
+                try:
+                    gray_for_mask = _to_gray_u8(deskewed)
+                    tm = self.config  # shorthand
+                    nontext = build_nontext_mask(
+                        gray_for_mask,
+                        k_blackhat=int(tm.get('TEXTMASK_BLACKHAT_K', 31)),
+                        mser_delta=int(tm.get('TEXTMASK_MSER_DELTA', 5)),
+                        mser_min_area=int(tm.get('TEXTMASK_MSER_MIN_AREA', 30)),
+                        mser_max_area_ratio=float(tm.get('TEXTMASK_MSER_MAX_AREA_RATIO', 0.2)),
+                        join_w=int(tm.get('TEXTMASK_JOIN_W', 15)),
+                        join_h=int(tm.get('TEXTMASK_JOIN_H', 3)),
+                    )
+                    self._last_nontext_mask = nontext
+
+                    # Optional: small stat for debug string
+                    keep_ratio = float(np.mean(nontext == 255))
+                    self._last_phase1_debug = f"{self._last_phase1_debug} ; nontext_keep={keep_ratio:.2f}"
+                except Exception as e:
+                    logger.debug(f"Non-text mask build failed: {e}")
+
             return deskewed
 
         except Exception as e:
             self._last_phase1_debug = f"error:{e}"
             logger.exception("deskew_image failed")
             return image
+
+    def get_last_nontext_mask(self) -> Optional[np.ndarray]:
+        """
+        Return the Phase-2 non-text mask from the most recent deskew_image() call.
+        255 = non-text (keep), 0 = text (suppress). Returns None if disabled/failed.
+        """
+        return self._last_nontext_mask
+
+    def get_last_phase1_meta(self) -> Dict[str, Any]:
+        # Returns a tiny dict with meta if present
+        m = getattr(self, "_last_phase1_meta", None)
+        return m if isinstance(m, dict) else {}
 
     # -----------------------------------------------------------------------
     # Back-compat: private chooser used by your harness (heuristic only)
@@ -273,6 +324,7 @@ class ImageProcessor:
             proj_weight=proj_weight,
             horiz_weight=horiz_weight
         )
+
 
     # -----------------------------------------------------------------------
     # Full preprocessing pipeline (for OCR-ready binary output)
@@ -298,6 +350,7 @@ class ImageProcessor:
 
             # Start from original; do ops in gray for stability
             gray = _to_gray_u8(image)
+
 
             # Gentle upscale for typewriter dots
             scale = float(self.config.get("resize_factor", 1.2))
@@ -347,6 +400,7 @@ __all__ = [
     "preprocess_for_japanese_np",
 ]
 
+
 # --- legacy helpers kept for backward compatibility ------------------------
 def preprocess_for_captions_np(np_img: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(np_img, cv2.COLOR_BGR2GRAY) if np_img.ndim == 3 and np_img.shape[2] == 3 else np_img.copy()
@@ -355,12 +409,14 @@ def preprocess_for_captions_np(np_img: np.ndarray) -> np.ndarray:
     return cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                                  cv2.THRESH_BINARY, 31, 15)
 
+
 def preprocess_for_fullpage_np(np_img: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(np_img, cv2.COLOR_BGR2GRAY) if np_img.ndim == 3 and np_img.shape[2] == 3 else np_img.copy()
     gray = cv2.resize(gray, None, fx=1.6, fy=1.6, interpolation=cv2.INTER_CUBIC)
     gray = cv2.GaussianBlur(gray, (3, 3), 0)
     return cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                                  cv2.THRESH_BINARY, 31, 15)
+
 
 def preprocess_for_japanese_np(np_img: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(np_img, cv2.COLOR_BGR2GRAY) if np_img.ndim == 3 and np_img.shape[2] == 3 else np_img.copy()

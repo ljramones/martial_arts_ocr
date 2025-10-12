@@ -90,6 +90,14 @@ class Config:
         'UNSHARP_STRENGTH': 1.5,
         'UNSHARP_SIGMA': 1.0,
 
+        # Text mask (Phase-2) parameters
+        'TEXTMASK_BLACKHAT_K': 31,  # odd ≥ 15; bigger = smoother text extraction
+        'TEXTMASK_MSER_DELTA': 5,
+        'TEXTMASK_MSER_MIN_AREA': 30,
+        'TEXTMASK_MSER_MAX_AREA_RATIO': 0.2,  # fraction of page
+        'TEXTMASK_JOIN_W': 15,  # horizontal joining of glyphs
+        'TEXTMASK_JOIN_H': 3,  # vertical joining (line thickness)
+
         # --- DENOISE PARAMETERS ---
         # For denoise.py: Unsharp masking parameters for the pre-boost step
         'PREBOOST_UNSHARP_STRENGTH': 1.8,
@@ -115,10 +123,63 @@ class Config:
 
     # Layout detection settings
     LAYOUT_DETECTION = {
+
+        # Which detectors to run
+        'enabled_detectors': ['figure', 'contours'],
+        # Optional extras
+        'contours_always': False,
+        "figure_margin": 20,
+
         'text_block_min_area': 1000,  # Minimum area for text blocks
         'image_block_min_area': 2500,  # Minimum area for image blocks
         'margin_threshold': 20,  # Pixels for margin detection
         'line_spacing_threshold': 15,  # Pixels for line spacing
+        'halo_ring': 4,  # int pixels
+        'halo_min_white': 0.85,  # float 0..1
+
+        # Variance / photo
+        'variance_window_min': 128,
+        'variance_window_rel': 0.125,  # min(h,w)/8
+        'variance_stride_rel': 1.0,  # stride = window * 1.0
+        'variance_min': 100.0,
+        'variance_max': 5000.0,
+        'variance_grad_smooth_thresh': 50.0,
+        'variance_expand_intensity_thresh': 30.0,
+        'variance_min_expanded_area': 20000,
+
+        # Uniform
+        'uniform_close_kernel': 15,
+        'uniform_min_area_ratio': 0.03,
+        'uniform_aspect_min': 0.3,
+        'uniform_aspect_max': 3.0,
+        'uniform_std_min': 10.0,
+        'uniform_std_max': 100.0,
+
+        'contour_min_area': 15000,
+        'contour_max_area_ratio': 0.4,
+        'contour_aspect_min': 0.3,
+        'contour_aspect_max': 3.5,
+        'contour_left_bias_xmax': 0.6,
+
+        'contour_canny_lo': 30,
+        'contour_canny_hi': 90,
+        'contour_dilate_kernel': 5,
+        'contour_dilate_iters': 2,
+
+        'contour_hough_min_line_length': 30,
+        'contour_hough_max_gap': 10,
+        'contour_hough_threshold': 50,
+        'contour_edge_density_min': 0.02,
+        'contour_edge_density_max': 0.15,
+        'contour_white_ratio_min': 0.6,
+        'contour_white_ratio_left_bias': 0.7,
+
+        'contour_cc_small_thresh': 200,
+        'contour_cc_small_count': 30,
+        'contour_cc_median_area_max': 150,
+
+        'contour_topk': 2,
+
     }
 
     # Japanese text processing
