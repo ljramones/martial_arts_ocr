@@ -29,7 +29,7 @@ stanza==1.1.1
 SQLAlchemy==2.0.36
 python-dotenv==1.0.1
 requests==2.32.3
-urllib3==2.2.3
+urllib3==2.6.0
 python-magic==0.4.27
 loguru==0.7.2
 tqdm==4.66.5
