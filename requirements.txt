@@ -20,7 +20,7 @@ langdetect==1.0.9
 
 # --- Translation / seq2seq ---
 argostranslate==1.9.1
-sentencepiece==0.1.99
+sentencepiece==0.2.1
 ctranslate2==3.20.0
 sacremoses==0.0.53
 stanza==1.1.1
