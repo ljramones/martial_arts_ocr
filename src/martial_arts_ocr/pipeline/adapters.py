@@ -39,6 +39,11 @@ def document_result_from_ocr_output(
     metadata = {
         "source_shape": type(ocr_output).__name__,
         "legacy": _safe_legacy_dict(ocr_output),
+        "ocr_engine": _value(_value(ocr_output, "best_ocr_result"), "engine", "unknown"),
+        "processing_time": _float_or_none(_value(ocr_output, "processing_time")),
+        "quality_score": _float_or_none(_value(ocr_output, "quality_score")),
+        "has_japanese": _value(ocr_output, "japanese_result") is not None,
+        "text_statistics": _value(ocr_output, "text_statistics"),
     }
 
     return DocumentResult(

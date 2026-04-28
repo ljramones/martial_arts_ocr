@@ -29,6 +29,8 @@ from martial_arts_ocr.imaging.preprocessing import AdvancedImagePreprocessor
 from martial_arts_ocr.ocr.models import OCRResult, ProcessingResult
 from martial_arts_ocr.ocr.engines import TesseractEngine, EasyOCREngine
 from martial_arts_ocr.ocr.postprocessor import OCRPostProcessor
+from martial_arts_ocr.pipeline.adapters import document_result_from_ocr_output
+from martial_arts_ocr.pipeline.document_models import DocumentResult
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +194,19 @@ class OCRProcessor:
         except Exception as e:
             logger.error(f"OCR processing failed: {e}")
             raise
+
+    def process_to_document_result(
+        self,
+        image_path: str | Path,
+        document_id: Optional[int] = None,
+    ) -> DocumentResult:
+        """Process a document and return the canonical pipeline result model."""
+        legacy_result = self.process_document(str(image_path), document_id=document_id)
+        return document_result_from_ocr_output(
+            legacy_result,
+            document_id=document_id,
+            source_path=Path(image_path),
+        )
 
     def _quick_ocr_test(self, image: np.ndarray) -> Dict[str, Any]:
         """Quick OCR test to determine if advanced preprocessing is needed."""

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import html as html_lib
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Protocol
@@ -80,22 +81,16 @@ class WorkflowOrchestrator:
 
         try:
             processor = self._processor or self._build_default_processor()
-            processing_result = processor.process_document(str(image_path), document_id=request.document_id)
-            document_result = document_result_from_ocr_output(
-                processing_result,
-                document_id=request.document_id,
-                source_path=image_path,
-                language_hint=request.language_hint,
-            )
+            document_result = self._process_to_document_result(processor, request, image_path)
 
             output_dir.mkdir(parents=True, exist_ok=True)
-            page_id = self._persist_processing_result(request, processing_result) if self._persist else None
-            paths = self._write_artifacts(output_dir, request, processing_result, document_result)
+            page_id = self._persist_document_result(request, document_result) if self._persist else None
+            paths = self._write_artifacts(output_dir, request, document_result)
 
             metadata = {
-                "ocr_engine": self._best_engine(processing_result),
+                "ocr_engine": self._document_ocr_engine(document_result),
                 "confidence": document_result.confidence,
-                "has_japanese": getattr(processing_result, "japanese_result", None) is not None,
+                "has_japanese": self._document_has_japanese(document_result),
                 "page_id": page_id,
                 "detected_languages": document_result.detected_languages,
             }
@@ -136,50 +131,84 @@ class WorkflowOrchestrator:
 
         return PageReconstructor()
 
-    def _persist_processing_result(self, request: PipelineRequest, processing_result: Any) -> int:
+    def _process_to_document_result(
+        self,
+        processor: _DocumentProcessor,
+        request: PipelineRequest,
+        image_path: Path,
+    ) -> DocumentResult:
+        if hasattr(processor, "process_to_document_result"):
+            document_result = processor.process_to_document_result(
+                image_path,
+                document_id=request.document_id,
+            )
+            if isinstance(document_result, DocumentResult):
+                return document_result
+            return document_result_from_ocr_output(
+                document_result,
+                document_id=request.document_id,
+                source_path=image_path,
+                language_hint=request.language_hint,
+            )
+
+        legacy_result = processor.process_document(str(image_path), document_id=request.document_id)
+        return document_result_from_ocr_output(
+            legacy_result,
+            document_id=request.document_id,
+            source_path=image_path,
+            language_hint=request.language_hint,
+        )
+
+    def _persist_document_result(self, request: PipelineRequest, document_result: DocumentResult) -> int:
+        page_result = document_result.pages[0] if document_result.pages else None
+        combined_text = document_result.combined_text()
+        processing_time = float(document_result.metadata.get("processing_time") or 0.0)
+        confidence = document_result.confidence or (page_result.confidence if page_result else None)
+
         with self._session_factory() as session:
             page = self._page_model(
                 document_id=request.document_id,
-                page_number=1,
+                page_number=page_result.page_number if page_result else 1,
                 image_path=str(request.image_path),
-                image_width=self._image_dimension(processing_result, "width"),
-                image_height=self._image_dimension(processing_result, "height"),
-                processing_time=getattr(processing_result, "processing_time", 0.0),
-                ocr_confidence=getattr(processing_result, "overall_confidence", None),
-                text_regions=self._regions_to_dicts(getattr(processing_result, "text_regions", [])),
-                image_regions=self._regions_to_dicts(getattr(processing_result, "image_regions", [])),
+                image_width=page_result.width if page_result else None,
+                image_height=page_result.height if page_result else None,
+                processing_time=processing_time,
+                ocr_confidence=confidence,
+                text_regions=[region.to_dict() for region in page_result.text_regions] if page_result else [],
+                image_regions=[region.to_dict() for region in page_result.image_regions] if page_result else [],
             )
             session.add(page)
             session.flush()
 
-            japanese_result = getattr(processing_result, "japanese_result", None)
-            best_ocr_result = getattr(processing_result, "best_ocr_result", None)
+            legacy_data = self._document_legacy_data(document_result)
+            html_content = self._legacy_field(document_result, "html_content")
+            markdown_content = self._legacy_field(document_result, "markdown_content")
             db_result = self._db_processing_result_model(
                 document_id=request.document_id,
                 page_id=page.id,
-                ocr_engine_used=self._best_engine(processing_result),
-                processing_time=getattr(processing_result, "processing_time", 0.0),
-                raw_ocr_text=getattr(processing_result, "raw_text", None),
-                cleaned_text=getattr(processing_result, "cleaned_text", None),
-                ocr_confidence=getattr(processing_result, "overall_confidence", None),
-                ocr_metadata=getattr(best_ocr_result, "metadata", None),
-                has_japanese=japanese_result is not None,
-                japanese_segments=[seg.to_dict() for seg in japanese_result.segments] if japanese_result else None,
-                language_analysis=japanese_result.language_analysis if japanese_result else None,
-                martial_arts_terms=japanese_result.martial_arts_terms if japanese_result else None,
-                overall_romaji=japanese_result.overall_romaji if japanese_result else None,
-                overall_translation=japanese_result.overall_translation if japanese_result else None,
-                japanese_confidence=japanese_result.confidence_score if japanese_result else None,
-                japanese_metadata=japanese_result.processing_metadata if japanese_result else None,
-                html_content=getattr(processing_result, "html_content", None),
-                markdown_content=getattr(processing_result, "markdown_content", None),
-                extracted_images=getattr(processing_result, "extracted_images", None),
-                text_statistics=getattr(processing_result, "text_statistics", None),
-                quality_score=getattr(processing_result, "quality_score", None),
+                ocr_engine_used=self._document_ocr_engine(document_result),
+                processing_time=processing_time,
+                raw_ocr_text=page_result.raw_text if page_result else combined_text,
+                cleaned_text=combined_text,
+                ocr_confidence=confidence,
+                ocr_metadata=document_result.metadata,
+                has_japanese=self._document_has_japanese(document_result),
+                japanese_segments=legacy_data.get("japanese_segments"),
+                language_analysis=legacy_data.get("language_analysis"),
+                martial_arts_terms=legacy_data.get("martial_arts_terms"),
+                overall_romaji=legacy_data.get("overall_romaji"),
+                overall_translation=legacy_data.get("overall_translation"),
+                japanese_confidence=legacy_data.get("japanese_confidence"),
+                japanese_metadata=legacy_data.get("japanese_metadata"),
+                html_content=html_content,
+                markdown_content=markdown_content,
+                extracted_images=[region.to_dict() for region in page_result.image_regions] if page_result else [],
+                text_statistics=document_result.metadata.get("text_statistics"),
+                quality_score=document_result.metadata.get("quality_score"),
                 confidence_breakdown={
-                    "ocr_confidence": getattr(processing_result, "overall_confidence", None),
-                    "quality_score": getattr(processing_result, "quality_score", None),
-                    "japanese_confidence": japanese_result.confidence_score if japanese_result else None,
+                    "ocr_confidence": confidence,
+                    "quality_score": document_result.metadata.get("quality_score"),
+                    "japanese_confidence": legacy_data.get("japanese_confidence"),
                 },
             )
             session.add(db_result)
@@ -190,14 +219,13 @@ class WorkflowOrchestrator:
         self,
         output_dir: Path,
         request: PipelineRequest,
-        processing_result: Any,
         document_result: DocumentResult,
     ) -> dict[str, Path]:
         paths: dict[str, Path] = {}
 
         try:
             reconstructor = self._page_reconstructor or self._build_default_reconstructor()
-            reconstructed_page = reconstructor.reconstruct_page(processing_result, str(request.image_path))
+            reconstructed_page = reconstructor.reconstruct_page(document_result, str(request.image_path))
             page_data_path = output_dir / "page_data.json"
             page_data_path.write_text(
                 json.dumps(reconstructed_page.to_dict(), ensure_ascii=False, indent=2),
@@ -207,7 +235,7 @@ class WorkflowOrchestrator:
         except Exception as exc:
             logger.warning("Page reconstruction failed for doc %s: %s", request.document_id, exc)
 
-        legacy_data = self._processing_result_to_dict(processing_result)
+        legacy_data = self._document_legacy_data(document_result)
         combined_text = document_result.combined_text()
         json_data = document_result.to_dict()
         json_data["processing_date"] = datetime.now().isoformat()
@@ -223,7 +251,15 @@ class WorkflowOrchestrator:
         json_path.write_text(json.dumps(json_data, ensure_ascii=False, indent=2), encoding="utf-8")
         paths["json_path"] = json_path
 
-        html = getattr(processing_result, "html_content", None)
+        html = self._legacy_field(document_result, "html_content")
+        if not html and "page_data_path" in paths:
+            try:
+                page_data = json.loads(paths["page_data_path"].read_text(encoding="utf-8"))
+                html = page_data.get("html_content")
+            except Exception:
+                html = None
+        if not html and combined_text:
+            html = f"<html><body><pre>{html_lib.escape(combined_text)}</pre></body></html>"
         if html:
             html_path = output_dir / "page_1.html"
             html_path.write_text(html, encoding="utf-8")
@@ -262,26 +298,32 @@ class WorkflowOrchestrator:
                 session.commit()
 
     @staticmethod
-    def _regions_to_dicts(regions: list[Any]) -> list[dict[str, Any]]:
-        out = []
-        for region in regions or []:
-            out.append(region.to_dict() if hasattr(region, "to_dict") else dict(region))
-        return out
+    def _document_legacy_data(document_result: DocumentResult) -> dict[str, Any]:
+        legacy = document_result.metadata.get("legacy", {})
+        return legacy if isinstance(legacy, dict) else {}
+
+    @classmethod
+    def _legacy_field(cls, document_result: DocumentResult, key: str) -> Any:
+        legacy = cls._document_legacy_data(document_result)
+        return legacy.get(key)
+
+    @classmethod
+    def _document_ocr_engine(cls, document_result: DocumentResult) -> str:
+        engine = document_result.metadata.get("ocr_engine")
+        if engine and engine != "unknown":
+            return str(engine)
+
+        legacy = cls._document_legacy_data(document_result)
+        best_ocr_result = legacy.get("best_ocr_result")
+        if isinstance(best_ocr_result, dict) and best_ocr_result.get("engine"):
+            return str(best_ocr_result["engine"])
+        if legacy.get("ocr_engine_used"):
+            return str(legacy["ocr_engine_used"])
+        return "unknown"
 
     @staticmethod
-    def _image_dimension(processing_result: Any, key: str) -> Any:
-        metadata = getattr(processing_result, "processing_metadata", {}) or {}
-        return metadata.get("image_dimensions", {}).get(key)
-
-    @staticmethod
-    def _best_engine(processing_result: Any) -> str:
-        best_ocr_result = getattr(processing_result, "best_ocr_result", None)
-        return getattr(best_ocr_result, "engine", "unknown")
-
-    @staticmethod
-    def _processing_result_to_dict(processing_result: Any) -> dict[str, Any]:
-        if hasattr(processing_result, "to_dict"):
-            return processing_result.to_dict()
-        if isinstance(processing_result, dict):
-            return dict(processing_result)
-        return {"repr": repr(processing_result)}
+    def _document_has_japanese(document_result: DocumentResult) -> bool:
+        has_japanese = document_result.metadata.get("has_japanese")
+        if has_japanese is not None:
+            return bool(has_japanese)
+        return any(language.lower().startswith("ja") for language in document_result.detected_languages)

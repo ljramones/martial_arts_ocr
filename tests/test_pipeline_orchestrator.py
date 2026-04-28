@@ -6,6 +6,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from martial_arts_ocr.pipeline.document_models import DocumentResult, PageResult
+
 
 class FakeOCRResult:
     engine = "fake"
@@ -51,13 +53,34 @@ class FakeProcessor:
         return result
 
 
+class FakeCanonicalProcessor:
+    process_document_called = False
+
+    def process_to_document_result(self, image_path, document_id: int | None = None):
+        return DocumentResult(
+            document_id=document_id,
+            source_path=Path(image_path),
+            pages=[PageResult(page_number=1, width=8, height=8, raw_text="Canonical OCR text", confidence=0.97)],
+            detected_languages=["en"],
+            confidence=0.97,
+            metadata={"ocr_engine": "canonical", "processing_time": 0.02, "quality_score": 0.91},
+        )
+
+    def process_document(self, image_path: str, document_id: int | None = None):
+        self.process_document_called = True
+        raise AssertionError("orchestrator should prefer process_to_document_result")
+
+
 class FakePage:
     def to_dict(self):
         return {"pages": [], "source": "fake"}
 
 
 class FakeReconstructor:
+    last_processing_result = None
+
     def reconstruct_page(self, processing_result, image_path: str):
+        self.last_processing_result = processing_result
         return FakePage()
 
 
@@ -97,12 +120,11 @@ def _create_document(runtime, filename: str) -> int:
 
 def test_orchestrator_success_writes_db_and_artifacts(monkeypatch, tmp_path):
     runtime = _fresh_runtime(monkeypatch, tmp_path)
-    image_path = tmp_path / "scan.png"
+    image_path = tmp_path / "canonical_scan.png"
     image_path.write_bytes(b"fake image bytes")
     document_id = _create_document(runtime, image_path.name)
 
     from martial_arts_ocr.pipeline import PipelineRequest, WorkflowOrchestrator
-    from martial_arts_ocr.pipeline.document_models import DocumentResult
 
     orchestrator = WorkflowOrchestrator(
         processor=FakeProcessor(),
@@ -121,6 +143,7 @@ def test_orchestrator_success_writes_db_and_artifacts(monkeypatch, tmp_path):
     assert result.output_dir == tmp_path / "data" / "processed" / f"doc_{document_id}"
     assert isinstance(result.payload, DocumentResult)
     assert result.payload.combined_text() == "Sample OCR text"
+    assert isinstance(orchestrator._page_reconstructor.last_processing_result, DocumentResult)
     assert result.html_path.exists()
     assert result.json_path.exists()
     assert result.text_path.exists()
@@ -141,6 +164,47 @@ def test_orchestrator_success_writes_db_and_artifacts(monkeypatch, tmp_path):
         assert doc.ocr_engine == "fake"
         assert page.ocr_confidence == 0.95
         assert db_result.cleaned_text == "Sample OCR text"
+
+
+def test_orchestrator_prefers_canonical_processor_and_persists_document_result(monkeypatch, tmp_path):
+    runtime = _fresh_runtime(monkeypatch, tmp_path)
+    image_path = tmp_path / "scan.png"
+    image_path.write_bytes(b"fake image bytes")
+    document_id = _create_document(runtime, image_path.name)
+    processor = FakeCanonicalProcessor()
+
+    from martial_arts_ocr.pipeline import PipelineRequest, WorkflowOrchestrator
+
+    orchestrator = WorkflowOrchestrator(
+        processor=processor,
+        page_reconstructor=FakeReconstructor(),
+        session_factory=runtime.get_db_session,
+        processed_path_factory=lambda name: tmp_path / "data" / "processed" / name,
+        document_model=runtime.Document,
+        page_model=runtime.Page,
+        db_processing_result_model=runtime.ProcessingResult,
+    )
+
+    result = orchestrator.process_document(
+        PipelineRequest(document_id=document_id, image_path=image_path)
+    )
+
+    assert result.success is True
+    assert processor.process_document_called is False
+    assert result.payload.combined_text() == "Canonical OCR text"
+    assert result.metadata["ocr_engine"] == "canonical"
+    assert result.text_path.read_text(encoding="utf-8") == "Canonical OCR text"
+
+    with runtime.get_db_session() as session:
+        doc = session.get(runtime.Document, document_id)
+        page = session.query(runtime.Page).filter_by(document_id=document_id).first()
+        db_result = session.query(runtime.ProcessingResult).filter_by(document_id=document_id).first()
+
+        assert doc.ocr_engine == "canonical"
+        assert page.image_width == 8
+        assert page.ocr_confidence == 0.97
+        assert db_result.cleaned_text == "Canonical OCR text"
+        assert db_result.ocr_engine_used == "canonical"
 
 
 def test_orchestrator_missing_image_returns_failed_result(monkeypatch, tmp_path):
