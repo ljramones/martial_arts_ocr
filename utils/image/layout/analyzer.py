@@ -99,13 +99,16 @@ class LayoutAnalyzer:
         if isinstance(nontext_mask, np.ndarray):
             gray = apply_nontext_mask(gray, nontext_mask)
 
-        merged = self._detect_image_region_candidates(gray)
+        candidates = self._detect_image_region_candidates(gray)
 
         # Optional: allow bypassing text-like rejection (A/B / debugging)
         if bool(self.cfg.get("filter_text_like", True)):
-            filtered = self.text_filter.filter(gray, merged)
+            filtered = self.text_filter.filter(gray, candidates)
         else:
-            filtered = merged
+            filtered = candidates
+
+        final_iou = float(self.cfg.get("final_iou_nms", 0.30))
+        filtered = remove_overlaps(filtered, iou_threshold=final_iou)
 
         logger.info("Image regions detected: %d", len(filtered))
         return filtered
@@ -129,6 +132,9 @@ class LayoutAnalyzer:
                 rejected.append({"region": region.to_dict(), "rejection_reason": reason})
             else:
                 accepted.append(region)
+
+        final_iou = float(self.cfg.get("final_iou_nms", 0.30))
+        accepted = remove_overlaps(accepted, iou_threshold=final_iou)
 
         return {
             "accepted_regions": accepted,
@@ -170,10 +176,7 @@ class LayoutAnalyzer:
             diagrams = merge_overlapping(diagrams, iou_threshold=iou_th, gap=gap_px)
         regions = others + diagrams
 
-        # Configurable final NMS across all region types
-        final_iou = float(self.cfg.get("final_iou_nms", 0.30))
-        merged = remove_overlaps(regions, iou_threshold=final_iou)
-        return merged
+        return regions
 
     def detect_text_regions(
         self,

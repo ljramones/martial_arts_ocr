@@ -54,12 +54,15 @@ class ContourDetector(BaseDetector):
         self.white_ratio_left_bias: float = float(cfg.get('contour_white_ratio_left_bias', 0.7))
 
         # CC-based text rejection
+        self.reject_text_like_early: bool = bool(cfg.get('contour_reject_text_like_early', False))
+        self.reject_page_edge_text_like: bool = bool(cfg.get('contour_reject_page_edge_text_like', True))
+        self.page_edge_margin: int = int(cfg.get('image_border_margin', 10))
         self.cc_small_thresh: int = int(cfg.get('contour_cc_small_thresh', 200))
         self.cc_small_count: int = int(cfg.get('contour_cc_small_count', 30))
         self.cc_median_area_max: int = int(cfg.get('contour_cc_median_area_max', 150))
 
         # Limit number of final regions
-        self.topk: int = int(cfg.get('contour_topk', 2))
+        self.topk: int = int(cfg.get('contour_topk', 6))
 
         # New: optional relaxed line mode and halo requirement
         self.require_halo: bool = bool(cfg.get('contours_require_halo', False))
@@ -124,17 +127,31 @@ class ContourDetector(BaseDetector):
 
                 roi = gray[y:y + height, x:x + width]
 
-                # 2) Reject text-like regions by connected components
-                _, binary_roi = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary_roi, connectivity=8)
-                if num_labels > 2:
-                    areas = stats[1:, cv2.CC_STAT_AREA]  # skip background
-                    median_comp_area = np.median(areas) if areas.size else 0
-                    num_small_components = int(np.sum(areas < self.cc_small_thresh))
-                    if (num_small_components > self.cc_small_count and
-                            median_comp_area < self.cc_median_area_max):
-                        logger.debug("ContourDetector: text-like CC pattern at (%d,%d)", x, y)
-                        continue
+                # 2) Optional early text-like rejection. Keep the broad form
+                # disabled by default because sparse symbols and labeled diagrams
+                # can look glyph-like before the final TextRegionFilter sees full
+                # context. Still reject page-edge text-like bands early: those
+                # large exterior contours can hide nested real drawings when
+                # RETR_EXTERNAL is used.
+                touches_page_edge = (
+                    x <= self.page_edge_margin
+                    or y <= self.page_edge_margin
+                )
+                should_check_text_like_early = (
+                    self.reject_text_like_early
+                    or (self.reject_page_edge_text_like and touches_page_edge)
+                )
+                if should_check_text_like_early:
+                    _, binary_roi = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+                    num_labels, _labels, stats, _ = cv2.connectedComponentsWithStats(binary_roi, connectivity=8)
+                    if num_labels > 2:
+                        areas = stats[1:, cv2.CC_STAT_AREA]  # skip background
+                        median_comp_area = np.median(areas) if areas.size else 0
+                        num_small_components = int(np.sum(areas < self.cc_small_thresh))
+                        if (num_small_components > self.cc_small_count and
+                                median_comp_area < self.cc_median_area_max):
+                            logger.debug("ContourDetector: text-like CC pattern at (%d,%d)", x, y)
+                            continue
 
                 # 3) Diagram-ish structure: edges / lines / whitespace
                 roi_edges = cv2.Canny(roi, 50, 150)
@@ -168,6 +185,13 @@ class ContourDetector(BaseDetector):
                     logger.debug("ContourDetector: rejected by halo at (%d,%d,%d,%d)", x, y, width, height)
                     continue
 
+                metadata = {
+                    "detector": "contours",
+                    "edge_density": edge_density,
+                    "white_ratio": white_ratio,
+                    "hough_line_count": int(len(lines)) if lines is not None else 0,
+                    "area_ratio": area / float(max(1, h * w)),
+                }
                 logger.info(
                     "ContourDetector: diagram at (%d,%d) area=%d ed=%.3f wr=%.2f",
                     x, y, area, edge_density, white_ratio
@@ -175,7 +199,8 @@ class ContourDetector(BaseDetector):
                 regions.append(ImageRegion(
                     x=int(x), y=int(y),
                     width=int(width), height=int(height),
-                    region_type="diagram", confidence=0.85
+                    region_type="diagram", confidence=0.85,
+                    metadata=metadata
                 ))
 
             # Keep only top-K largest to avoid clutter
@@ -187,4 +212,3 @@ class ContourDetector(BaseDetector):
         except Exception as e:
             logger.error("Contour detection failed: %s", e)
             return []
-

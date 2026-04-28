@@ -208,9 +208,19 @@ class Config:
         'region_text_line_min_density': 0.20,
         'region_text_line_max_density': 0.50,
         'region_text_line_min_col_occupancy': 0.75,
+        'region_sparse_text_band_max_height': 180,
+        'region_sparse_text_band_min_aspect_ratio': 3.0,
+        'region_sparse_text_band_min_density': 0.12,
+        'region_sparse_text_band_max_density': 0.35,
+        'region_sparse_text_band_max_median_component_area': 70.0,
+        'region_sparse_text_band_min_small_component_fraction': 0.55,
         'region_vertical_text_max_aspect_ratio': 0.45,
         'region_rotated_text_min_row_occupancy': 0.80,
         'region_rotated_text_min_col_occupancy': 0.75,
+        'region_preserve_labeled_diagrams': True,
+        'region_labeled_diagram_min_component_area_ratio': 2.4,
+        'region_labeled_diagram_min_small_component_fraction': 0.30,
+        'region_labeled_diagram_max_density': 0.35,
 
         # ---------------------------
         # Merging & NMS postprocess
@@ -255,7 +265,7 @@ class Config:
         'uniform_std_max': 100.0,
 
         'contour_min_area': 15000,
-        'contour_max_area_ratio': 0.4,
+        'contour_max_area_ratio': 0.5,
         'contour_aspect_min': 0.3,
         'contour_aspect_max': 3.5,
         'contour_left_bias_xmax': 0.6,
@@ -273,11 +283,16 @@ class Config:
         'contour_white_ratio_min': 0.6,
         'contour_white_ratio_left_bias': 0.7,
 
+        # Final TextRegionFilter owns semantic text rejection by default.
+        # Keep broad early CC rejection opt-in because it hid sparse drawings,
+        # but reject page-edge text bands early so they do not hide nested art.
+        'contour_reject_text_like_early': False,
+        'contour_reject_page_edge_text_like': True,
         'contour_cc_small_thresh': 200,
         'contour_cc_small_count': 30,
         'contour_cc_median_area_max': 150,
 
-        'contour_topk': 2,
+        'contour_topk': 6,
 
     }
 

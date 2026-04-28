@@ -110,6 +110,10 @@ class TextRegionFilter:
         if metrics["density"] > options.max_text_like_density:
             return "text_like_density"
 
+        if self._looks_like_sparse_text_band(metrics, options):
+            return "sparse_text_band"
+        if self._looks_like_labeled_diagram(metrics, options):
+            return None
         if self._looks_like_text_fragment(metrics, options):
             return "text_like_components"
         if options.reject_rotated_text_like and self._looks_like_rotated_text(metrics, options):
@@ -167,6 +171,26 @@ class TextRegionFilter:
             and metrics["small_component_fraction"] <= options.text_like_max_small_component_fraction
         )
 
+    def _looks_like_labeled_diagram(self, metrics: dict[str, float], options: RegionDetectionOptions) -> bool:
+        """Preserve drawings that contain labels plus larger strokes/shapes.
+
+        Labeled diagrams often have enough glyph-like components to trip the
+        text-fragment rule, but their component sizes are mixed: small label
+        glyphs coexist with larger arrows, outlines, or hand-drawn strokes.
+        Typewritten text blocks are more uniform, so their mean/median component
+        area ratio stays close to 1.
+        """
+        if not options.preserve_labeled_diagrams:
+            return False
+        median_area = max(1.0, metrics["median_component_area"])
+        component_area_ratio = metrics["mean_component_area"] / median_area
+        return (
+            metrics["component_count"] >= options.text_like_min_components
+            and options.text_like_min_density <= metrics["density"] <= options.labeled_diagram_max_density
+            and metrics["small_component_fraction"] >= options.labeled_diagram_min_small_component_fraction
+            and component_area_ratio >= options.labeled_diagram_min_component_area_ratio
+        )
+
     def _looks_like_rotated_text(self, metrics: dict[str, float], options: RegionDetectionOptions) -> bool:
         narrow_vertical = metrics["aspect_ratio"] <= options.vertical_text_max_aspect_ratio
         dense_repeated = (
@@ -192,6 +216,16 @@ class TextRegionFilter:
             and metrics["aspect_ratio"] >= options.text_line_min_aspect_ratio
             and options.text_line_min_density <= metrics["density"] <= options.text_line_max_density
             and metrics["row_occupancy"] >= options.title_text_max_row_occupancy
+            and metrics["col_occupancy"] >= options.text_line_min_col_occupancy
+        )
+
+    def _looks_like_sparse_text_band(self, metrics: dict[str, float], options: RegionDetectionOptions) -> bool:
+        return (
+            metrics["height"] <= options.sparse_text_band_max_height
+            and metrics["aspect_ratio"] >= options.sparse_text_band_min_aspect_ratio
+            and options.sparse_text_band_min_density <= metrics["density"] <= options.sparse_text_band_max_density
+            and metrics["median_component_area"] <= options.sparse_text_band_max_median_component_area
+            and metrics["small_component_fraction"] >= options.sparse_text_band_min_small_component_fraction
             and metrics["col_occupancy"] >= options.text_line_min_col_occupancy
         )
 

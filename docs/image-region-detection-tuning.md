@@ -55,3 +55,55 @@ These values are represented by `RegionDetectionOptions` in `utils/image/layout/
 - Real captions near diagrams remain difficult because they can be spatially attached to legitimate figures.
 - Some photo-like or shaded image regions may need separate handling.
 - A detector strategy abstraction may still be useful if threshold tuning cannot balance text rejection and diagram recall.
+
+## Post Text-Filter Recall Tuning
+
+The second Donn Draeger review showed that text-like rejection fixed the major title/body/vertical-text false positives, but recall was still weak for several real page cases:
+
+- `original_img_3335`: a large illustration/photo-like figure was missed.
+- `original_img_3397`: sparse symbols, arrows, and hand-drawn clusters were missed.
+- `original_img_3344`: a labeled diagram was over-rejected as `text_like_components`.
+- `original_img_3352` and `3353`: accepted crops were useful, but labels/annotations are naturally included in the figure area.
+
+This pass keeps the classical CV detector as the default and improves recall without adding OCR or ML dependencies.
+
+### Candidate Generation Changes
+
+- `contour_max_area_ratio` is raised from `0.4` to `0.5` so large real illustrations can become candidates.
+- `contour_topk` is raised from `2` to `6` so smaller valid drawings are not dropped before filtering when larger text-like candidates are present.
+- Broad early connected-component text rejection remains disabled by default because it hid sparse drawings and labeled diagrams.
+- Top/left page-edge text-like bands are still rejected early with `contour_reject_page_edge_text_like`. These large exterior contours can otherwise hide nested diagrams when `cv2.RETR_EXTERNAL` is used. Right/bottom edge candidates are not rejected early because real diagrams can touch those edges.
+- Final overlap removal now happens after text-like filtering, so rejected text candidates cannot suppress smaller real diagrams.
+
+### Labeled Diagram Preservation
+
+`TextRegionFilter` now preserves candidates that look like mixed labeled diagrams. The key signal is component-size diversity:
+
+- typewritten text has relatively uniform component areas
+- labeled diagrams mix small label glyphs with larger arrows, outlines, and hand-drawn strokes
+
+New `region_*` options:
+
+- `region_preserve_labeled_diagrams`
+- `region_labeled_diagram_min_component_area_ratio`
+- `region_labeled_diagram_min_small_component_fraction`
+- `region_labeled_diagram_max_density`
+
+The filter also adds `sparse_text_band` rejection for wide, shallow bands made of small repeated components. This recovers the previous behavior on sparse text-like pages without blocking square or vertical sparse symbol clusters.
+
+### Real-Page Spot Check
+
+With default settings after this pass:
+
+- `3335` accepts the large figure and rejects the top text block.
+- `3344` accepts the labeled diagram and rejects the text fragment.
+- `3397` accepts sparse symbol/arrow clusters.
+- `3292`, `3327`, and `3340` still retain their real diagrams.
+- `3331`, `3378`, and `3389` still reject text-like candidates.
+- `3352` and `3353` retain labeled/hand-drawn figure areas after final NMS was moved behind filtering.
+
+### Remaining Risks After Recall Tuning
+
+- Higher recall now returns additional candidates on some pages (`3292`, `3312`, `3327`, `3345`, `3352`). These should be visually reviewed before runtime integration.
+- Captions and labels are still part of many useful crops. That is acceptable for review, but later runtime integration may need caption-aware postprocessing.
+- Sparse symbol grouping is heuristic and should be rechecked on the same 19 reviewed pages before integration.

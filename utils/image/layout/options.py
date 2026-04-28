@@ -30,9 +30,19 @@ class RegionDetectionOptions:
     text_line_min_density: float = 0.20
     text_line_max_density: float = 0.50
     text_line_min_col_occupancy: float = 0.75
+    sparse_text_band_max_height: int = 180
+    sparse_text_band_min_aspect_ratio: float = 3.0
+    sparse_text_band_min_density: float = 0.12
+    sparse_text_band_max_density: float = 0.35
+    sparse_text_band_max_median_component_area: float = 70.0
+    sparse_text_band_min_small_component_fraction: float = 0.55
     vertical_text_max_aspect_ratio: float = 0.45
     rotated_text_min_row_occupancy: float = 0.80
     rotated_text_min_col_occupancy: float = 0.75
+    preserve_labeled_diagrams: bool = True
+    labeled_diagram_min_component_area_ratio: float = 2.4
+    labeled_diagram_min_small_component_fraction: float = 0.30
+    labeled_diagram_max_density: float = 0.35
 
     @classmethod
     def from_config(cls, cfg: Mapping[str, Any]) -> "RegionDetectionOptions":
