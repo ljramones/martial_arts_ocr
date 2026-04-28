@@ -1,6 +1,7 @@
 from __future__ import annotations
-from typing import List
+from typing import Any, Dict, List, Tuple
 from utils.image.regions.core_image import ImageRegion
+from utils.image.layout.options import RegionDetectionOptions
 
 
 def remove_overlaps(regions: List[ImageRegion], iou_threshold: float = 0.3) -> List[ImageRegion]:
@@ -87,3 +88,171 @@ def merge_overlapping(regions: List[ImageRegion],
         ))
 
     return merged_regions
+
+
+def consolidate_regions(
+    regions: List[ImageRegion],
+    options: RegionDetectionOptions,
+) -> Tuple[List[ImageRegion], List[Dict[str, Any]]]:
+    """Consolidate accepted image regions after text-like filtering.
+
+    This pass deliberately runs after semantic text rejection so rejected text
+    candidates cannot suppress valid diagrams. It merges overlapping/adjacent
+    accepted candidates and suppresses contained children when the parent crop is
+    not excessively broad.
+    """
+    if len(regions) <= 1:
+        return regions, []
+
+    events: List[Dict[str, Any]] = []
+    current = list(regions)
+    changed = True
+    while changed:
+        changed = False
+        used = [False] * len(current)
+        next_regions: List[ImageRegion] = []
+
+        for i, first in enumerate(current):
+            if used[i]:
+                continue
+            merged = first
+            used[i] = True
+
+            for j in range(i + 1, len(current)):
+                if used[j]:
+                    continue
+                second = current[j]
+                action = _consolidation_action(merged, second, options)
+                if action == "contained_suppression":
+                    parent, child = _larger_smaller(merged, second)
+                    if parent is not merged:
+                        merged = parent
+                    used[j] = True
+                    changed = True
+                    events.append({
+                        "reason": action,
+                        "kept": merged.to_dict(),
+                        "suppressed": child.to_dict(),
+                    })
+                elif action in {"overlap_merge", "adjacent_merge"}:
+                    merged = _merge_pair(merged, second, action)
+                    used[j] = True
+                    changed = True
+                    events.append({
+                        "reason": action,
+                        "merged": merged.to_dict(),
+                        "from": [first.to_dict(), second.to_dict()],
+                    })
+
+            next_regions.append(merged)
+
+        current = next_regions
+
+    return sorted(current, key=lambda r: (r.y, r.x, -r.area)), events
+
+
+def _consolidation_action(
+    first: ImageRegion,
+    second: ImageRegion,
+    options: RegionDetectionOptions,
+) -> str | None:
+    inter = _intersection_area(first, second)
+    if inter <= 0 and not options.merge_adjacent_regions:
+        return None
+
+    smaller = min(first.area, second.area)
+    larger = max(first.area, second.area)
+    if smaller <= 0:
+        return None
+
+    contained_ratio = inter / float(smaller)
+    if contained_ratio >= options.contained_region_suppression_threshold:
+        if larger / float(smaller) <= options.contained_parent_max_area_ratio:
+            return "contained_suppression"
+        return None
+
+    if options.merge_overlapping_regions and first.iou(second) >= options.overlap_merge_iou_threshold:
+        return "overlap_merge"
+
+    if options.merge_adjacent_regions and _should_merge_adjacent(first, second, options):
+        return "adjacent_merge"
+
+    return None
+
+
+def _should_merge_adjacent(
+    first: ImageRegion,
+    second: ImageRegion,
+    options: RegionDetectionOptions,
+) -> bool:
+    gap = _edge_gap(first, second)
+    if gap > options.adjacent_merge_gap_px:
+        return False
+
+    union_area = _union_bbox_area(first, second)
+    covered_area = first.area + second.area - _intersection_area(first, second)
+    if covered_area <= 0:
+        return False
+    if union_area / float(covered_area) > options.adjacent_merge_max_area_growth_ratio:
+        return False
+
+    x_overlap = max(0, min(first.x2, second.x2) - max(first.x1, second.x1))
+    y_overlap = max(0, min(first.y2, second.y2) - max(first.y1, second.y1))
+    min_width = max(1, min(first.width, second.width))
+    min_height = max(1, min(first.height, second.height))
+
+    return (
+        x_overlap / float(min_width) >= options.adjacent_merge_min_axis_overlap_ratio
+        or y_overlap / float(min_height) >= options.adjacent_merge_min_axis_overlap_ratio
+    )
+
+
+def _merge_pair(first: ImageRegion, second: ImageRegion, reason: str) -> ImageRegion:
+    x1 = min(first.x1, second.x1)
+    y1 = min(first.y1, second.y1)
+    x2 = max(first.x2, second.x2)
+    y2 = max(first.y2, second.y2)
+    confidence_values = [value for value in (first.confidence, second.confidence) if value is not None]
+    confidence = max(confidence_values) if confidence_values else None
+    metadata = dict(getattr(first, "metadata", {}) or {})
+    metadata.update({
+        "consolidation_reason": reason,
+        "merged_from": [first.to_dict(), second.to_dict()],
+    })
+    return ImageRegion(
+        x=x1,
+        y=y1,
+        width=x2 - x1,
+        height=y2 - y1,
+        region_type=first.region_type or second.region_type,
+        confidence=confidence,
+        metadata=metadata,
+    )
+
+
+def _larger_smaller(first: ImageRegion, second: ImageRegion) -> Tuple[ImageRegion, ImageRegion]:
+    if first.area >= second.area:
+        return first, second
+    return second, first
+
+
+def _intersection_area(first: ImageRegion, second: ImageRegion) -> int:
+    x1 = max(first.x1, second.x1)
+    y1 = max(first.y1, second.y1)
+    x2 = min(first.x2, second.x2)
+    y2 = min(first.y2, second.y2)
+    return max(0, x2 - x1) * max(0, y2 - y1)
+
+
+def _union_bbox_area(first: ImageRegion, second: ImageRegion) -> int:
+    x1 = min(first.x1, second.x1)
+    y1 = min(first.y1, second.y1)
+    x2 = max(first.x2, second.x2)
+    y2 = max(first.y2, second.y2)
+    return max(0, x2 - x1) * max(0, y2 - y1)
+
+
+def _edge_gap(first: ImageRegion, second: ImageRegion) -> int:
+    horizontal_gap = max(0, max(first.x1, second.x1) - min(first.x2, second.x2))
+    vertical_gap = max(0, max(first.y1, second.y1) - min(first.y2, second.y2))
+    return max(horizontal_gap, vertical_gap)

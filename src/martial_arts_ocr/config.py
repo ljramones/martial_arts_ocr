@@ -221,6 +221,14 @@ class Config:
         'region_labeled_diagram_min_component_area_ratio': 2.4,
         'region_labeled_diagram_min_small_component_fraction': 0.30,
         'region_labeled_diagram_max_density': 0.35,
+        'region_merge_overlapping_regions': True,
+        'region_merge_adjacent_regions': True,
+        'region_overlap_merge_iou_threshold': 0.35,
+        'region_contained_region_suppression_threshold': 0.85,
+        'region_contained_parent_max_area_ratio': 5.0,
+        'region_adjacent_merge_gap_px': 24,
+        'region_adjacent_merge_max_area_growth_ratio': 1.75,
+        'region_adjacent_merge_min_axis_overlap_ratio': 0.25,
 
         # ---------------------------
         # Merging & NMS postprocess

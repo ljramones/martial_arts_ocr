@@ -14,7 +14,8 @@ from .filters.text_filter import TextRegionFilter
 from .utils.halo import halo_ok
 from .utils.masks import apply_nontext_mask
 
-from .post.merge import remove_overlaps, merge_overlapping
+from .options import RegionDetectionOptions
+from .post.merge import consolidate_regions, merge_overlapping
 
 from .detectors.yolo_figure import YOLOFigureDetector
 
@@ -67,6 +68,7 @@ class LayoutAnalyzer:
 
         # Filter
         self.text_filter = TextRegionFilter(self.cfg)
+        self.region_options = RegionDetectionOptions.from_config(self.cfg)
 
         # Which detectors to run (configurable)
         self.enabled_detectors = self.cfg.get(
@@ -107,8 +109,7 @@ class LayoutAnalyzer:
         else:
             filtered = candidates
 
-        final_iou = float(self.cfg.get("final_iou_nms", 0.30))
-        filtered = remove_overlaps(filtered, iou_threshold=final_iou)
+        filtered, _events = consolidate_regions(filtered, self.region_options)
 
         logger.info("Image regions detected: %d", len(filtered))
         return filtered
@@ -133,13 +134,13 @@ class LayoutAnalyzer:
             else:
                 accepted.append(region)
 
-        final_iou = float(self.cfg.get("final_iou_nms", 0.30))
-        accepted = remove_overlaps(accepted, iou_threshold=final_iou)
+        accepted, consolidation_events = consolidate_regions(accepted, self.region_options)
 
         return {
             "accepted_regions": accepted,
             "accepted": [region.to_dict() for region in accepted],
             "rejected": rejected,
+            "consolidation": consolidation_events,
         }
 
     def _detect_image_region_candidates(self, gray: np.ndarray) -> List[ImageRegion]:

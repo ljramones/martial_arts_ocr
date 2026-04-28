@@ -43,6 +43,14 @@ class RegionDetectionOptions:
     labeled_diagram_min_component_area_ratio: float = 2.4
     labeled_diagram_min_small_component_fraction: float = 0.30
     labeled_diagram_max_density: float = 0.35
+    merge_overlapping_regions: bool = True
+    merge_adjacent_regions: bool = True
+    overlap_merge_iou_threshold: float = 0.35
+    contained_region_suppression_threshold: float = 0.85
+    contained_parent_max_area_ratio: float = 5.0
+    adjacent_merge_gap_px: int = 24
+    adjacent_merge_max_area_growth_ratio: float = 1.75
+    adjacent_merge_min_axis_overlap_ratio: float = 0.25
 
     @classmethod
     def from_config(cls, cfg: Mapping[str, Any]) -> "RegionDetectionOptions":

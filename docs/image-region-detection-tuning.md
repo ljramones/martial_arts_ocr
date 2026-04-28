@@ -107,3 +107,44 @@ With default settings after this pass:
 - Higher recall now returns additional candidates on some pages (`3292`, `3312`, `3327`, `3345`, `3352`). These should be visually reviewed before runtime integration.
 - Captions and labels are still part of many useful crops. That is acceptable for review, but later runtime integration may need caption-aware postprocessing.
 - Sparse symbol grouping is heuristic and should be rechecked on the same 19 reviewed pages before integration.
+
+## Post-Filter Candidate Consolidation
+
+The recall pass intentionally moved final NMS after text-like filtering. This is important: rejected text candidates must not suppress real diagrams. The follow-up consolidation pass therefore runs only on accepted candidates.
+
+Motivating pages:
+
+- `3312`: right-edge figure/photo content was recovered but split into stacked candidates.
+- `3327`: bridge/structure content produced overlapping crops.
+- `3352`: hand-drawn/labeled content produced multiple useful but adjacent candidates.
+
+Current consolidation behavior:
+
+- Highly overlapping accepted candidates are merged when IoU exceeds `region_overlap_merge_iou_threshold`.
+- Mostly contained child regions are suppressed when the parent is not excessively broad.
+- Adjacent accepted regions are merged when the gap is small and the merged crop does not grow too much relative to the source boxes.
+- Separate nearby figures are preserved when merging would create too much empty area.
+
+Current defaults:
+
+- `region_merge_overlapping_regions=True`
+- `region_merge_adjacent_regions=True`
+- `region_overlap_merge_iou_threshold=0.35`
+- `region_contained_region_suppression_threshold=0.85`
+- `region_contained_parent_max_area_ratio=5.0`
+- `region_adjacent_merge_gap_px=24`
+- `region_adjacent_merge_max_area_growth_ratio=1.75`
+- `region_adjacent_merge_min_axis_overlap_ratio=0.25`
+
+Spot-check result:
+
+- `3327` consolidates overlapping bridge crops to one broad, useful region.
+- `3312` consolidates the top/middle right-edge figure candidates and preserves the lower figure candidate separately.
+- `3352` consolidates adjacent top figure/annotation candidates, but still has label-heavy crops that need caption-aware handling later.
+- Known fixed pages `3335`, `3344`, `3397`, `3292`, and `3340` retain their important regions.
+
+Remaining risks:
+
+- Consolidation improves duplicate/fragmented crops, but it can intentionally create broader crops. This is better for preservation, but not yet ideal for final scholarly layout.
+- Figure/caption separation is still unresolved.
+- Runtime integration should remain gated until another review confirms the broader crops are acceptable.
