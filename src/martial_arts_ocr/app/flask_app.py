@@ -8,6 +8,7 @@ from pathlib import Path
 from threading import Thread
 
 from flask import (
+    current_app,
     Flask, render_template, request, redirect, url_for,
     flash, jsonify, send_file, abort
 )
@@ -20,14 +21,17 @@ from PIL import Image
 
 from martial_arts_ocr.config import (
     allowed_file,
-    configure_runtime_paths,
     get_config,
     get_processed_path,
     get_upload_path,
 )
-from martial_arts_ocr.db.database import configure_database, get_db_session, init_db
+from martial_arts_ocr.app.dependencies import AppDependencies
+from martial_arts_ocr.db.context import DatabaseConfig, DatabaseContext
+from martial_arts_ocr.db.database import get_database_context, get_db_session, init_db
 from martial_arts_ocr.db.models import Document, Page, ProcessingResult
 from martial_arts_ocr.pipeline import PipelineRequest, WorkflowOrchestrator
+
+APP_EXTENSION_KEY = "martial_arts_ocr"
 
 config = get_config()
 # Initialize Flask app
@@ -82,90 +86,247 @@ page_reconstructor = None
 workflow_orchestrator = None
 
 
+def _default_ocr_processor_factory():
+    from martial_arts_ocr.ocr.processor import OCRProcessor
+
+    return _init_processor("OCRProcessor", OCRProcessor)
+
+
+def _default_content_extractor_factory():
+    from martial_arts_ocr.imaging.content_extractor import ContentExtractor
+
+    return _init_processor("ContentExtractor", ContentExtractor)
+
+
+def _default_japanese_processor_factory():
+    from martial_arts_ocr.japanese.processor import JapaneseProcessor
+
+    return _init_processor("JapaneseProcessor", JapaneseProcessor)
+
+
+def _default_page_reconstructor_factory():
+    from martial_arts_ocr.reconstruction.page_reconstructor import PageReconstructor
+
+    return _init_processor("PageReconstructor", PageReconstructor)
+
+
+def _extension_deps(flask_app: Flask | None = None) -> AppDependencies | None:
+    try:
+        target_app = flask_app or current_app._get_current_object()
+    except RuntimeError:
+        target_app = app
+    return target_app.extensions.get(APP_EXTENSION_KEY)
+
+
+def _current_app_is_legacy() -> bool:
+    try:
+        return current_app._get_current_object() is app
+    except RuntimeError:
+        return True
+
+
+def _attach_dependencies(
+    flask_app: Flask,
+    *,
+    db_context: DatabaseContext,
+    data_dir: Path,
+    upload_dir: Path,
+    processed_dir: Path,
+    orchestrator: WorkflowOrchestrator | None = None,
+    processor_factory=None,
+    content_extractor_factory=None,
+    japanese_processor_factory=None,
+    page_reconstructor_factory=None,
+) -> AppDependencies:
+    deps = AppDependencies(
+        db_context=db_context,
+        data_dir=Path(data_dir),
+        upload_dir=Path(upload_dir),
+        processed_dir=Path(processed_dir),
+        orchestrator=orchestrator,
+        ocr_processor_factory=processor_factory or _default_ocr_processor_factory,
+        content_extractor_factory=content_extractor_factory or _default_content_extractor_factory,
+        japanese_processor_factory=japanese_processor_factory or _default_japanese_processor_factory,
+        page_reconstructor_factory=page_reconstructor_factory or _default_page_reconstructor_factory,
+    )
+    flask_app.extensions[APP_EXTENSION_KEY] = deps
+    return deps
+
+
+_attach_dependencies(
+    app,
+    db_context=get_database_context(),
+    data_dir=config.DATA_DIR,
+    upload_dir=Path(config.UPLOAD_FOLDER),
+    processed_dir=get_processed_path(""),
+)
+
+
 def get_ocr_processor():
     global ocr_processor
+    deps = _extension_deps()
+    if deps is not None and not _current_app_is_legacy():
+        return deps.get_ocr_processor()
     if ocr_processor is None:
-        from martial_arts_ocr.ocr.processor import OCRProcessor
-
-        ocr_processor = _init_processor("OCRProcessor", OCRProcessor)
+        ocr_processor = _default_ocr_processor_factory()
     return ocr_processor
 
 
 def get_content_extractor():
     global content_extractor
+    deps = _extension_deps()
+    if deps is not None and not _current_app_is_legacy():
+        return deps.get_content_extractor()
     if content_extractor is None:
-        from martial_arts_ocr.imaging.content_extractor import ContentExtractor
-
-        content_extractor = _init_processor("ContentExtractor", ContentExtractor)
+        content_extractor = _default_content_extractor_factory()
     return content_extractor
 
 
 def get_japanese_processor():
     global japanese_processor
+    deps = _extension_deps()
+    if deps is not None and not _current_app_is_legacy():
+        return deps.get_japanese_processor()
     if japanese_processor is None:
-        from martial_arts_ocr.japanese.processor import JapaneseProcessor
-
-        japanese_processor = _init_processor("JapaneseProcessor", JapaneseProcessor)
+        japanese_processor = _default_japanese_processor_factory()
     return japanese_processor
 
 
 def get_page_reconstructor():
     global page_reconstructor
+    deps = _extension_deps()
+    if deps is not None and not _current_app_is_legacy():
+        return deps.get_page_reconstructor()
     if page_reconstructor is None:
-        from martial_arts_ocr.reconstruction.page_reconstructor import PageReconstructor
-
-        page_reconstructor = _init_processor("PageReconstructor", PageReconstructor)
+        page_reconstructor = _default_page_reconstructor_factory()
     return page_reconstructor
 
 
 def get_workflow_orchestrator():
     global workflow_orchestrator
+    deps = _extension_deps()
+    if deps is not None and not _current_app_is_legacy():
+        return deps.get_orchestrator()
     if workflow_orchestrator is None:
-        workflow_orchestrator = WorkflowOrchestrator(
-            processor=get_ocr_processor(),
-            page_reconstructor=get_page_reconstructor(),
-            session_factory=get_db_session,
-            processed_path_factory=get_processed_path,
-            document_model=Document,
-            page_model=Page,
-            db_processing_result_model=ProcessingResult,
-        )
+        deps = _extension_deps(app)
+        workflow_orchestrator = deps.get_orchestrator() if deps else WorkflowOrchestrator()
     return workflow_orchestrator
 
 
-def create_app(config_overrides: dict | None = None):
-    """Return the legacy Flask app object with optional config overrides."""
-    global workflow_orchestrator
+def get_current_db_session():
+    deps = _extension_deps()
+    if deps is not None:
+        return deps.db_context.get_db_session()
+    return get_db_session()
 
+
+def get_current_upload_path(filename: str) -> Path:
+    deps = _extension_deps()
+    if deps is not None:
+        return deps.upload_dir / filename
+    return get_upload_path(filename)
+
+
+def get_current_processed_path(filename: str) -> Path:
+    deps = _extension_deps()
+    if deps is not None:
+        return deps.processed_dir / filename
+    return get_processed_path(filename)
+
+
+def _build_flask_app(config_overrides: dict | None = None) -> Flask:
+    cfg = get_config()
+    flask_app = Flask(
+        __name__,
+        template_folder=str(cfg.BASE_DIR / "templates"),
+        static_folder=str(cfg.STATIC_DIR),
+    )
+    flask_app.config.from_object(cfg)
     if config_overrides:
-        data_dir = config_overrides.get("DATA_DIR")
-        upload_dir = config_overrides.get("UPLOAD_DIR") or config_overrides.get("UPLOAD_FOLDER")
-        processed_dir = config_overrides.get("PROCESSED_DIR")
-        if data_dir or upload_dir or processed_dir:
-            configure_runtime_paths(data_dir=data_dir, upload_dir=upload_dir, processed_dir=processed_dir)
+        flask_app.config.update(config_overrides)
+    return flask_app
 
-        database_path = config_overrides.get("DATABASE_PATH")
-        database_url = config_overrides.get("DATABASE_URL")
-        if database_path or database_url or data_dir:
-            if database_path is None and database_url is None and data_dir:
-                database_path = Path(data_dir) / "martial_arts_ocr.db"
-            configure_database(database_path=database_path, database_url=database_url)
-            init_db()
-            workflow_orchestrator = None
 
-        app.config.update(config_overrides)
-        active_config = get_config()
-        active_database_url = database_url
-        if not active_database_url and database_path:
-            active_database_url = f"sqlite:///{database_path}"
-        if not active_database_url:
-            active_database_url = active_config.DATABASE_URL
-        app.config.update(
-            DATA_DIR=str(active_config.DATA_DIR),
-            UPLOAD_FOLDER=str(active_config.UPLOAD_FOLDER),
-            DATABASE_URL=active_database_url,
+def _register_existing_routes(target_app: Flask) -> None:
+    for rule in app.url_map.iter_rules():
+        if rule.endpoint == "static":
+            continue
+        target_app.add_url_rule(
+            rule.rule,
+            endpoint=rule.endpoint,
+            view_func=app.view_functions[rule.endpoint],
+            methods=rule.methods,
+            defaults=rule.defaults,
+            strict_slashes=rule.strict_slashes,
         )
-    return app
+    target_app.context_processor(inject_globals)
+    target_app.template_filter("filesizeformat")(filesizeformat)
+    target_app.before_request(enforce_allowed_hosts)
+    target_app.register_error_handler(404, not_found_error)
+    target_app.register_error_handler(500, internal_error)
+    target_app.register_error_handler(RequestEntityTooLarge, handle_file_too_large)
+
+
+def create_app(
+    config_overrides: dict | None = None,
+    *,
+    orchestrator: WorkflowOrchestrator | None = None,
+    db_context: DatabaseContext | None = None,
+    processor_factory=None,
+    content_extractor_factory=None,
+    japanese_processor_factory=None,
+    page_reconstructor_factory=None,
+):
+    """Create an isolated Flask app instance with app-scoped dependencies."""
+    flask_app = _build_flask_app(config_overrides)
+
+    overrides = config_overrides or {}
+    data_dir = Path(overrides.get("DATA_DIR") or flask_app.config.get("DATA_DIR", config.DATA_DIR))
+    upload_override = overrides.get("UPLOAD_DIR") or overrides.get("UPLOAD_FOLDER")
+    processed_override = overrides.get("PROCESSED_DIR")
+    if upload_override:
+        upload_dir = Path(upload_override)
+    elif "DATA_DIR" in overrides:
+        upload_dir = data_dir / "uploads"
+    else:
+        upload_dir = Path(flask_app.config.get("UPLOAD_FOLDER") or data_dir / "uploads")
+    processed_dir = Path(processed_override) if processed_override else data_dir / "processed"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    processed_dir.mkdir(parents=True, exist_ok=True)
+
+    database_path = overrides.get("DATABASE_PATH")
+    database_url = overrides.get("DATABASE_URL")
+    if db_context is None:
+        if database_path:
+            db_context = DatabaseContext(DatabaseConfig(database_path=Path(database_path)))
+        elif database_url:
+            db_context = DatabaseContext(DatabaseConfig.from_url(database_url))
+        elif "DATA_DIR" in overrides:
+            db_context = DatabaseContext(DatabaseConfig(database_path=data_dir / "martial_arts_ocr.db"))
+        else:
+            db_context = DatabaseContext(DatabaseConfig.from_url(flask_app.config["DATABASE_URL"]))
+    db_context.init_db()
+
+    _attach_dependencies(
+        flask_app,
+        db_context=db_context,
+        data_dir=data_dir,
+        upload_dir=upload_dir,
+        processed_dir=processed_dir,
+        orchestrator=orchestrator,
+        processor_factory=processor_factory,
+        content_extractor_factory=content_extractor_factory,
+        japanese_processor_factory=japanese_processor_factory,
+        page_reconstructor_factory=page_reconstructor_factory,
+    )
+    flask_app.config.update(
+        DATA_DIR=str(data_dir),
+        UPLOAD_FOLDER=str(upload_dir),
+        PROCESSED_DIR=str(processed_dir),
+        DATABASE_URL=db_context.config.url,
+    )
+    _register_existing_routes(flask_app)
+    return flask_app
 
 # Initialize database
 with app.app_context():
@@ -210,7 +371,8 @@ def filesizeformat(value):
 # -------------------------
 @app.before_request
 def enforce_allowed_hosts():
-    allowed = getattr(app.config, "ALLOWED_HOSTS", None)
+    active_app = current_app._get_current_object()
+    allowed = active_app.config.get("ALLOWED_HOSTS")
     if not allowed:
         return  # no restriction
     host = request.headers.get("Host", "")
@@ -218,7 +380,7 @@ def enforce_allowed_hosts():
     if host_only.startswith('[') and host_only.endswith(']'):
         host_only = host_only[1:-1]  # [::1] -> ::1
     if host_only not in allowed:
-        app.logger.warning("Denied host %s (allowed: %s)", host_only, sorted(allowed))
+        active_app.logger.warning("Denied host %s (allowed: %s)", host_only, sorted(allowed))
         abort(403)
 
 # -------------------------
@@ -231,25 +393,32 @@ def healthz():
 # -------------------------
 # Background processing
 # -------------------------
-def _kickoff_processing_async(document_id: int):
+def _kickoff_processing_async(document_id: int, flask_app: Flask | None = None):
     """Start processing in a background thread (no HTTP redirect)."""
+    target_app = flask_app
+    if target_app is None:
+        try:
+            target_app = current_app._get_current_object()
+        except RuntimeError:
+            target_app = app
+
     def _run():
         try:
-            with app.app_context():
-                with get_db_session() as session:
+            with target_app.app_context():
+                with get_current_db_session() as session:
                     doc = session.get(Document, document_id)
                     if not doc:
                         logger.error("Document %s not found", document_id)
                         return
                     filename = doc.filename
 
-                request = PipelineRequest(document_id=document_id, image_path=get_upload_path(filename))
+                request = PipelineRequest(document_id=document_id, image_path=get_current_upload_path(filename))
                 get_workflow_orchestrator().process_document(request)
 
         except Exception as e:
             logger.exception("Background processing error for doc %s", document_id)
             try:
-                with get_db_session() as session:
+                with target_app.app_context(), get_current_db_session() as session:
                     doc = session.get(Document, document_id)
                     if doc:
                         doc.status = "failed"
@@ -265,7 +434,7 @@ def _kickoff_processing_async(document_id: int):
 @app.get("/api/status/<int:document_id>")
 def api_status(document_id):
     try:
-        with get_db_session() as db:
+        with get_current_db_session() as db:
             doc = db.get(Document, document_id)
             if not doc:
                 return jsonify({"status": "unknown", "error_message": "Not found"}), 404
@@ -284,7 +453,7 @@ def api_status(document_id):
 def index():
     """Main upload page with recent documents."""
     try:
-        with get_db_session() as session:
+        with get_current_db_session() as session:
             docs = (session.query(Document)
                     .order_by(Document.upload_date.desc())
                     .limit(5)
@@ -329,7 +498,7 @@ def upload_file():
         filename = f"{name}_{timestamp}{ext}"
 
         # Save file
-        filepath = get_upload_path(filename)
+        filepath = get_current_upload_path(filename)
         file.save(filepath)
 
         # Image metadata (best-effort)
@@ -346,7 +515,7 @@ def upload_file():
         file_size = filepath.stat().st_size
 
         # Create DB record
-        with get_db_session() as session:
+        with get_current_db_session() as session:
             document = Document(
                 filename=filename,
                 original_filename=file.filename,
@@ -383,14 +552,14 @@ def upload_file():
 def process_document(document_id):
     """Process a document through OCR pipeline synchronously (UI-triggered)."""
     try:
-        with get_db_session() as session:
+        with get_current_db_session() as session:
             doc = session.get(Document, document_id)
             if not doc:
                 flash('Document not found', 'error')
                 return redirect(url_for('index'))
             filename = doc.filename  # capture before session closes
 
-        filepath = get_upload_path(filename)
+        filepath = get_current_upload_path(filename)
         result = get_workflow_orchestrator().process_document(
             PipelineRequest(document_id=document_id, image_path=filepath)
         )
@@ -424,7 +593,7 @@ def gallery():
     """Document gallery with filtering."""
     try:
         status_filter = request.args.get('status')
-        with get_db_session() as session:
+        with get_current_db_session() as session:
             q = session.query(Document).order_by(Document.upload_date.desc())
             if status_filter:
                 q = q.filter(Document.status == status_filter)
@@ -454,7 +623,7 @@ def gallery():
 def view_document(document_id):
     """View processed document using sophisticated frontend templates."""
     try:
-        with get_db_session() as session:
+        with get_current_db_session() as session:
             doc = session.get(Document, document_id)
             if not doc:
                 flash('Document not found', 'error')
@@ -471,7 +640,7 @@ def view_document(document_id):
             result = session.query(ProcessingResult).filter_by(page_id=page.id).first() if page else None
 
         # Load saved processing data for frontend
-        output_dir = get_processed_path(f"doc_{document_id}")
+        output_dir = get_current_processed_path(f"doc_{document_id}")
         page_data = None
         processing_data = None
         page_data_file = output_dir / "page_data.json"
@@ -548,7 +717,7 @@ def api_translate():
 def retry_processing(document_id):
     """Reset a failed document to 'uploaded' to allow reprocessing."""
     try:
-        with get_db_session() as session:
+        with get_current_db_session() as session:
             document = session.get(Document, document_id)
             if not document:
                 return jsonify({'error': 'Document not found'}), 404
@@ -566,14 +735,14 @@ def retry_processing(document_id):
 def download_document(document_id):
     """Download processed HTML artifact."""
     try:
-        with get_db_session() as session:
+        with get_current_db_session() as session:
             doc = session.get(Document, document_id)
             if not doc or doc.status != 'completed':
                 flash('Document not available for download', 'error')
                 return redirect(url_for('gallery'))
             original = doc.original_filename  # capture before close
 
-        output_dir = get_processed_path(f"doc_{document_id}")
+        output_dir = get_current_processed_path(f"doc_{document_id}")
         html_file = output_dir / "page_1.html"
         if html_file.exists():
             safe_name = f"{Path(original).stem}_processed.html"
