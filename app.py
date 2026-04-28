@@ -39,16 +39,42 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize processors
-try:
-    ocr_processor = OCRProcessor()
-    content_extractor = ContentExtractor()
-    japanese_processor = JapaneseProcessor()
-    page_reconstructor = PageReconstructor()
-    logger.info("All processors initialized successfully")
-except Exception as e:
-    logger.error(f"Failed to initialize processors: {e}")
-    raise
+class UnavailableProcessor:
+    """Placeholder used when optional runtime processors cannot initialize."""
+
+    def __init__(self, name: str, error: Exception):
+        self.name = name
+        self.error = error
+
+    def process_document(self, *_args, **_kwargs):
+        raise RuntimeError(f"{self.name} is unavailable: {self.error}")
+
+    def get_engine_status(self):
+        return {"available": False, "error": str(self.error)}
+
+    def romanize_text_simple(self, *_args, **_kwargs):
+        raise RuntimeError(f"{self.name} is unavailable: {self.error}")
+
+    def process_text(self, *_args, **_kwargs):
+        raise RuntimeError(f"{self.name} is unavailable: {self.error}")
+
+
+def _init_processor(name, factory):
+    try:
+        processor = factory()
+        logger.info("%s initialized successfully", name)
+        return processor
+    except Exception as e:
+        logger.warning("%s unavailable: %s", name, e)
+        return UnavailableProcessor(name, e)
+
+
+# Initialize processors independently so optional engine failures do not prevent
+# the Flask app from serving health, upload, gallery, and error routes.
+ocr_processor = _init_processor("OCRProcessor", OCRProcessor)
+content_extractor = _init_processor("ContentExtractor", ContentExtractor)
+japanese_processor = _init_processor("JapaneseProcessor", JapaneseProcessor)
+page_reconstructor = _init_processor("PageReconstructor", PageReconstructor)
 
 # Initialize database
 with app.app_context():
@@ -514,7 +540,7 @@ def api_engines_status():
         return jsonify(status)
     except Exception as e:
         logger.error(f"Engine status error: {e}")
-        return jsonify({'error': 'Failed to get engine status'}), 500
+        return jsonify({'available': False, 'error': 'Failed to get engine status'}), 503
 
 @app.route('/api/romanize', methods=['POST'])
 def api_romanize():
@@ -528,7 +554,7 @@ def api_romanize():
         return jsonify({'romaji': romaji})
     except Exception as e:
         logger.error(f"Romanization error: {e}")
-        return jsonify({'error': 'Romanization failed'}), 500
+        return jsonify({'error': 'Romanization failed'}), 503
 
 @app.route('/api/translate', methods=['POST'])
 def api_translate():
@@ -543,7 +569,7 @@ def api_translate():
         return jsonify({'translation': translation})
     except Exception as e:
         logger.error(f"Translation error: {e}")
-        return jsonify({'error': 'Translation failed'}), 500
+        return jsonify({'error': 'Translation failed'}), 503
 
 # -------------------------
 # Document management

@@ -74,6 +74,24 @@ class OCRProcessor:
 
         logger.info(f"Available OCR engines: {available_engines}")
 
+    def get_engine_status(self) -> Dict[str, Any]:
+        """Return runtime availability for OCR and language processors."""
+        return {
+            "tesseract": {
+                "available": bool(getattr(self.tesseract_engine, "available", False)),
+                "enabled": bool(getattr(self.tesseract_engine, "config", {}).get("enabled", True)),
+                "languages": getattr(self.tesseract_engine, "config", {}).get("languages", []),
+            },
+            "easyocr": {
+                "available": bool(getattr(self.easyocr_engine, "available", False)),
+                "enabled": bool(getattr(self.easyocr_engine, "config", {}).get("enabled", False)),
+                "languages": getattr(self.easyocr_engine, "config", {}).get("languages", []),
+            },
+            "japanese_processor": {
+                "available": self.japanese_processor is not None,
+            },
+        }
+
     def process_document(self, image_path: str, document_id: Optional[int] = None) -> ProcessingResult:
         """Process a complete document with OCR and analysis."""
         start_time = time.time()

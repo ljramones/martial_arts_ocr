@@ -15,7 +15,7 @@ EXTRACTED_CONTENT_DIR = STATIC_DIR / "extracted_content"
 
 # Create directories if they don't exist
 for directory in [UPLOAD_DIR, PROCESSED_DIR, EXTRACTED_CONTENT_DIR]:
-    directory.mkdir(exist_ok=True)
+    directory.mkdir(exist_ok=True, parents=True)
 
 
 class Config:

@@ -1,0 +1,103 @@
+from __future__ import annotations
+
+import importlib
+import io
+import sys
+from pathlib import Path
+
+from PIL import Image
+
+
+def _png_bytes() -> bytes:
+    image = Image.new("RGB", (8, 8), color="white")
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    buf.seek(0)
+    return buf.read()
+
+
+def _import_legacy_app(monkeypatch, tmp_path):
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("FLASK_ENV", "testing")
+    monkeypatch.setenv("MARTIAL_ARTS_OCR_DATA_DIR", str(data_dir))
+    monkeypatch.delenv("USE_YOLO_FIGURE", raising=False)
+
+    for module_name in ("app", "database", "models", "config"):
+        sys.modules.pop(module_name, None)
+
+    legacy_app = importlib.import_module("app")
+    legacy_app.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
+    return legacy_app, data_dir
+
+
+def test_legacy_app_health_index_and_gallery(monkeypatch, tmp_path):
+    legacy_app, _data_dir = _import_legacy_app(monkeypatch, tmp_path)
+    client = legacy_app.app.test_client()
+
+    assert client.get("/healthz").status_code == 200
+    assert client.get("/").status_code == 200
+    assert client.get("/gallery").status_code == 200
+
+
+def test_upload_process_view_and_download_routes_use_data_dir(monkeypatch, tmp_path):
+    legacy_app, data_dir = _import_legacy_app(monkeypatch, tmp_path)
+    monkeypatch.setattr(legacy_app, "_kickoff_processing_async", lambda _document_id: None)
+
+    def fake_process_image_file(_filepath: str, document_id: int) -> dict:
+        output_dir = legacy_app.get_processed_path(f"doc_{document_id}")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "data.json").write_text('{"cleaned_text": "stub"}', encoding="utf-8")
+        (output_dir / "page_data.json").write_text('{"pages": []}', encoding="utf-8")
+        (output_dir / "page_1.html").write_text("<html>stub</html>", encoding="utf-8")
+        return {"success": True, "ocr_engine": "stub", "confidence": 1.0, "has_japanese": False}
+
+    monkeypatch.setattr(legacy_app, "process_image_file", fake_process_image_file)
+    client = legacy_app.app.test_client()
+
+    response = client.post(
+        "/upload",
+        data={"file": (io.BytesIO(_png_bytes()), "scan.png")},
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    document_id = payload["documentId"]
+
+    uploaded_files = list((data_dir / "uploads").glob("scan_*.png"))
+    assert uploaded_files, "upload route should save files under data/uploads"
+
+    process_response = client.get(f"/process/{document_id}", follow_redirects=True)
+    assert process_response.status_code == 200
+    assert (data_dir / "processed" / f"doc_{document_id}" / "page_1.html").exists()
+
+    view_response = client.get(f"/view/{document_id}")
+    assert view_response.status_code == 200
+
+    download_response = client.get(f"/download/{document_id}")
+    assert download_response.status_code == 200
+    assert b"stub" in download_response.data
+
+
+def test_optional_processor_failures_return_json_errors(monkeypatch, tmp_path):
+    legacy_app, _data_dir = _import_legacy_app(monkeypatch, tmp_path)
+    missing = legacy_app.UnavailableProcessor("JapaneseProcessor", RuntimeError("missing optional dep"))
+    monkeypatch.setattr(legacy_app, "japanese_processor", missing)
+    monkeypatch.setattr(
+        legacy_app,
+        "ocr_processor",
+        legacy_app.UnavailableProcessor("OCRProcessor", RuntimeError("missing OCR engine")),
+    )
+    client = legacy_app.app.test_client()
+
+    engine_response = client.get("/api/engines/status")
+    assert engine_response.status_code == 200
+    assert engine_response.get_json()["available"] is False
+
+    romanize_response = client.post("/api/romanize", json={"text": "日本語"})
+    assert romanize_response.status_code == 503
+    assert romanize_response.get_json()["error"] == "Romanization failed"
+
+    translate_response = client.post("/api/translate", json={"text": "日本語"})
+    assert translate_response.status_code == 503
+    assert translate_response.get_json()["error"] == "Translation failed"
+
