@@ -45,6 +45,16 @@ Notebooks are for visual inspection, threshold tuning, and comparing algorithms.
 - Utility outputs can map to `TextRegion`, `ImageRegion`, `PageResult`, and `DocumentResult`.
 - No normal test requires OCR binaries, model downloads, YOLO, MeCab, UniDic, pykakasi, or Argos.
 
+## Real-Page Evaluation Workflow
+
+1. Copy private scans into `samples/private/`.
+2. Copy `samples/manifest.example.json` to `samples/manifest.local.json`.
+3. Edit sample paths, descriptions, expected counts, OCR-like sample text, and review notes.
+4. Open `notebooks/05_real_page_extraction_review.ipynb`.
+5. Review detected image regions, saved crops, text cleanup, and reading order notes.
+6. Record threshold and failure notes in the local manifest or a separate review document.
+7. Only after several representative pages pass, consider `WorkflowOrchestrator` integration.
+
 ## Next Implementation Pass
 
 Use notebooks to inspect real page samples, then tune detector thresholds and add fixtures for representative page classes: English lecture page, modern Japanese page, mixed page, diagram-heavy page, and noisy scan.

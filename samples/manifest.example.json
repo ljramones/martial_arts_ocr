@@ -1,0 +1,39 @@
+{
+  "samples": [
+    {
+      "id": "mixed_english_japanese_page",
+      "path": "samples/private/mixed_english_japanese_page.png",
+      "description": "Mixed English/Japanese martial arts page with one diagram.",
+      "sample_text": "Donn Draeger studied classical bujutsu.\n武道とは何か。\nDaitō-ryū Aiki-jūjutsu and koryū terminology should survive cleanup.",
+      "expected": {
+        "has_japanese": true,
+        "has_macrons": true,
+        "has_diagrams_or_images": true,
+        "min_image_regions": 1,
+        "min_text_regions": 1,
+        "notes": [
+          "Japanese characters should survive cleanup.",
+          "Diagram should not be mistaken for normal body text.",
+          "Macrons in Daitō-ryū and koryū should be preserved."
+        ]
+      }
+    },
+    {
+      "id": "diagram_heavy_page",
+      "path": "samples/private/diagram_heavy_page.png",
+      "description": "Diagram-heavy page used to check figure extraction and crop quality.",
+      "sample_text": "",
+      "expected": {
+        "has_japanese": false,
+        "has_macrons": false,
+        "has_diagrams_or_images": true,
+        "min_image_regions": 2,
+        "min_text_regions": 0,
+        "notes": [
+          "Large diagrams should produce stable bounding boxes.",
+          "Tiny scan marks should be ignored."
+        ]
+      }
+    }
+  ]
+}
