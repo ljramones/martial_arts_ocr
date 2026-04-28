@@ -16,6 +16,50 @@ def _png_bytes() -> bytes:
     return buf.read()
 
 
+class FakeOCRResult:
+    engine = "fake"
+    metadata = {"source": "route-test"}
+
+    def to_dict(self):
+        return {"engine": self.engine, "metadata": self.metadata}
+
+
+class FakeProcessingResult:
+    best_ocr_result = FakeOCRResult()
+    raw_text = "Sample OCR text"
+    cleaned_text = "Sample OCR text"
+    text_regions = []
+    image_regions = []
+    extracted_images = []
+    japanese_result = None
+    language_segments = [{"text": "Sample OCR text", "language": "en"}]
+    text_statistics = {"character_count": 15}
+    overall_confidence = 0.95
+    quality_score = 0.9
+    processing_time = 0.01
+    html_content = "<html>Sample OCR text</html>"
+    markdown_content = "Sample OCR text"
+    processing_metadata = {"image_dimensions": {"width": 8, "height": 8}}
+
+    def to_dict(self):
+        return {"cleaned_text": self.cleaned_text}
+
+
+class FakeProcessor:
+    def process_document(self, image_path: str, document_id: int | None = None):
+        return FakeProcessingResult()
+
+
+class FakePage:
+    def to_dict(self):
+        return {"pages": []}
+
+
+class FakeReconstructor:
+    def reconstruct_page(self, processing_result, image_path: str):
+        return FakePage()
+
+
 def _import_legacy_app(monkeypatch, tmp_path):
     data_dir = tmp_path / "data"
     monkeypatch.setenv("FLASK_ENV", "testing")
@@ -33,6 +77,9 @@ def _import_legacy_app(monkeypatch, tmp_path):
         "martial_arts_ocr.config",
         "martial_arts_ocr.db.database",
         "martial_arts_ocr.db.models",
+        "martial_arts_ocr.pipeline",
+        "martial_arts_ocr.pipeline.orchestrator",
+        "martial_arts_ocr.pipeline.result_models",
     ):
         sys.modules.pop(module_name, None)
 
@@ -53,16 +100,6 @@ def test_legacy_app_health_index_and_gallery(monkeypatch, tmp_path):
 def test_upload_process_view_and_download_routes_use_data_dir(monkeypatch, tmp_path):
     legacy_app, data_dir = _import_legacy_app(monkeypatch, tmp_path)
     monkeypatch.setattr(legacy_app, "_kickoff_processing_async", lambda _document_id: None)
-
-    def fake_process_image_file(_filepath: str, document_id: int) -> dict:
-        output_dir = legacy_app.get_processed_path(f"doc_{document_id}")
-        output_dir.mkdir(parents=True, exist_ok=True)
-        (output_dir / "data.json").write_text('{"cleaned_text": "stub"}', encoding="utf-8")
-        (output_dir / "page_data.json").write_text('{"pages": []}', encoding="utf-8")
-        (output_dir / "page_1.html").write_text("<html>stub</html>", encoding="utf-8")
-        return {"success": True, "ocr_engine": "stub", "confidence": 1.0, "has_japanese": False}
-
-    monkeypatch.setattr(legacy_app, "process_image_file", fake_process_image_file)
     client = legacy_app.app.test_client()
 
     response = client.post(
@@ -77,6 +114,18 @@ def test_upload_process_view_and_download_routes_use_data_dir(monkeypatch, tmp_p
     uploaded_files = list((data_dir / "uploads").glob("scan_*.png"))
     assert uploaded_files, "upload route should save files under data/uploads"
 
+    from martial_arts_ocr.pipeline import WorkflowOrchestrator
+
+    legacy_app.workflow_orchestrator = WorkflowOrchestrator(
+        processor=FakeProcessor(),
+        page_reconstructor=FakeReconstructor(),
+        session_factory=legacy_app.get_db_session,
+        processed_path_factory=lambda name: data_dir / "processed" / name,
+        document_model=legacy_app.Document,
+        page_model=legacy_app.Page,
+        db_processing_result_model=legacy_app.ProcessingResult,
+    )
+
     process_response = client.get(f"/process/{document_id}", follow_redirects=True)
     assert process_response.status_code == 200
     assert (data_dir / "processed" / f"doc_{document_id}" / "page_1.html").exists()
@@ -86,7 +135,7 @@ def test_upload_process_view_and_download_routes_use_data_dir(monkeypatch, tmp_p
 
     download_response = client.get(f"/download/{document_id}")
     assert download_response.status_code == 200
-    assert b"stub" in download_response.data
+    assert b"Sample OCR text" in download_response.data
 
 
 def test_optional_processor_failures_return_json_errors(monkeypatch, tmp_path):

@@ -26,6 +26,7 @@ from martial_arts_ocr.config import (
 )
 from martial_arts_ocr.db.database import get_db_session, init_db
 from martial_arts_ocr.db.models import Document, Page, ProcessingResult
+from martial_arts_ocr.pipeline import PipelineRequest, WorkflowOrchestrator
 
 config = get_config()
 # Initialize Flask app
@@ -77,6 +78,7 @@ ocr_processor = None
 content_extractor = None
 japanese_processor = None
 page_reconstructor = None
+workflow_orchestrator = None
 
 
 def get_ocr_processor():
@@ -113,6 +115,21 @@ def get_page_reconstructor():
 
         page_reconstructor = _init_processor("PageReconstructor", PageReconstructor)
     return page_reconstructor
+
+
+def get_workflow_orchestrator():
+    global workflow_orchestrator
+    if workflow_orchestrator is None:
+        workflow_orchestrator = WorkflowOrchestrator(
+            processor=get_ocr_processor(),
+            page_reconstructor=get_page_reconstructor(),
+            session_factory=get_db_session,
+            processed_path_factory=get_processed_path,
+            document_model=Document,
+            page_model=Page,
+            db_processing_result_model=ProcessingResult,
+        )
+    return workflow_orchestrator
 
 
 def create_app(config_overrides: dict | None = None):
@@ -190,31 +207,15 @@ def _kickoff_processing_async(document_id: int):
     def _run():
         try:
             with app.app_context():
-                # Read filename and set status to 'processing'
                 with get_db_session() as session:
                     doc = session.get(Document, document_id)
                     if not doc:
                         logger.error("Document %s not found", document_id)
                         return
-                    doc.status = "processing"
-                    session.commit()
                     filename = doc.filename
 
-                filepath = get_upload_path(filename)
-                result = process_image_file(str(filepath), document_id)
-
-                with get_db_session() as session:
-                    doc = session.get(Document, document_id)
-                    if not doc:
-                        return
-                    if result.get('success'):
-                        doc.status = 'completed'
-                        doc.processing_date = datetime.now()
-                        doc.ocr_engine = result.get('ocr_engine', 'unknown')
-                    else:
-                        doc.status = 'failed'
-                        doc.error_message = result.get('error', 'Unknown error')
-                    session.commit()
+                request = PipelineRequest(document_id=document_id, image_path=get_upload_path(filename))
+                get_workflow_orchestrator().process_document(request)
 
         except Exception as e:
             logger.exception("Background processing error for doc %s", document_id)
@@ -358,35 +359,18 @@ def process_document(document_id):
             if not doc:
                 flash('Document not found', 'error')
                 return redirect(url_for('index'))
-            doc.status = 'processing'
-            session.commit()
             filename = doc.filename  # capture before session closes
 
         filepath = get_upload_path(filename)
-        if not filepath.exists():
-            flash('File not found', 'error')
-            return redirect(url_for('index'))
+        result = get_workflow_orchestrator().process_document(
+            PipelineRequest(document_id=document_id, image_path=filepath)
+        )
+        if result.success:
+            flash('Document processed successfully', 'success')
+            return redirect(url_for('view_document', document_id=document_id))
 
-        result = process_image_file(str(filepath), document_id)
-
-        with get_db_session() as session:
-            doc = session.get(Document, document_id)
-            if not doc:
-                flash('Document not found', 'error')
-                return redirect(url_for('index'))
-            if result['success']:
-                doc.status = 'completed'
-                doc.processing_date = datetime.now()
-                doc.ocr_engine = result.get('ocr_engine', 'unknown')
-                session.commit()
-                flash('Document processed successfully', 'success')
-                return redirect(url_for('view_document', document_id=document_id))
-            else:
-                doc.status = 'failed'
-                doc.error_message = result.get('error', 'Unknown error')
-                session.commit()
-                flash(f'Processing failed: {result.get("error", "Unknown error")}', 'error')
-                return redirect(url_for('index'))
+        flash(f'Processing failed: {result.error or "Unknown error"}', 'error')
+        return redirect(url_for('index'))
 
     except Exception as e:
         logger.error(f"Processing error: {e}")
@@ -397,99 +381,11 @@ def process_document(document_id):
 # Core processing function
 # -------------------------
 def process_image_file(filepath: str, document_id: int) -> dict:
-    """Process image file through the unified OCR pipeline."""
-    try:
-        logger.info(f"Processing file: {filepath}")
-
-        # Use the unified OCR processor
-        processing_result = get_ocr_processor().process_document(filepath, document_id)
-
-        # Save results to database
-        with get_db_session() as session:
-            page = Page(
-                document_id=document_id,
-                page_number=1,
-                image_path=filepath,
-                image_width=processing_result.processing_metadata.get('image_dimensions', {}).get('width'),
-                image_height=processing_result.processing_metadata.get('image_dimensions', {}).get('height'),
-                processing_time=processing_result.processing_time,
-                ocr_confidence=processing_result.overall_confidence,
-                text_regions=[region.to_dict() for region in processing_result.text_regions],
-                image_regions=[region.to_dict() for region in processing_result.image_regions]
-            )
-            session.add(page)
-            session.flush()
-
-            db_result = ProcessingResult(
-                document_id=document_id,
-                page_id=page.id,
-                ocr_engine_used=processing_result.best_ocr_result.engine,
-                processing_time=processing_result.processing_time,
-                raw_ocr_text=processing_result.raw_text,
-                cleaned_text=processing_result.cleaned_text,
-                ocr_confidence=processing_result.overall_confidence,
-                ocr_metadata=processing_result.best_ocr_result.metadata,
-                has_japanese=processing_result.japanese_result is not None,
-                japanese_segments=[seg.to_dict() for seg in processing_result.japanese_result.segments] if processing_result.japanese_result else None,
-                language_analysis=processing_result.japanese_result.language_analysis if processing_result.japanese_result else None,
-                martial_arts_terms=processing_result.japanese_result.martial_arts_terms if processing_result.japanese_result else None,
-                overall_romaji=processing_result.japanese_result.overall_romaji if processing_result.japanese_result else None,
-                overall_translation=processing_result.japanese_result.overall_translation if processing_result.japanese_result else None,
-                japanese_confidence=processing_result.japanese_result.confidence_score if processing_result.japanese_result else None,
-                japanese_metadata=processing_result.japanese_result.processing_metadata if processing_result.japanese_result else None,
-                html_content=processing_result.html_content,
-                markdown_content=processing_result.markdown_content,
-                extracted_images=processing_result.extracted_images,
-                text_statistics=processing_result.text_statistics,
-                quality_score=processing_result.quality_score,
-                confidence_breakdown={
-                    'ocr_confidence': processing_result.overall_confidence,
-                    'quality_score': processing_result.quality_score,
-                    'japanese_confidence': processing_result.japanese_result.confidence_score if processing_result.japanese_result else None
-                }
-            )
-            session.add(db_result)
-            session.commit()
-
-        # Generate output files
-        output_dir = get_processed_path(f"doc_{document_id}")
-        output_dir.mkdir(exist_ok=True, parents=True)
-
-        # Save reconstructed page data for frontend
-        try:
-            reconstructed_page = get_page_reconstructor().reconstruct_page(processing_result, filepath)
-            with open(output_dir / "page_data.json", 'w', encoding='utf-8') as f:
-                json.dump(reconstructed_page.to_dict(), f, ensure_ascii=False, indent=2)
-            logger.info("Page data saved for frontend rendering")
-        except Exception as e:
-            logger.warning(f"Page reconstruction failed: {e}")
-
-        # Save complete processing data
-        json_data = processing_result.to_dict()
-        json_data['document_id'] = document_id
-        json_data['processing_date'] = datetime.now().isoformat()
-        with open(output_dir / "data.json", 'w', encoding='utf-8') as f:
-            json.dump(json_data, f, ensure_ascii=False, indent=2)
-
-        # Also write a stable HTML artifact for the download route
-        try:
-            html = processing_result.html_content
-            if html:
-                (output_dir / "page_1.html").write_text(html, encoding='utf-8')
-        except Exception as e:
-            logger.warning(f"Failed to write page_1.html: {e}")
-
-        logger.info("Processing completed successfully")
-        return {
-            'success': True,
-            'ocr_engine': processing_result.best_ocr_result.engine,
-            'confidence': processing_result.overall_confidence,
-            'has_japanese': processing_result.japanese_result is not None
-        }
-
-    except Exception as e:
-        logger.error(f"Processing failed: {e}", exc_info=True)
-        return {'success': False, 'error': str(e)}
+    """Compatibility wrapper for the canonical workflow orchestrator."""
+    result = get_workflow_orchestrator().process_document(
+        PipelineRequest(document_id=document_id, image_path=Path(filepath))
+    )
+    return result.to_legacy_dict()
 
 # -------------------------
 # Gallery
