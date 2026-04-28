@@ -83,7 +83,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Martial Arts OCR — Crash-Safe UI")
         self.resize(1300, 850)
 
-        self.orch = Orchestrator(processed_root="data/processed")
+        self.orch = Orchestrator(processed_root="data/runtime/processed")
 
         splitter = QSplitter(self)
         left = QWidget(); mid = QWidget(); right = QWidget()

@@ -22,7 +22,7 @@ class DatabaseConfig:
 
     @classmethod
     def from_data_dir(cls, data_dir: str | Path, filename: str = "martial_arts_ocr.db") -> "DatabaseConfig":
-        return cls(database_path=Path(data_dir) / filename)
+        return cls(database_path=Path(data_dir) / "runtime" / "db" / filename)
 
     @classmethod
     def from_url(cls, database_url: str, echo: bool = False) -> "DatabaseConfig":

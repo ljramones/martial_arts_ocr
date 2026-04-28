@@ -282,15 +282,16 @@ def create_app(
 
     overrides = config_overrides or {}
     data_dir = Path(overrides.get("DATA_DIR") or flask_app.config.get("DATA_DIR", config.DATA_DIR))
+    runtime_dir = Path(overrides.get("RUNTIME_DIR") or data_dir / "runtime")
     upload_override = overrides.get("UPLOAD_DIR") or overrides.get("UPLOAD_FOLDER")
     processed_override = overrides.get("PROCESSED_DIR")
     if upload_override:
         upload_dir = Path(upload_override)
     elif "DATA_DIR" in overrides:
-        upload_dir = data_dir / "uploads"
+        upload_dir = runtime_dir / "uploads"
     else:
-        upload_dir = Path(flask_app.config.get("UPLOAD_FOLDER") or data_dir / "uploads")
-    processed_dir = Path(processed_override) if processed_override else data_dir / "processed"
+        upload_dir = Path(flask_app.config.get("UPLOAD_FOLDER") or runtime_dir / "uploads")
+    processed_dir = Path(processed_override) if processed_override else runtime_dir / "processed"
     upload_dir.mkdir(parents=True, exist_ok=True)
     processed_dir.mkdir(parents=True, exist_ok=True)
 
@@ -302,7 +303,7 @@ def create_app(
         elif database_url:
             db_context = DatabaseContext(DatabaseConfig.from_url(database_url))
         elif "DATA_DIR" in overrides:
-            db_context = DatabaseContext(DatabaseConfig(database_path=data_dir / "martial_arts_ocr.db"))
+            db_context = DatabaseContext(DatabaseConfig(database_path=runtime_dir / "db" / "martial_arts_ocr.db"))
         else:
             db_context = DatabaseContext(DatabaseConfig.from_url(flask_app.config["DATABASE_URL"]))
     db_context.init_db()
@@ -321,6 +322,7 @@ def create_app(
     )
     flask_app.config.update(
         DATA_DIR=str(data_dir),
+        RUNTIME_DIR=str(runtime_dir),
         UPLOAD_FOLDER=str(upload_dir),
         PROCESSED_DIR=str(processed_dir),
         DATABASE_URL=db_context.config.url,

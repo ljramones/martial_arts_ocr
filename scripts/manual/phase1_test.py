@@ -5,7 +5,7 @@ Processes every image in an input folder and writes side-by-side comparisons,
 a CSV summary, and a suspects/ folder with flagged cases.
 
 Usage:
-  python scripts/manual/phase1_test.py --input all_DFD_Notes_Master_File --output stuff_results
+  python scripts/manual/phase1_test.py --input data/corpora/donn_draeger/dfd_notes_master/original --output stuff_results
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ log = logging.getLogger("phase1_harness")
 
 def parse_args():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input",  default="all_DFD_Notes_Master_File", help="Input directory of images")
+    ap.add_argument("--input",  default="data/corpora/donn_draeger/dfd_notes_master/original", help="Input directory of images")
     ap.add_argument("--output", default="stuff_results", help="Output directory for results")
     ap.add_argument("--max-side", type=int, default=1800, help="Max side for preview canvas (per panel); 0=no limit")
     ap.add_argument("--workers", type=int, default=4, help="Parallel workers")

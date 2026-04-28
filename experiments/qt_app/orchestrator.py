@@ -151,7 +151,7 @@ class OrchestratorResult:
     data: Dict[str, Any]
 
 class Orchestrator:
-    def __init__(self, processed_root: Path | str = "data/processed") -> None:
+    def __init__(self, processed_root: Path | str = "data/runtime/processed") -> None:
         self.processed_root = Path(processed_root)
         self.processed_root.mkdir(parents=True, exist_ok=True)
         self._last_debug: Dict[str, Any] = {}

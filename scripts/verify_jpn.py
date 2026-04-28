@@ -8,7 +8,7 @@ TESSDATA = REPO / "tessdata"
 pytesseract.pytesseract.tesseract_cmd = "/opt/homebrew/bin/tesseract"
 os.environ["TESSDATA_PREFIX"] = str(TESSDATA)
 
-IMG = REPO / "modern_japanese" / "JapText2.jpg"   # <-- change to a real JP file
+IMG = REPO / "data" / "corpora" / "ad_hoc" / "modern_japanese" / "original" / "JapText2.jpg"
 img = Image.open(IMG).convert("L")                # grayscale is fine
 
 cfg = f'--psm 6 --oem 1 --tessdata-dir "{TESSDATA}" -c preserve_interword_spaces=1'

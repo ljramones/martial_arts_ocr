@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This is a Python OCR system for scanned martial arts research materials. New stable APIs live under `src/martial_arts_ocr/`, including the Flask factory facade in `app/` and the pipeline seam in `pipeline/`. Legacy runtime code still lives in `processors/`, `utils/`, `app.py`, `database.py`, and `models.py` while migration continues. Web assets are in `templates/` and `static/`. Diagnostics and setup tools belong in `scripts/`; manual harnesses belong in `scripts/manual/`. Qt and model work are experiments under `experiments/qt_app/`, `experiments/image_layout_model/`, and `experiments/orientation_model/`. Local uploads, processed output, diagnostics, and training runs belong under `data/` and should not be committed.
+This is a Python OCR system for scanned martial arts research materials. New stable APIs live under `src/martial_arts_ocr/`, including the Flask factory facade in `app/` and the pipeline seam in `pipeline/`. Legacy runtime code still lives in `processors/`, `utils/`, `app.py`, `database.py`, and `models.py` while migration continues. Web assets are in `templates/` and `static/`. Diagnostics and setup tools belong in `scripts/`; manual harnesses belong in `scripts/manual/`. Qt and model work are experiments under `experiments/qt_app/`, `experiments/image_layout_model/`, and `experiments/orientation_model/`. Corpora, runtime files, training data, evaluation manifests, and notebook outputs belong under `data/`; generated runtime/notebook output should not be committed.
 
 ## Build, Test, and Development Commands
 
@@ -32,4 +32,4 @@ Recent commits use short imperative summaries such as `fixed issues in processor
 
 ## Security & Configuration Tips
 
-Do not commit secrets, personal scans, local databases, checkpoints, or generated OCR output. Keep `master_key.txt`, `*.db`, `data/`, `tessdata/`, and model artifacts local unless a small fixture is explicitly reviewed.
+Do not commit secrets, personal scans, local databases, checkpoints, or generated OCR output. Keep `master_key.txt`, `*.db`, `data/runtime/`, `data/notebook_outputs/`, `tessdata/`, and model artifacts local unless a small fixture is explicitly reviewed.

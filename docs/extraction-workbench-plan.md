@@ -35,7 +35,7 @@
 
 ## Notebook Roles
 
-Notebooks are for visual inspection, threshold tuning, and comparing algorithms. They should use generated images by default, accept optional sample paths, and write scratch output under `notebooks/output/`.
+Notebooks are for visual inspection, threshold tuning, and comparing algorithms. They should use generated images by default, accept optional sample paths, and write scratch output under `data/notebook_outputs/`.
 
 ## Acceptance Criteria
 
@@ -47,8 +47,8 @@ Notebooks are for visual inspection, threshold tuning, and comparing algorithms.
 
 ## Real-Page Evaluation Workflow
 
-1. Copy private scans into `samples/private/`.
-2. Copy `samples/manifest.example.json` to `samples/manifest.local.json`.
+1. Keep source pages under a corpus `original/` folder, such as `data/corpora/donn_draeger/dfd_notes_master/original/`.
+2. Generate or copy a corpus manifest to `data/corpora/<collection>/<corpus>/manifests/manifest.local.json`.
 3. Edit sample paths, descriptions, expected counts, OCR-like sample text, and review notes.
 4. Open `notebooks/05_real_page_extraction_review.ipynb`.
 5. Review detected image regions, saved crops, text cleanup, and reading order notes.
@@ -57,13 +57,13 @@ Notebooks are for visual inspection, threshold tuning, and comparing algorithms.
 
 ## Using The Donn Draeger Master Page Corpus
 
-1. Keep `all_DFD_Notes_Master_File/` as the original source corpus.
+1. Keep `data/corpora/donn_draeger/dfd_notes_master/original/` as the original source corpus. The old root-level `all_DFD_Notes_Master_File/` path has been superseded.
 2. Generate a local manifest:
 
    ```bash
    .venv/bin/python scripts/generate_real_page_manifest.py \
-     --input all_DFD_Notes_Master_File \
-     --output samples/manifest.local.json
+     --input data/corpora/donn_draeger/dfd_notes_master/original \
+     --output data/corpora/donn_draeger/dfd_notes_master/manifests/manifest.local.json
    ```
 
 3. Open `notebooks/05_real_page_extraction_review.ipynb`.

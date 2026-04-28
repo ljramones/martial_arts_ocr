@@ -58,7 +58,7 @@ def test_flask_app_factory_accepts_isolated_database_and_data_dir(tmp_path):
         assert app.config["DATA_DIR"] == str(data_dir)
         assert app.config["DATABASE_URL"] == f"sqlite:///{db_path}"
         deps = app.extensions["martial_arts_ocr"]
-        assert deps.upload_dir / "scan.png" == data_dir / "uploads" / "scan.png"
+        assert deps.upload_dir / "scan.png" == data_dir / "runtime" / "uploads" / "scan.png"
 
         _create_document(deps.db_context, "factory.png")
         assert _count_documents(deps.db_context) == 1

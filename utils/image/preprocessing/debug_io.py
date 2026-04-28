@@ -3,7 +3,7 @@
 Minimal debug sink for optional image/text dumps.
 
 Usage:
-    dbg = DebugSink("debug_output")          # or DebugSink(None) to disable
+    dbg = DebugSink("data/notebook_outputs/debug_output")          # or DebugSink(None) to disable
     dbg.write("chooser_gc_0", img_array)     # saves 0001_chooser_gc_0.png
     dbg.text("phase1_note", note_string)     # saves 0002_phase1_note.txt
 """

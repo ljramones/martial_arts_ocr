@@ -1,8 +1,9 @@
 """Generate a local real-page extraction review manifest.
 
-The default input is the original Donn Draeger notes corpus:
-``all_DFD_Notes_Master_File``. The default output is
-``samples/manifest.local.json``, which is intentionally gitignored.
+The default input is the original Donn Draeger notes corpus under
+``data/corpora/donn_draeger/dfd_notes_master/original``. The default output is
+``data/corpora/donn_draeger/dfd_notes_master/manifests/manifest.local.json``,
+which is intentionally gitignored.
 """
 
 from __future__ import annotations
@@ -121,10 +122,18 @@ def slugify(value: str) -> str:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate samples/manifest.local.json from real page images.",
+        description="Generate a local real-page manifest from corpus images.",
     )
-    parser.add_argument("--input", default="all_DFD_Notes_Master_File", help="Input image folder")
-    parser.add_argument("--output", default="samples/manifest.local.json", help="Output manifest path")
+    parser.add_argument(
+        "--input",
+        default="data/corpora/donn_draeger/dfd_notes_master/original",
+        help="Input image folder",
+    )
+    parser.add_argument(
+        "--output",
+        default="data/corpora/donn_draeger/dfd_notes_master/manifests/manifest.local.json",
+        help="Output manifest path",
+    )
     parser.add_argument("--force", action="store_true", help="Overwrite an existing manifest")
     parser.add_argument("--limit", type=int, default=None, help="Maximum number of image files to include")
     parser.add_argument("--recursive", action="store_true", help="Scan input folder recursively")

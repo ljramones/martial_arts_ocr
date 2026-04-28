@@ -39,7 +39,7 @@ def _create_app(tmp_path, name: str):
     from martial_arts_ocr.app.flask_app import create_app
 
     data_dir = tmp_path / name / "data"
-    orchestrator = FakeOrchestrator(data_dir / "processed")
+    orchestrator = FakeOrchestrator(data_dir / "runtime" / "processed")
     app = create_app(
         {
             "TESTING": True,
@@ -63,8 +63,8 @@ def test_create_app_returns_isolated_instances(tmp_path):
     assert first_deps.db_context is not second_deps.db_context
     assert first_deps.get_orchestrator() is first_orchestrator
     assert second_deps.get_orchestrator() is second_orchestrator
-    assert first_deps.upload_dir == first_data_dir / "uploads"
-    assert second_deps.upload_dir == second_data_dir / "uploads"
+    assert first_deps.upload_dir == first_data_dir / "runtime" / "uploads"
+    assert second_deps.upload_dir == second_data_dir / "runtime" / "uploads"
 
 
 def test_upload_and_process_routes_do_not_share_state(monkeypatch, tmp_path):
@@ -93,8 +93,8 @@ def test_upload_and_process_routes_do_not_share_state(monkeypatch, tmp_path):
     assert second_response.status_code == 200
     first_id = first_response.get_json()["documentId"]
     second_id = second_response.get_json()["documentId"]
-    assert list((first_data_dir / "uploads").glob("scan_*.png"))
-    assert list((second_data_dir / "uploads").glob("scan_*.png"))
+    assert list((first_data_dir / "runtime" / "uploads").glob("scan_*.png"))
+    assert list((second_data_dir / "runtime" / "uploads").glob("scan_*.png"))
 
     assert first_client.get(f"/process/{first_id}").status_code == 302
     assert second_client.get(f"/process/{second_id}").status_code == 302

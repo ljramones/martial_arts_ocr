@@ -41,7 +41,7 @@ templates/, static/        Flask UI templates and assets
 scripts/                   Setup, diagnostics, and manual OCR tools
 experiments/               Qt UI and model experiments
 tests/                     Pytest smoke and import tests
-data/                      Local uploads, processed output, diagnostics, and runs
+data/                      Corpora, runtime output, training data, and evaluation manifests
 ```
 
 The legacy root modules remain while migration is in progress. New code should prefer imports from `martial_arts_ocr.*` where a package API exists.
@@ -112,4 +112,4 @@ For tests, inject a fake processor into `WorkflowOrchestrator` to avoid heavy OC
 
 ## Data and Generated Files
 
-Local inputs and generated output belong under `data/` and should not be committed. Large model checkpoints, training runs, OCR output, local databases, and private scans should remain local unless a change explicitly requires a small, reviewed fixture.
+Project data is organized under `data/`. Original corpora live under `data/corpora/`; Flask uploads, processed output, and the local SQLite database live under `data/runtime/`; notebook crops and diagnostics live under `data/notebook_outputs/`. Large model checkpoints, training runs, OCR output, local databases, and private scans should remain local unless a change explicitly requires a small, reviewed fixture.

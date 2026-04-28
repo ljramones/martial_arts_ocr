@@ -8,13 +8,15 @@ from typing import List, Dict, Any
 # Base directories
 BASE_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = Path(os.environ.get("MARTIAL_ARTS_OCR_DATA_DIR", BASE_DIR / "data"))
-UPLOAD_DIR = Path(os.environ.get("MARTIAL_ARTS_OCR_UPLOAD_DIR", DATA_DIR / "uploads"))
-PROCESSED_DIR = Path(os.environ.get("MARTIAL_ARTS_OCR_PROCESSED_DIR", DATA_DIR / "processed"))
+RUNTIME_DIR = Path(os.environ.get("MARTIAL_ARTS_OCR_RUNTIME_DIR", DATA_DIR / "runtime"))
+UPLOAD_DIR = Path(os.environ.get("MARTIAL_ARTS_OCR_UPLOAD_DIR", RUNTIME_DIR / "uploads"))
+PROCESSED_DIR = Path(os.environ.get("MARTIAL_ARTS_OCR_PROCESSED_DIR", RUNTIME_DIR / "processed"))
+DB_DIR = Path(os.environ.get("MARTIAL_ARTS_OCR_DB_DIR", RUNTIME_DIR / "db"))
 STATIC_DIR = BASE_DIR / "static"
 EXTRACTED_CONTENT_DIR = STATIC_DIR / "extracted_content"
 
 # Create directories if they don't exist
-for directory in [UPLOAD_DIR, PROCESSED_DIR, EXTRACTED_CONTENT_DIR]:
+for directory in [UPLOAD_DIR, PROCESSED_DIR, DB_DIR, EXTRACTED_CONTENT_DIR]:
     directory.mkdir(exist_ok=True, parents=True)
 
 
@@ -24,25 +26,29 @@ def configure_runtime_paths(
     processed_dir: str | Path | None = None,
 ) -> None:
     """Update runtime paths without requiring module reloads."""
-    global DATA_DIR, UPLOAD_DIR, PROCESSED_DIR
+    global DATA_DIR, RUNTIME_DIR, UPLOAD_DIR, PROCESSED_DIR, DB_DIR
 
     if data_dir is not None:
         DATA_DIR = Path(data_dir)
+        RUNTIME_DIR = DATA_DIR / "runtime"
     if upload_dir is not None:
         UPLOAD_DIR = Path(upload_dir)
     elif data_dir is not None:
-        UPLOAD_DIR = DATA_DIR / "uploads"
+        UPLOAD_DIR = RUNTIME_DIR / "uploads"
     if processed_dir is not None:
         PROCESSED_DIR = Path(processed_dir)
     elif data_dir is not None:
-        PROCESSED_DIR = DATA_DIR / "processed"
+        PROCESSED_DIR = RUNTIME_DIR / "processed"
+    if data_dir is not None:
+        DB_DIR = RUNTIME_DIR / "db"
 
-    for directory in [UPLOAD_DIR, PROCESSED_DIR, EXTRACTED_CONTENT_DIR]:
+    for directory in [UPLOAD_DIR, PROCESSED_DIR, DB_DIR, EXTRACTED_CONTENT_DIR]:
         directory.mkdir(exist_ok=True, parents=True)
 
     Config.DATA_DIR = DATA_DIR
+    Config.RUNTIME_DIR = RUNTIME_DIR
     Config.UPLOAD_FOLDER = str(UPLOAD_DIR)
-    Config.DATABASE_URL = f"sqlite:///{DATA_DIR / 'martial_arts_ocr.db'}"
+    Config.DATABASE_URL = f"sqlite:///{DB_DIR / 'martial_arts_ocr.db'}"
 
 
 class Config:
@@ -50,6 +56,7 @@ class Config:
 
     BASE_DIR = BASE_DIR
     DATA_DIR = DATA_DIR
+    RUNTIME_DIR = RUNTIME_DIR
     STATIC_DIR = STATIC_DIR
 
     # Flask settings
@@ -69,7 +76,7 @@ class Config:
     ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 
     # Database settings
-    DATABASE_URL = f"sqlite:///{DATA_DIR / 'martial_arts_ocr.db'}"
+    DATABASE_URL = f"sqlite:///{DB_DIR / 'martial_arts_ocr.db'}"
 
     # OCR Engine Configuration
     OCR_ENGINES = {
@@ -141,7 +148,7 @@ class Config:
         'IMAGE_REGION_PRESERVATION': True,  # Mask non-text areas
 
         # --- DEBUG PARAMETERS ---
-        'DEBUG_DIR': 'debug_output',  # Assuming you have this or similar
+        'DEBUG_DIR': 'data/notebook_outputs/debug_output',
         'DEBUG_FILE_PREFIX': '',  # Optional prefix for debug filenames
         'DEBUG_FILE_LIMIT': 100,  # Max number of debug files to save
 
@@ -171,7 +178,7 @@ class Config:
         # Absolute path recommended; point this at the best.pt you trained
         'yolo_model_path': os.environ.get(
             'YOLO_MODEL_PATH',
-            str(DATA_DIR / 'runs/detect/train6/weights/best.pt')
+            str(RUNTIME_DIR / 'runs/detect/train6/weights/best.pt')
         ),
 
         # Inference thresholds tuned for documents (adjust in overrides as needed)

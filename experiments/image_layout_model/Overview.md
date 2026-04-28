@@ -276,7 +276,7 @@ if self.cfg.get("use_yolo_figure", False):
 ```bash
 python analyze_page.py \
   --input ./dataset/images/val \
-  --out ./debug_output \
+  --out ./data/notebook_outputs/debug_output \
   --detectors figure \
   --no_mask_images
 ```

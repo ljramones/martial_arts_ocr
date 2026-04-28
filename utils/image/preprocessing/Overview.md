@@ -54,7 +54,7 @@ utils/
 ```python
 from utils.image.facade import ImageProcessor
 
-proc = ImageProcessor({"DEBUG_DIR": "debug_output"})
+proc = ImageProcessor({"DEBUG_DIR": "data/notebook_outputs/debug_output"})
 upright = proc.deskew_image(img)     # phase 1: orientation + small-angle deskew
 binary  = proc.preprocess_for_ocr(img)
 ```
@@ -141,7 +141,7 @@ The new CNN pipeline + polarity tie-break raised accuracy from 50 % → 99–100
 
 ```bash
 python -m evaluate_image_preprocessing \
-  --images ./all_DFD_Notes_Master_File \
+  --images ./data/corpora/donn_draeger/dfd_notes_master/original \
   --key ./master_key.txt
 ```
 

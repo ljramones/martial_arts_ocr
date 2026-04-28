@@ -8,7 +8,7 @@ Use this rubric when reviewing real pages in `notebooks/05_real_page_extraction_
 - Normal body text blocks are not misclassified as images.
 - Tiny dust, scan marks, punctuation, and isolated blobs are ignored.
 - Bounding boxes are close enough for useful crops without cutting off content.
-- Crops are written under `notebooks/output/real_page_review/<sample_id>/`.
+- Crops are written under `data/notebook_outputs/real_page_review/<sample_id>/`.
 - Source page dimensions are preserved in metadata or review notes.
 - Region IDs, bbox values, crop paths, confidence, and reading order are stable enough to map into `ImageRegion`.
 

@@ -133,7 +133,7 @@ def predict_with_fallback(img_path: str, margin: float = 0.55) -> tuple[int, dic
 
 ```bash
 python prepare_dataset.py \
-  --source_images ../all_DFD_Notes_Master_File \
+  --source_images ../../data/corpora/donn_draeger/dfd_notes_master/original \
   --master_key   ../master_key.txt \
   --output_dir   ./data \
   --split 0.7,0.15,0.15 \

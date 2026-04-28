@@ -111,8 +111,9 @@ def test_upload_process_view_and_download_routes_use_data_dir(monkeypatch, tmp_p
     payload = response.get_json()
     document_id = payload["documentId"]
 
-    uploaded_files = list((data_dir / "uploads").glob("scan_*.png"))
-    assert uploaded_files, "upload route should save files under data/uploads"
+    runtime_dir = data_dir / "runtime"
+    uploaded_files = list((runtime_dir / "uploads").glob("scan_*.png"))
+    assert uploaded_files, "upload route should save files under data/runtime/uploads"
 
     from martial_arts_ocr.pipeline import WorkflowOrchestrator
 
@@ -120,7 +121,7 @@ def test_upload_process_view_and_download_routes_use_data_dir(monkeypatch, tmp_p
         processor=FakeProcessor(),
         page_reconstructor=FakeReconstructor(),
         session_factory=legacy_app.get_db_session,
-        processed_path_factory=lambda name: data_dir / "processed" / name,
+        processed_path_factory=lambda name: runtime_dir / "processed" / name,
         document_model=legacy_app.Document,
         page_model=legacy_app.Page,
         db_processing_result_model=legacy_app.ProcessingResult,
@@ -128,7 +129,7 @@ def test_upload_process_view_and_download_routes_use_data_dir(monkeypatch, tmp_p
 
     process_response = client.get(f"/process/{document_id}", follow_redirects=True)
     assert process_response.status_code == 200
-    assert (data_dir / "processed" / f"doc_{document_id}" / "page_1.html").exists()
+    assert (runtime_dir / "processed" / f"doc_{document_id}" / "page_1.html").exists()
 
     view_response = client.get(f"/view/{document_id}")
     assert view_response.status_code == 200

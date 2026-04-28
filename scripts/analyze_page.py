@@ -3,7 +3,7 @@
 analyze_page.py — quick CLI harness for layout + preprocessing verification.
 
 Usage:
-  python analyze_page.py --input ./all_DFD_Notes_Master_File --out ./debug_output
+  python analyze_page.py --input ./data/corpora/donn_draeger/dfd_notes_master/original --out ./data/notebook_outputs/debug_output
 
 This script:
   • Loads each image (jpg/png/tif)
@@ -63,8 +63,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True,
                     help="Path to an image, a directory, or a glob pattern (e.g. ./pages/**/*.jpg)")
-    ap.add_argument("--out", default="./debug_output",
-                    help="Directory for annotated outputs (default: ./debug_output)")
+    ap.add_argument("--out", default="./data/notebook_outputs/debug_output",
+                    help="Directory for annotated outputs (default: ./data/notebook_outputs/debug_output)")
     ap.add_argument("--limit", type=int, default=0, help="Optional limit for # of images")
     ap.add_argument("--exts", nargs="+", default=[".jpg", ".jpeg", ".png", ".tif", ".tiff"],
                     help="Accepted extensions")

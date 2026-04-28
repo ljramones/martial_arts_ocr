@@ -77,10 +77,13 @@ target/
 # Jupyter Notebook
 .ipynb_checkpoints
 notebooks/output/
+data/notebook_outputs/
 
 # Local/private evaluation samples
 samples/private/
 samples/manifest.local.json
+data/**/private/
+data/**/manifest.local.json
 
 # IPython
 profile_default/
@@ -139,6 +142,7 @@ uploads/
 processed/
 data/uploads/
 data/processed/
+data/runtime/
 data/diagnostic_output/
 data/runs/
 static/extracted_content/
@@ -221,10 +225,6 @@ sample_data/
 all_DFD_Notes_Master_File/
 **/IMG_*.jpg
 **/IMG_*.jpeg
-
-# Or more general pattern for image directories
-*_Notes_*/
-*_Master_File/
 
 # Documentation builds
 docs/_build/

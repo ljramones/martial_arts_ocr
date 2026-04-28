@@ -7,6 +7,7 @@ from scripts.generate_real_page_manifest import (
     build_manifest,
     collect_image_paths,
     main,
+    parse_args,
     write_manifest,
 )
 
@@ -23,7 +24,7 @@ def test_generates_manifest_from_temp_image_folder(tmp_path):
     touch(input_dir / "page_001.png")
     touch(input_dir / "notes.txt")
 
-    output = tmp_path / "samples" / "manifest.local.json"
+    output = tmp_path / "data" / "corpora" / "donn_draeger" / "dfd_notes_master" / "manifests" / "manifest.local.json"
     manifest = build_manifest(
         input_dir=input_dir,
         output_path=output,
@@ -50,6 +51,13 @@ def test_collect_image_paths_sorts_deterministically(tmp_path):
     touch(input_dir / "c.webp")
 
     assert [path.name for path in collect_image_paths(input_dir)] == ["a.png", "b.JPG", "c.webp"]
+
+
+def test_default_manifest_paths_use_data_corpus_layout():
+    args = parse_args([])
+
+    assert args.input == "data/corpora/donn_draeger/dfd_notes_master/original"
+    assert args.output == "data/corpora/donn_draeger/dfd_notes_master/manifests/manifest.local.json"
 
 
 def test_write_manifest_does_not_overwrite_without_force(tmp_path):

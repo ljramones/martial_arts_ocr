@@ -2,8 +2,13 @@
   "samples": [
     {
       "id": "mixed_english_japanese_page",
-      "path": "samples/private/mixed_english_japanese_page.png",
+      "path": "data/corpora/donn_draeger/dfd_notes_master/original/IMG_0001.jpg",
       "description": "Mixed English/Japanese martial arts page with one diagram.",
+      "source": {
+        "collection": "dfd_notes_master",
+        "kind": "original",
+        "derived": false
+      },
       "sample_text": "Donn Draeger studied classical bujutsu.\n武道とは何か。\nDaitō-ryū Aiki-jūjutsu and koryū terminology should survive cleanup.",
       "expected": {
         "has_japanese": true,
@@ -20,8 +25,13 @@
     },
     {
       "id": "diagram_heavy_page",
-      "path": "samples/private/diagram_heavy_page.png",
+      "path": "data/corpora/donn_draeger/dfd_notes_master/original/IMG_0002.jpg",
       "description": "Diagram-heavy page used to check figure extraction and crop quality.",
+      "source": {
+        "collection": "dfd_notes_master",
+        "kind": "original",
+        "derived": false
+      },
       "sample_text": "",
       "expected": {
         "has_japanese": false,

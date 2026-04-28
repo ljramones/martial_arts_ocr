@@ -107,7 +107,7 @@ if __name__ == "__main__":
 
     if len(sys.argv) < 2:
         # Use default image if none provided
-        image_path = "/Users/larrymitchell/ML/martial_arts_ocr/all_DFD_Notes_Master_File/IMG_3289.jpg"
+        image_path = "data/corpora/donn_draeger/dfd_notes_master/original/IMG_3289.jpg"
     else:
         image_path = sys.argv[1]
 
