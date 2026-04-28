@@ -32,7 +32,7 @@ from utils.image.ops.thumb import (
 )
 from utils.image.ops.extract import (
     extract_region, extract_many, extract_polygon_region, clamp_bbox,
-    expand_bbox, translate_region, scale_region, region_to_slice
+    expand_bbox, translate_region, scale_region, region_to_slice, save_region_crops
 )
 from utils.image.ops.tone import (
     to_gray, adjust_brightness_contrast, gamma_correct, auto_contrast_gray,
@@ -56,6 +56,7 @@ __all__ = [
     # Extract
     "extract_region", "extract_many", "extract_polygon_region",
     "clamp_bbox", "expand_bbox", "translate_region", "scale_region", "region_to_slice",
+    "save_region_crops",
     # Tone
     "to_gray", "adjust_brightness_contrast", "gamma_correct", "auto_contrast_gray",
     "rescale_intensity_gray", "clahe_gray", "clahe_bgr_lab",
