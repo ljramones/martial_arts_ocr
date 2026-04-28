@@ -55,6 +55,22 @@ Notebooks are for visual inspection, threshold tuning, and comparing algorithms.
 6. Record threshold and failure notes in the local manifest or a separate review document.
 7. Only after several representative pages pass, consider `WorkflowOrchestrator` integration.
 
+## Using The Donn Draeger Master Page Corpus
+
+1. Keep `all_DFD_Notes_Master_File/` as the original source corpus.
+2. Generate a local manifest:
+
+   ```bash
+   .venv/bin/python scripts/generate_real_page_manifest.py \
+     --input all_DFD_Notes_Master_File \
+     --output samples/manifest.local.json
+   ```
+
+3. Open `notebooks/05_real_page_extraction_review.ipynb`.
+4. Review image-region detection, crop quality, text cleanup, and reading order.
+5. Record threshold and failure notes.
+6. Only after original pages are reviewed, test augmented, rotated, or training data.
+
 ## Next Implementation Pass
 
 Use notebooks to inspect real page samples, then tune detector thresholds and add fixtures for representative page classes: English lecture page, modern Japanese page, mixed page, diagram-heavy page, and noisy scan.
