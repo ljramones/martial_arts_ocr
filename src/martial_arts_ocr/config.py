@@ -187,8 +187,30 @@ class Config:
         'yolo_imgsz': 1536,  # good balance for thin lines
         'yolo_tta': False,  # set True for high-recall QA runs only
 
-        # Make sure the text filter never rejects YOLO boxes
-        'filter_text_exempt_types': ['diagram', 'figure'],
+        # Make sure the text filter never rejects YOLO boxes. Classical contour
+        # "diagram" candidates are still filtered because they can be text.
+        'filter_text_exempt_types': ['figure'],
+
+        # OCR-free text-like rejection for image/diagram candidates
+        'region_reject_text_like': True,
+        'region_reject_rotated_text_like': True,
+        'region_text_like_min_components': 24,
+        'region_text_like_min_density': 0.14,
+        'region_text_like_max_density': 0.35,
+        'region_text_like_min_median_component_area': 60.0,
+        'region_text_like_max_median_component_area': 260.0,
+        'region_text_like_max_small_component_fraction': 0.45,
+        'region_title_text_max_components': 24,
+        'region_title_text_max_row_occupancy': 0.55,
+        'region_title_text_min_col_occupancy': 0.62,
+        'region_text_line_max_height': 90,
+        'region_text_line_min_aspect_ratio': 2.0,
+        'region_text_line_min_density': 0.20,
+        'region_text_line_max_density': 0.50,
+        'region_text_line_min_col_occupancy': 0.75,
+        'region_vertical_text_max_aspect_ratio': 0.45,
+        'region_rotated_text_min_row_occupancy': 0.80,
+        'region_rotated_text_min_col_occupancy': 0.75,
 
         # ---------------------------
         # Merging & NMS postprocess

@@ -99,6 +99,44 @@ class LayoutAnalyzer:
         if isinstance(nontext_mask, np.ndarray):
             gray = apply_nontext_mask(gray, nontext_mask)
 
+        merged = self._detect_image_region_candidates(gray)
+
+        # Optional: allow bypassing text-like rejection (A/B / debugging)
+        if bool(self.cfg.get("filter_text_like", True)):
+            filtered = self.text_filter.filter(gray, merged)
+        else:
+            filtered = merged
+
+        logger.info("Image regions detected: %d", len(filtered))
+        return filtered
+
+    def detect_image_regions_with_diagnostics(
+        self,
+        image: np.ndarray,
+        nontext_mask: Optional[np.ndarray] = None,
+    ) -> Dict[str, Any]:
+        """Return accepted and rejected image candidates with rejection reasons."""
+        gray = self._to_gray_u8(image)
+        if isinstance(nontext_mask, np.ndarray):
+            gray = apply_nontext_mask(gray, nontext_mask)
+
+        candidates = self._detect_image_region_candidates(gray)
+        accepted: List[ImageRegion] = []
+        rejected: List[Dict[str, Any]] = []
+        for region in candidates:
+            reason = self.text_filter.rejection_reason(gray, region) if bool(self.cfg.get("filter_text_like", True)) else None
+            if reason:
+                rejected.append({"region": region.to_dict(), "rejection_reason": reason})
+            else:
+                accepted.append(region)
+
+        return {
+            "accepted_regions": accepted,
+            "accepted": [region.to_dict() for region in accepted],
+            "rejected": rejected,
+        }
+
+    def _detect_image_region_candidates(self, gray: np.ndarray) -> List[ImageRegion]:
         regions: List[ImageRegion] = []
 
         # Order matters: fast/well-isolated first
@@ -135,15 +173,7 @@ class LayoutAnalyzer:
         # Configurable final NMS across all region types
         final_iou = float(self.cfg.get("final_iou_nms", 0.30))
         merged = remove_overlaps(regions, iou_threshold=final_iou)
-
-        # Optional: allow bypassing text-like rejection (A/B / debugging)
-        if bool(self.cfg.get("filter_text_like", True)):
-            filtered = self.text_filter.filter(gray, merged)
-        else:
-            filtered = merged
-
-        logger.info("Image regions detected: %d", len(filtered))
-        return filtered
+        return merged
 
     def detect_text_regions(
         self,
