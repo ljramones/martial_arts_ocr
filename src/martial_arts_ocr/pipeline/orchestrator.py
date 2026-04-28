@@ -33,7 +33,6 @@ class WorkflowOrchestrator:
 
     @staticmethod
     def _build_default_processor() -> _DocumentProcessor:
-        from processors.ocr_processor import OCRProcessor
+        from martial_arts_ocr.ocr.processor import OCRProcessor
 
         return OCRProcessor()
-

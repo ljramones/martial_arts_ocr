@@ -22,7 +22,18 @@ def _import_legacy_app(monkeypatch, tmp_path):
     monkeypatch.setenv("MARTIAL_ARTS_OCR_DATA_DIR", str(data_dir))
     monkeypatch.delenv("USE_YOLO_FIGURE", raising=False)
 
-    for module_name in ("app", "database", "models", "config"):
+    for module_name in (
+        "app",
+        "database",
+        "models",
+        "config",
+        "martial_arts_ocr",
+        "martial_arts_ocr.app",
+        "martial_arts_ocr.app.flask_app",
+        "martial_arts_ocr.config",
+        "martial_arts_ocr.db.database",
+        "martial_arts_ocr.db.models",
+    ):
         sys.modules.pop(module_name, None)
 
     legacy_app = importlib.import_module("app")
@@ -100,4 +111,3 @@ def test_optional_processor_failures_return_json_errors(monkeypatch, tmp_path):
     translate_response = client.post("/api/translate", json={"text": "日本語"})
     assert translate_response.status_code == 503
     assert translate_response.get_json()["error"] == "Translation failed"
-
