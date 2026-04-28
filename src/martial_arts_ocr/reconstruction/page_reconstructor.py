@@ -16,6 +16,10 @@ import cv2
 from martial_arts_ocr.config import get_config
 from utils import TextFormatter, TextStatistics
 from martial_arts_ocr.ocr.models import ProcessingResult
+from martial_arts_ocr.pipeline.document_models import (
+    DocumentResult,
+    PageResult as PipelinePageResult,
+)
 from martial_arts_ocr.japanese.processor import JapaneseProcessingResult
 
 logger = logging.getLogger(__name__)
@@ -112,6 +116,9 @@ class PageReconstructor:
         Returns:
             ReconstructedPage with layout and content
         """
+        if isinstance(processing_result, (DocumentResult, PipelinePageResult)):
+            return self._reconstruct_canonical_result(processing_result, original_image_path)
+
         try:
             logger.info("Starting page reconstruction")
 
@@ -167,6 +174,104 @@ class PageReconstructor:
         except Exception as e:
             logger.error(f"Page reconstruction failed: {e}")
             raise
+
+    def _reconstruct_canonical_result(
+        self,
+        result: DocumentResult | PipelinePageResult,
+        original_image_path: str = None,
+    ) -> ReconstructedPage:
+        """Create a basic reconstructed page from the canonical pipeline model."""
+        if isinstance(result, DocumentResult):
+            page = result.pages[0] if result.pages else PipelinePageResult(page_number=1)
+            document_id = result.document_id
+        else:
+            page = result
+            document_id = None
+
+        page_width = page.width or 1240
+        page_height = page.height or 1754
+        elements: List[PageElement] = []
+
+        for index, region in enumerate(page.text_regions, start=1):
+            bbox = region.bbox
+            elements.append(
+                PageElement(
+                    element_type="text",
+                    content=region.text,
+                    x=bbox.x if bbox else self.layout_config["margin_left"],
+                    y=bbox.y if bbox else self.layout_config["margin_top"] + (index - 1) * 32,
+                    width=bbox.width if bbox else page_width - 80,
+                    height=bbox.height if bbox else 24,
+                    confidence=region.confidence or page.confidence or 0.0,
+                    metadata={"region_id": region.region_id, **region.metadata},
+                )
+            )
+
+        for index, region in enumerate(page.image_regions, start=1):
+            bbox = region.bbox
+            elements.append(
+                PageElement(
+                    element_type="image",
+                    content=str(region.image_path or region.caption or ""),
+                    x=bbox.x if bbox else self.layout_config["margin_left"],
+                    y=bbox.y if bbox else self.layout_config["margin_top"] + len(elements) * 32,
+                    width=bbox.width if bbox else 240,
+                    height=bbox.height if bbox else 160,
+                    confidence=region.confidence or 0.0,
+                    metadata={"region_id": region.region_id, **region.metadata},
+                )
+            )
+
+        if not elements and page.combined_text():
+            elements.append(
+                PageElement(
+                    element_type="text",
+                    content=page.combined_text(),
+                    x=self.layout_config["margin_left"],
+                    y=self.layout_config["margin_top"],
+                    width=page_width - 80,
+                    height=24,
+                    confidence=page.confidence or 0.0,
+                    metadata={},
+                )
+            )
+
+        css_styles = self._generate_css_styles(page_width, page_height)
+        body = "\n".join(
+            f'<div class="element {element.element_type}">{html.escape(element.content)}</div>'
+            for element in elements
+        )
+        html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>{css_styles}</style>
+    <title>Document {document_id or page.page_number}</title>
+</head>
+<body>
+    <div class="page-container">
+        {body}
+    </div>
+</body>
+</html>"""
+        return ReconstructedPage(
+            page_id=f"page_{page.page_number}",
+            title=f"Document {document_id or page.page_number}",
+            elements=self._sort_elements_by_layout(elements),
+            html_content=html_content,
+            css_styles=css_styles,
+            page_width=page_width,
+            page_height=page_height,
+            reconstruction_metadata={
+                "reconstruction_date": datetime.now().isoformat(),
+                "source_image": original_image_path,
+                "source_model": type(result).__name__,
+                "total_elements": len(elements),
+                "text_elements": len([e for e in elements if e.element_type == "text"]),
+                "image_elements": len([e for e in elements if e.element_type == "image"]),
+                "overall_confidence": page.confidence,
+            },
+        )
 
     def _get_page_dimensions(self, image_path: str,
                              processing_result: ProcessingResult) -> Tuple[int, int]:

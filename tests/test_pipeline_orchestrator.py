@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -101,6 +102,7 @@ def test_orchestrator_success_writes_db_and_artifacts(monkeypatch, tmp_path):
     document_id = _create_document(runtime, image_path.name)
 
     from martial_arts_ocr.pipeline import PipelineRequest, WorkflowOrchestrator
+    from martial_arts_ocr.pipeline.document_models import DocumentResult
 
     orchestrator = WorkflowOrchestrator(
         processor=FakeProcessor(),
@@ -117,9 +119,18 @@ def test_orchestrator_success_writes_db_and_artifacts(monkeypatch, tmp_path):
 
     assert result.success is True
     assert result.output_dir == tmp_path / "data" / "processed" / f"doc_{document_id}"
+    assert isinstance(result.payload, DocumentResult)
+    assert result.payload.combined_text() == "Sample OCR text"
     assert result.html_path.exists()
     assert result.json_path.exists()
     assert result.text_path.exists()
+    assert result.text_path.read_text(encoding="utf-8") == "Sample OCR text"
+
+    artifact_data = json.loads(result.json_path.read_text(encoding="utf-8"))
+    assert artifact_data["document_id"] == document_id
+    assert artifact_data["pages"][0]["raw_text"] == "Sample OCR text"
+    assert artifact_data["cleaned_text"] == "Sample OCR text"
+    assert artifact_data["legacy_processing_result"]["cleaned_text"] == "Sample OCR text"
 
     with runtime.get_db_session() as session:
         doc = session.get(runtime.Document, document_id)

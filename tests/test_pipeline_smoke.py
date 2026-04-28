@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from martial_arts_ocr.pipeline import PipelineRequest, WorkflowOrchestrator
+from martial_arts_ocr.pipeline import DocumentResult, PipelineRequest, WorkflowOrchestrator
 
 
 class FakeProcessor:
@@ -32,7 +32,9 @@ def test_orchestrator_with_injected_processor(tmp_path):
     result = orchestrator.process_document(PipelineRequest(document_id=3, image_path=image_path))
 
     assert result.status == "completed"
-    assert result.payload["document_id"] == 3
+    assert isinstance(result.payload, DocumentResult)
+    assert result.payload.document_id == 3
+    assert result.payload.combined_text() == "ok"
 
 
 def test_orchestrator_returns_failed_result_for_missing_file():

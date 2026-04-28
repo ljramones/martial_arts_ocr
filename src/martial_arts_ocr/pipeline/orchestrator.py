@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
+from martial_arts_ocr.pipeline.adapters import document_result_from_ocr_output
+from martial_arts_ocr.pipeline.document_models import DocumentResult
 from martial_arts_ocr.pipeline.result_models import PipelineRequest, PipelineResult
 
 logger = logging.getLogger(__name__)
@@ -79,16 +81,23 @@ class WorkflowOrchestrator:
         try:
             processor = self._processor or self._build_default_processor()
             processing_result = processor.process_document(str(image_path), document_id=request.document_id)
+            document_result = document_result_from_ocr_output(
+                processing_result,
+                document_id=request.document_id,
+                source_path=image_path,
+                language_hint=request.language_hint,
+            )
 
             output_dir.mkdir(parents=True, exist_ok=True)
             page_id = self._persist_processing_result(request, processing_result) if self._persist else None
-            paths = self._write_artifacts(output_dir, request, processing_result)
+            paths = self._write_artifacts(output_dir, request, processing_result, document_result)
 
             metadata = {
                 "ocr_engine": self._best_engine(processing_result),
-                "confidence": getattr(processing_result, "overall_confidence", None),
+                "confidence": document_result.confidence,
                 "has_japanese": getattr(processing_result, "japanese_result", None) is not None,
                 "page_id": page_id,
+                "detected_languages": document_result.detected_languages,
             }
             if self._persist:
                 self._mark_document_completed(request.document_id, metadata["ocr_engine"])
@@ -101,7 +110,7 @@ class WorkflowOrchestrator:
                 json_path=paths.get("json_path"),
                 text_path=paths.get("text_path"),
                 metadata=metadata,
-                payload=processing_result,
+                payload=document_result,
             )
 
         except Exception as exc:
@@ -182,6 +191,7 @@ class WorkflowOrchestrator:
         output_dir: Path,
         request: PipelineRequest,
         processing_result: Any,
+        document_result: DocumentResult,
     ) -> dict[str, Path]:
         paths: dict[str, Path] = {}
 
@@ -197,9 +207,18 @@ class WorkflowOrchestrator:
         except Exception as exc:
             logger.warning("Page reconstruction failed for doc %s: %s", request.document_id, exc)
 
-        json_data = self._processing_result_to_dict(processing_result)
-        json_data["document_id"] = request.document_id
+        legacy_data = self._processing_result_to_dict(processing_result)
+        combined_text = document_result.combined_text()
+        json_data = document_result.to_dict()
         json_data["processing_date"] = datetime.now().isoformat()
+        json_data["legacy_processing_result"] = legacy_data
+        json_data["raw_text"] = legacy_data.get("raw_text", combined_text)
+        json_data["cleaned_text"] = legacy_data.get("cleaned_text", combined_text)
+        json_data["text"] = combined_text
+        if "html_content" in legacy_data:
+            json_data["html_content"] = legacy_data["html_content"]
+        if "overall_confidence" in legacy_data:
+            json_data["overall_confidence"] = legacy_data["overall_confidence"]
         json_path = output_dir / "data.json"
         json_path.write_text(json.dumps(json_data, ensure_ascii=False, indent=2), encoding="utf-8")
         paths["json_path"] = json_path
@@ -210,7 +229,7 @@ class WorkflowOrchestrator:
             html_path.write_text(html, encoding="utf-8")
             paths["html_path"] = html_path
 
-        text = getattr(processing_result, "cleaned_text", None)
+        text = combined_text
         if text:
             text_path = output_dir / "text.txt"
             text_path.write_text(text, encoding="utf-8")
