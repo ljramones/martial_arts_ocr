@@ -16,6 +16,9 @@ from .utils.masks import apply_nontext_mask
 
 from .post.merge import remove_overlaps, merge_overlapping
 
+from .detectors.yolo_figure import YOLOFigureDetector
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +50,17 @@ class LayoutAnalyzer:
         )
 
         # Detectors
-        self.figure = FigureDetector(self.cfg, halo_check=self._halo)
+        use_yolo = bool(self.cfg.get("use_yolo_figure", False)) and YOLOFigureDetector.available
+        if self.cfg.get("use_yolo_figure", False) and not YOLOFigureDetector.available:
+            logger.warning("YOLO figure detector requested but ultralytics is unavailable; using heuristic detector")
+
+        if use_yolo:
+            # YOLO-based figure detector (primary)
+            self.figure = YOLOFigureDetector(self.cfg)
+        else:
+            # Heuristic figure detector (legacy)
+            self.figure = FigureDetector(self.cfg, halo_check=self._halo)
+
         self.contours = ContourDetector(self.cfg, halo_check=self._halo)
         self.variance = VarianceDetector(self.cfg)
         self.uniform = UniformDetector(self.cfg)

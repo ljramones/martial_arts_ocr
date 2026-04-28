@@ -1,0 +1,2 @@
+"""Image layout model experiments."""
+

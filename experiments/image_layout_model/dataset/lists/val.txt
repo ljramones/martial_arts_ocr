@@ -1,0 +1,11 @@
+/Users/larrymitchell/ML/martial_arts_ocr/image_layout_model/dataset/images/val/IMG_3292.jpg
+/Users/larrymitchell/ML/martial_arts_ocr/image_layout_model/dataset/images/val/IMG_3299.jpg
+/Users/larrymitchell/ML/martial_arts_ocr/image_layout_model/dataset/images/val/IMG_3315.jpg
+/Users/larrymitchell/ML/martial_arts_ocr/image_layout_model/dataset/images/val/IMG_3317.jpg
+/Users/larrymitchell/ML/martial_arts_ocr/image_layout_model/dataset/images/val/IMG_3342.jpg
+/Users/larrymitchell/ML/martial_arts_ocr/image_layout_model/dataset/images/val/IMG_3352.jpg
+/Users/larrymitchell/ML/martial_arts_ocr/image_layout_model/dataset/images/val/IMG_3357.jpg
+/Users/larrymitchell/ML/martial_arts_ocr/image_layout_model/dataset/images/val/IMG_3363.jpg
+/Users/larrymitchell/ML/martial_arts_ocr/image_layout_model/dataset/images/val/IMG_3365.jpg
+/Users/larrymitchell/ML/martial_arts_ocr/image_layout_model/dataset/images/val/IMG_3386.jpg
+/Users/larrymitchell/ML/martial_arts_ocr/image_layout_model/dataset/images/val/IMG_3397.jpg

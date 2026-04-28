@@ -1,0 +1,5 @@
+#!/Users/larrymitchell/ML/martial_arts_ocr/.venv311/bin/python3
+
+from argostranslate import argospm
+
+argospm.main()

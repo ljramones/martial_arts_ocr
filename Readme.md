@@ -1,436 +1,115 @@
-# # Martial Arts OCR - Draeger Lectures Digitization
+# Martial Arts OCR
 
-A Python-based system for digitizing scanned martial arts documents with OCR, Japanese text processing, and embedded image preservation. Originally designed for processing Donn Draeger's lecture materials, now expanded to handle classical Japanese martial arts texts including koryu densho and makimono scrolls.
+Experimental OCR and digitization tools for martial arts research materials, especially Donn Draeger lecture materials and mixed English/Japanese scans. The project is being stabilized around a package layout while preserving earlier Flask, OCR, Japanese-processing, layout, Qt, and model experiments.
 
-## Project Status
+## Current Working Scope
 
-### ✅ Implemented Features
-- **Advanced OCR**: Extract text from scanned documents using Tesseract and EasyOCR
-- **Mixed Content Support**: Detect and preserve embedded images (diagrams, illustrations)
-- **Modern Japanese Processing**: 
-  - Automatic romanization (romaji conversion)
-  - Translation capabilities via Argos Translate
-  - Furigana annotation support
-  - MeCab morphological analysis
-- **Layout Preservation**: Maintain original document structure and image positioning
-- **Web Interface**: Local web application for viewing processed documents
-- **Offline Operation**: No internet required, all processing done locally
-- **Content Extraction**: Separate text and image regions using computer vision
-- **Quality Metrics**: Confidence scoring for OCR results
+- Upload scanned image files through a local Flask UI.
+- Run OCR through Tesseract and/or EasyOCR where those engines are installed.
+- Detect and preserve basic image regions such as diagrams and illustrations.
+- Process modern Japanese text using local tools where configured, including MeCab, pykakasi, and Argos Translate.
+- Store processing metadata in SQLite.
+- Export HTML/JSON-style artifacts for local viewing and inspection.
+- Keep operation local/offline once dependencies and language data are installed.
 
-### 🚧 In Development
-- **Classical Japanese Support** (Partially implemented):
-  - KuroNet integration for cursive script recognition
-  - Historical character normalization
-  - Classical grammar conversion
-- **Document Analysis Pipeline**: Automatic document type detection
-- **Seal Detection**: Recognition of traditional stamps/seals
+## Experimental / Not Yet Productized
 
-### 📋 Planned Features
-- **Multi-period Support**: Specialized processing for Edo, Muromachi, Kamakura texts
-- **Two-stage Translation**: Classical → Modern Japanese → English
-- **Scholarly Output Format**: Three-panel view (original/modern/translation)
-- **Batch Processing**: Process multiple documents with mixed types
-- **Enhanced Koryu Terminology**: Extended martial arts dictionary
+- Qt desktop UI in `experiments/qt_app/`.
+- YOLO image layout model work in `experiments/image_layout_model/`.
+- Orientation model work in `experiments/orientation_model/`.
+- Classical Japanese, koryu densho, and makimono workflows.
+- Seal detection, KuroNet integration, historical normalization, and grammar conversion.
+- Batch workflow orchestration and scholarly three-panel output.
 
-## Document Processing Workflow
+These areas are roadmap or research code unless tests and runtime docs explicitly say otherwise.
 
-The system employs an intelligent document analysis and routing system that automatically determines the optimal processing pipeline for each document type.
+## Immediate Stabilization Goals
 
-### Workflow Overview
+- Restore a clean package structure under `src/martial_arts_ocr/`.
+- Add import and smoke tests that do not require OCR engines or model downloads.
+- Move diagnostics and manual tools out of the repository root.
+- Create one canonical pipeline API.
+- Make documentation match the current implementation.
 
-```
-[Input: Scanned Document]
-           ↓
-[Document Analyzer]
-    • Language detection
-    • Script style analysis  
-    • Time period identification
-    • Image/seal detection
-           ↓
-[Automatic Classification]
-           ↓
-[Pipeline Selection & Execution]
-           ↓
-[Output: Processed Document]
+## Repository Layout
+
+```text
+src/martial_arts_ocr/      Package facade and new stable APIs
+processors/                Legacy OCR, Japanese, extraction, and reconstruction code
+utils/                     Shared image and text utilities
+templates/, static/        Flask UI templates and assets
+scripts/                   Setup, diagnostics, and manual OCR tools
+experiments/               Qt UI and model experiments
+tests/                     Pytest smoke and import tests
+data/                      Local uploads, processed output, diagnostics, and runs
 ```
 
-### Supported Document Types
+The legacy root modules remain while migration is in progress. New code should prefer imports from `martial_arts_ocr.*` where a package API exists.
 
-#### 1. **English Only Documents** ✅
-- **Use Case**: Draeger's English lecture notes, modern martial arts books
-- **Pipeline**: 
-  ```
-  Extract Content → OCR (English) → Image Extraction → Simple Reconstruction
-  ```
-- **Status**: Fully implemented
+## Setup
 
-#### 2. **Modern Japanese Documents** ✅
-- **Use Case**: Contemporary martial arts manuals, recent publications
-- **Pipeline**:
-  ```
-  Extract Content → OCR (Japanese) → MeCab Analysis → Translation → 
-  Romanization → Bilingual Reconstruction
-  ```
-- **Status**: Fully implemented
+Install system OCR dependencies first. On macOS:
 
-#### 3. **Mixed Modern Documents (English + Japanese)** ✅
-- **Use Case**: Annotated texts, bilingual martial arts materials
-- **Pipeline**:
-  ```
-  Extract Content → Region Detection → Multi-language OCR → 
-  Selective Translation → Mixed Reconstruction
-  ```
-- **Status**: Fully implemented
-
-#### 4. **Classical Japanese Documents** 🚧
-- **Use Case**: Koryu densho, historical makimono scrolls
-- **Pipeline**:
-  ```
-  Extract Content → Script Style Detection → Classical OCR (KuroNet/Tesseract) → 
-  Historical Normalization → Grammar Conversion → Modern Japanese → 
-  Translation → Three-panel Scholarly Output
-  ```
-- **Status**: Core components implemented, integration in progress
-
-#### 5. **Mixed Classical Documents** 📋
-- **Use Case**: Annotated historical texts with modern notes
-- **Pipeline**:
-  ```
-  Extract Content → Region Classification → Selective Classical/Modern OCR → 
-  Context-aware Processing → Academic Reconstruction
-  ```
-- **Status**: Planned
-
-### Document Analysis Components
-
-#### Language Detection ✅
-- Analyzes character distribution (English, Japanese, other)
-- Determines primary document language
-- Identifies mixed-language regions
-
-#### Script Style Analysis 🚧
-- **Kaisho (楷書)**: Standard printed/written style ✅
-- **Gyosho (行書)**: Semi-cursive style 🚧
-- **Sosho (草書)**: Cursive style 📋
-
-#### Time Period Identification 🚧
-Automatically detects document era based on:
-- Character variants (historical kanji/kana)
-- Grammar patterns
-- Writing style
-- **Supported Periods** (planned):
-  - Contemporary (1945-present) ✅
-  - Modern (Meiji-Showa, 1868-1945) 🚧
-  - Edo (1603-1868) 📋
-  - Earlier periods (pre-1603) 📋
-
-#### Special Element Detection
-- **Embedded Images**: Diagrams, illustrations ✅
-- **Seals/Stamps**: Traditional red seals (判子) 🚧
-- **Margin Notes**: Classical annotations (頭注) 📋
-
-### Processing Features by Document Type
-
-| Feature | English | Modern JP | Mixed Modern | Classical | Mixed Classical |
-|---------|---------|-----------|--------------|-----------|-----------------|
-| OCR | ✅ | ✅ | ✅ | 🚧 | 📋 |
-| Translation | N/A | ✅ | ✅ | 🚧 | 📋 |
-| Romanization | N/A | ✅ | ✅ | 🚧 | 📋 |
-| Image Extraction | ✅ | ✅ | ✅ | 🚧 | 📋 |
-| Layout Preservation | ✅ | ✅ | ✅ | 🚧 | 📋 |
-| Historical Normalization | N/A | N/A | N/A | 🚧 | 📋 |
-| Grammar Conversion | N/A | N/A | N/A | 📋 | 📋 |
-| Seal Detection | N/A | N/A | N/A | 🚧 | 📋 |
-| Vertical Text | N/A | ✅ | ✅ | 🚧 | 📋 |
-| Three-panel Output | N/A | N/A | N/A | 📋 | 📋 |
-
-**Legend**: ✅ Implemented | 🚧 In Development | 📋 Planned | N/A Not Applicable
-
-## Technology Stack
-
-### Core Technologies ✅
-- **OCR Engines**: Tesseract, EasyOCR
-- **Japanese Processing**: MeCab, UniDic, pykakasi, Argos Translate
-- **Image Processing**: OpenCV, Pillow, scikit-image
-- **Web Framework**: Flask
-- **Database**: SQLite
-- **Frontend**: HTML5, CSS3, vanilla JavaScript
-
-### Classical Japanese Extensions 🚧
-- **KuroNet**: Cursive script recognition (integration in progress)
-- **UniDic Historical Variants**: Classical dictionaries (planned)
-- **Classical Grammar Converter**: Custom transformation rules (in development)
-
-## Installation
-
-### Prerequisites
-
-- Python 3.8 or higher
-- Tesseract OCR engine
-- System dependencies for Japanese text processing
-
-### System Dependencies
-
-#### Ubuntu/Debian
 ```bash
-sudo apt-get update
-sudo apt-get install tesseract-ocr tesseract-ocr-jpn tesseract-ocr-jpn-vert
-sudo apt-get install libmecab-dev mecab mecab-ipadic-utf8
+brew install tesseract tesseract-lang mecab mecab-ipadic
 ```
 
-#### macOS
+Create a Python environment and install dependencies:
+
 ```bash
-brew install tesseract tesseract-lang
-brew install mecab mecab-ipadic
-```
-
-#### Windows
-- Download Tesseract from: https://github.com/UB-Mannheim/tesseract/wiki
-- Install with Japanese language packs
-- Download MeCab from: https://taku910.github.io/mecab/
-
-### Python Environment
-
-1. Clone the repository:
-```bash
-git clone https://github.com/ljramones/martial_arts_ocr
-cd martial_arts_ocr
-```
-
-2. Create virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. Install dependencies:
-```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e .
+python scripts/setup_japanese.py
 ```
 
-4. Download Japanese dictionaries:
-```bash
-python setup_japanese.py
-```
+## Running
 
-5. (Optional) Setup classical Japanese support:
-```bash
-# Currently in development
-python setup_classical.py  # 🚧
-```
+Run the legacy Flask app:
 
-## Quick Start
-
-### Basic Usage ✅
-
-1. **Start the application**:
 ```bash
 python app.py
 ```
 
-2. **Access the web interface**:
-   - Open http://localhost:5000 in your browser
+Then open `http://localhost:5000`.
 
-3. **Upload scanned documents**:
-   - Drag and drop files or use the upload button
-   - Supported formats: JPG, JPEG, PNG, TIFF
+The package CLI currently delegates to the same legacy app:
 
-4. **Automatic Processing**:
-   - The system automatically detects document type
-   - Applies appropriate processing pipeline
-   - View results in format suitable for document type
+```bash
+python -m martial_arts_ocr.cli
+```
 
-### Manual Document Type Override ✅
+Run the experimental Qt UI with:
+
+```bash
+python -m experiments.qt_app.main
+```
+
+## Tests
+
+The baseline tests are intentionally lightweight:
+
+```bash
+python -m pytest -q
+```
+
+They verify package imports, config loading, Flask factory creation, and the `WorkflowOrchestrator` seam with a fake processor. They do not require Tesseract, EasyOCR, Japanese dictionaries, GPU support, or model downloads.
+
+## Pipeline API
+
+New integrations should target the canonical pipeline seam:
 
 ```python
-# For programmatic use
-from processors.workflow_orchestrator import WorkflowOrchestrator
-from processors.document_analyzer import DocumentType
+from pathlib import Path
+from martial_arts_ocr.pipeline import PipelineRequest, WorkflowOrchestrator
 
-orchestrator = WorkflowOrchestrator()
-
-# Let system auto-detect
-result = orchestrator.process_document('path/to/document.jpg')
-
-# Or manually specify type
-result = orchestrator.process_document(
-    'path/to/document.jpg',
-    override_type=DocumentType.CLASSICAL_JAPANESE
-)
+request = PipelineRequest(image_path=Path("scan.png"), language_hint="en")
+result = WorkflowOrchestrator().process_document(request)
 ```
 
-### Batch Processing 🚧
+For tests, inject a fake processor into `WorkflowOrchestrator` to avoid heavy OCR dependencies.
 
-```python
-# Process multiple documents
-results = orchestrator.batch_process([
-    'densho_1.jpg',
-    'lecture_notes.jpg', 
-    'mixed_document.jpg'
-])
-```
+## Data and Generated Files
 
-## Usage Examples
-
-### Processing Different Document Types
-
-#### English Lecture Notes ✅
-```python
-# Automatically detected and processed
-result = process_document('draeger_lecture_1.jpg')
-# Output: OCR text with preserved layout and extracted diagrams
-```
-
-#### Modern Japanese Manual ✅
-```python
-result = process_document('modern_karate_manual.jpg')
-# Output: Original, romaji, translation, with embedded images
-```
-
-#### Classical Koryu Densho 🚧
-```python
-result = process_document('yagyu_densho.jpg')
-# Output: Three-panel view (original classical, modern Japanese, English)
-# with seal detection and terminology glossary
-```
-
-## Project Structure
-
-```
-martial_arts_ocr/
-├── app.py                      # Main Flask application ✅
-├── config.py                   # Configuration settings ✅
-├── setup_japanese.py           # Japanese dictionary setup ✅
-├── setup_classical.py          # Classical Japanese setup 🚧
-├── processors/
-│   ├── __init__.py            ✅
-│   ├── document_analyzer.py   # Document type detection 🚧
-│   ├── workflow_orchestrator.py # Pipeline management 🚧
-│   ├── layout_detector.py     # Detect text vs image regions ✅
-│   ├── content_extractor.py   # Extract text and images ✅
-│   ├── ocr_processor.py       # OCR processing ✅
-│   ├── japanese_processor.py  # Japanese text analysis ✅
-│   ├── classical_processor.py # Classical Japanese handling 🚧
-│   └── page_reconstructor.py  # HTML page generation ✅
-├── static/                     # Web assets ✅
-├── templates/                  # HTML templates ✅
-├── uploads/                    # Original uploaded files ✅
-├── processed/                  # Processed document data ✅
-└── utils/                      # Utility functions ✅
-```
-
-## Configuration
-
-### Processing Profiles 🚧
-
-Edit `config.py` to customize processing profiles:
-
-```python
-PROCESSING_PROFILES = {
-    'draeger_lecture': {
-        'document_types': ['english_only', 'mixed_modern'],
-        'preserve_layout': True,
-        'extract_images': True
-    },
-    'koryu_densho': {
-        'document_types': ['classical_japanese'],
-        'detect_seals': True,
-        'three_panel_output': True,
-        'include_glossary': True
-    }
-}
-```
-
-## API Endpoints
-
-### Document Analysis ✅
-```
-POST /analyze
-```
-Analyzes document and returns detected type, languages, and recommendations
-
-### Document Processing ✅
-```
-POST /process
-```
-Processes document with automatic or manual pipeline selection
-
-### Batch Processing 🚧
-```
-POST /batch_process
-```
-Process multiple documents with mixed types
-
-## Performance Characteristics
-
-### Processing Speed
-- **English only**: ~3-5 seconds per page ✅
-- **Modern Japanese**: ~8-12 seconds per page ✅
-- **Mixed modern**: ~10-15 seconds per page ✅
-- **Classical Japanese**: ~15-25 seconds per page 🚧
-- **Mixed classical**: ~20-30 seconds per page 📋
-
-### Accuracy Metrics
-- **English OCR**: 95-98% accuracy ✅
-- **Modern Japanese OCR**: 90-95% accuracy ✅
-- **Classical Japanese OCR**: 70-85% accuracy 🚧
-- **Translation Quality**: Good for modern, developing for classical 🚧
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Japanese characters not recognized**: Ensure Japanese Tesseract data is installed
-2. **Classical text poorly recognized**: KuroNet integration still in development
-3. **Memory errors on large documents**: Process in smaller batches
-4. **Translation quality issues**: Check if Argos models are properly installed
-
-## Roadmap
-
-### Phase 1: Core Functionality ✅
-- Basic OCR for English and modern Japanese
-- Web interface
-- Image extraction
-
-### Phase 2: Classical Support 🚧 (Current)
-- Classical Japanese OCR
-- Historical character normalization
-- Grammar conversion
-- Seal detection
-
-### Phase 3: Advanced Features 📋
-- Full koryu densho support
-- Multi-period handling
-- Advanced terminology database
-- Scholarly annotation tools
-
-### Phase 4: Research Tools 📋
-- Citation generation
-- Cross-document analysis
-- Terminology concordance
-- Export to academic formats
-
-## Contributing
-
-Contributions are welcome! Areas needing help:
-- Classical Japanese grammar rules
-- Koryu terminology database expansion
-- Testing with various document types
-- UI/UX improvements
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- Donn Draeger for his foundational work in martial arts research
-- The Tesseract OCR community
-- Japanese NLP tool developers (MeCab, UniDic)
-- Open source computer vision libraries
-- Classical Japanese text processing researchers
-
-## Contact
-
-For questions about classical Japanese processing or koryu document handling, please open an issue on GitHub.
+Local inputs and generated output belong under `data/` and should not be committed. Large model checkpoints, training runs, OCR output, local databases, and private scans should remain local unless a change explicitly requires a small, reviewed fixture.

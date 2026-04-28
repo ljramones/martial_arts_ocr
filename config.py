@@ -7,8 +7,9 @@ from typing import List, Dict, Any
 
 # Base directories
 BASE_DIR = Path(__file__).parent
-UPLOAD_DIR = BASE_DIR / "uploads"
-PROCESSED_DIR = BASE_DIR / "processed"
+DATA_DIR = Path(os.environ.get("MARTIAL_ARTS_OCR_DATA_DIR", BASE_DIR / "data"))
+UPLOAD_DIR = Path(os.environ.get("MARTIAL_ARTS_OCR_UPLOAD_DIR", DATA_DIR / "uploads"))
+PROCESSED_DIR = Path(os.environ.get("MARTIAL_ARTS_OCR_PROCESSED_DIR", DATA_DIR / "processed"))
 STATIC_DIR = BASE_DIR / "static"
 EXTRACTED_CONTENT_DIR = STATIC_DIR / "extracted_content"
 
@@ -37,7 +38,7 @@ class Config:
     ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 
     # Database settings
-    DATABASE_URL = f"sqlite:///{BASE_DIR / 'martial_arts_ocr.db'}"
+    DATABASE_URL = f"sqlite:///{DATA_DIR / 'martial_arts_ocr.db'}"
 
     # OCR Engine Configuration
     OCR_ENGINES = {
@@ -113,8 +114,8 @@ class Config:
         'DEBUG_FILE_PREFIX': '',  # Optional prefix for debug filenames
         'DEBUG_FILE_LIMIT': 100,  # Max number of debug files to save
 
-        'ORIENT_CKPT_CONVNEXT': 'orientation_model/checkpoints/orient_convnext_tiny.pth',
-        'ORIENT_CKPT_EFFNET': 'orientation_model/checkpoints/orient_effnetv2s.pth',  # or None
+        'ORIENT_CKPT_CONVNEXT': str(BASE_DIR / 'experiments/orientation_model/checkpoints/orient_convnext_tiny.pth'),
+        'ORIENT_CKPT_EFFNET': str(BASE_DIR / 'experiments/orientation_model/checkpoints/orient_effnetv2s.pth'),  # or None
         'ORIENT_ENS_MARGIN': 0.55,
 
         # honor this in facade; you already set True in your file
@@ -129,6 +130,44 @@ class Config:
         # Optional extras
         'contours_always': False,
         "figure_margin": 20,
+
+        # ---------------------------
+        # YOLO figure detector config
+        # ---------------------------
+        # Turn this on to swap FigureDetector -> YOLOFigureDetector
+        'use_yolo_figure': os.environ.get('USE_YOLO_FIGURE', 'false').lower() == 'true',
+
+        # Absolute path recommended; point this at the best.pt you trained
+        'yolo_model_path': os.environ.get(
+            'YOLO_MODEL_PATH',
+            str(DATA_DIR / 'runs/detect/train6/weights/best.pt')
+        ),
+
+        # Inference thresholds tuned for documents (adjust in overrides as needed)
+        'yolo_conf': 0.22,  # 0.20–0.25 typical
+        'yolo_iou': 0.60,  # preserves neighboring panels
+        'yolo_imgsz': 1536,  # good balance for thin lines
+        'yolo_tta': False,  # set True for high-recall QA runs only
+
+        # Make sure the text filter never rejects YOLO boxes
+        'filter_text_exempt_types': ['diagram', 'figure'],
+
+        # ---------------------------
+        # Merging & NMS postprocess
+        # ---------------------------
+        # How aggressively to merge *diagram* boxes (contours); YOLO boxes are 'figure'
+        'diagram_merge_iou': 0.10,
+        'diagram_merge_gap': 12,
+
+        # Final NMS across all region types
+        'final_iou_nms': 0.30,
+
+        # ---------------------------
+        # Global sanity (guards)
+        # ---------------------------
+        # Optional: drop page-scale boxes & page-border boxes early
+        'image_max_area_ratio': 0.45,  # ignore boxes >45% of page
+        'image_border_margin': 10,  # require a small inset from page edges
 
         'text_block_min_area': 1000,  # Minimum area for text blocks
         'image_block_min_area': 2500,  # Minimum area for image blocks

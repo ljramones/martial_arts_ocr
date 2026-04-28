@@ -6,11 +6,11 @@ from PIL import Image, ImageOps
 import torch
 
 # Reuse your arch-aware single-head loader
-from orientation_model.src.predict_model import load_model as load_single, predict_image as predict_single
+from experiments.orientation_model.src.predict_model import load_model as load_single, predict_image as predict_single
 
 # Optional ensemble (ConvNeXt + EffNet) if you keep the file
 try:
-    from orientation_model.src.predict_ensemble import predict_image_ensemble
+    from experiments.orientation_model.src.predict_ensemble import predict_image_ensemble
 except Exception:
     predict_image_ensemble = None  # ensemble optional
 

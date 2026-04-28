@@ -132,6 +132,10 @@ dmypy.json
 # Uploaded files
 uploads/
 processed/
+data/uploads/
+data/processed/
+data/diagnostic_output/
+data/runs/
 static/extracted_content/
 
 # Database files
@@ -177,6 +181,8 @@ unidic/
 # Model cache
 .cache/
 models/
+experiments/orientation_model/checkpoints/
+experiments/image_layout_model/yolov8n.pt
 
 # Development
 .env.local

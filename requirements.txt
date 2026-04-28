@@ -1,6 +1,5 @@
-opencv-python
 # --- UI (desktop) ---
-PyQt6
+PySide6
 
 # --- Core OCR / imaging ---
 numpy==1.26.4
