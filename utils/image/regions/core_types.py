@@ -126,7 +126,7 @@ class _Box:
 # Region type (rectangular bbox + optional polygon, with light helpers)
 # ---------------------------------------------------------------------------
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class ImageRegion:
     """
     Rectangular region with optional polygon and metadata.
@@ -150,7 +150,50 @@ class ImageRegion:
     points: Optional[List[Tuple[float, float]]] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    def __init__(
+        self,
+        bbox: Optional[BBox] = None,
+        region_type: Optional[str] = None,
+        score: Optional[float] = None,
+        id: Optional[str] = None,
+        page_index: Optional[int] = None,
+        points: Optional[List[Tuple[float, float]]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        *,
+        x: Optional[int] = None,
+        y: Optional[int] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        confidence: Optional[float] = None,
+    ) -> None:
+        if bbox is None:
+            if None in (x, y, width, height):
+                raise TypeError("ImageRegion requires bbox or x/y/width/height")
+            bbox = (int(x), int(y), int(x) + int(width), int(y) + int(height))
+        x1, y1, x2, y2 = [int(value) for value in bbox]
+        if x2 < x1:
+            x1, x2 = x2, x1
+        if y2 < y1:
+            y1, y2 = y2, y1
+
+        object.__setattr__(self, "bbox", (x1, y1, x2, y2))
+        object.__setattr__(self, "region_type", region_type)
+        object.__setattr__(self, "score", score if score is not None else confidence)
+        object.__setattr__(self, "id", id)
+        object.__setattr__(self, "page_index", page_index)
+        object.__setattr__(self, "points", points)
+        object.__setattr__(self, "metadata", dict(metadata or {}))
+
     # ---- properties backed by bbox ----
+    @property
+    def x(self) -> int: return self.x1
+
+    @property
+    def y(self) -> int: return self.y1
+
+    @property
+    def confidence(self) -> Optional[float]: return self.score
+
     @property
     def x1(self) -> int: return int(self.bbox[0])
 
@@ -178,6 +221,22 @@ class ImageRegion:
 
     def to_tuple(self) -> BBox:
         return (self.x1, self.y1, self.x2, self.y2)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "bbox": self.to_tuple(),
+            "x": self.x,
+            "y": self.y,
+            "width": self.width,
+            "height": self.height,
+            "region_type": self.region_type,
+            "score": self.score,
+            "confidence": self.confidence,
+            "id": self.id,
+            "page_index": self.page_index,
+            "points": self.points,
+            "metadata": dict(self.metadata),
+        }
 
     # ---- relations (via _Box for reuse) ----
     def _as_box(self) -> _Box:

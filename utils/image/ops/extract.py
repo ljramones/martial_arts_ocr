@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable, List, Sequence, Tuple
 
 import cv2
@@ -41,6 +42,7 @@ __all__ = [
     "translate_region",
     "scale_region",
     "extract_polygon_region",
+    "save_region_crops",
 ]
 
 BBox = Tuple[int, int, int, int]
@@ -171,6 +173,40 @@ def extract_many(
             crop = np.zeros((1, 1, ch), dtype=image.dtype) if ch > 1 else np.zeros((1, 1), dtype=image.dtype)
         crops.append(crop)
     return crops
+
+
+def save_region_crops(
+    image: np.ndarray,
+    regions: Sequence[ImageRegion],
+    output_dir: str | Path,
+    *,
+    prefix: str = "region",
+    padding: int = 0,
+    safe_crop: bool = True,
+) -> List[dict]:
+    """Extract and save region crops, returning stable metadata records."""
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    saved: List[dict] = []
+    for index, region in enumerate(regions, start=1):
+        crop = extract_region(image, region, padding=padding, safe_crop=safe_crop)
+        filename = f"{prefix}_{index:03d}.png"
+        crop_path = output_path / filename
+        if not cv2.imwrite(str(crop_path), crop):
+            raise IOError(f"Failed to write crop: {crop_path}")
+
+        saved.append(
+            {
+                "region_id": getattr(region, "id", None) or f"{prefix}_{index:03d}",
+                "image_path": str(crop_path),
+                "region": region.to_dict() if hasattr(region, "to_dict") else {"bbox": region.bbox},
+                "width": int(crop.shape[1]),
+                "height": int(crop.shape[0]),
+                "reading_order": index,
+            }
+        )
+    return saved
 
 
 # ------------------------------ polygon support -------------------------------

@@ -8,6 +8,12 @@ from martial_arts_ocr.pipeline.document_models import (
     PageResult,
     TextRegion,
 )
+from martial_arts_ocr.pipeline.extraction_adapters import (
+    document_result_from_extractions,
+    image_region_from_extraction,
+    page_result_from_extractions,
+    text_region_from_extraction,
+)
 from martial_arts_ocr.pipeline.orchestrator import PipelineRequest, PipelineResult, WorkflowOrchestrator
 
 __all__ = [
@@ -19,5 +25,9 @@ __all__ = [
     "PipelineResult",
     "TextRegion",
     "WorkflowOrchestrator",
+    "document_result_from_extractions",
     "document_result_from_ocr_output",
+    "image_region_from_extraction",
+    "page_result_from_extractions",
+    "text_region_from_extraction",
 ]

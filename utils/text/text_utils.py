@@ -83,14 +83,11 @@ class TextCleaner:
             '0': 'o',  # in words (context-dependent)
             '1': 'l',  # in words (context-dependent)
             '|': 'I',  # vertical bar to capital I
-            # Japanese-specific corrections
-            'ー': '一',  # long vowel mark to kanji one
-            '口': 'ロ',  # sometimes confused
         }
 
         # Regex patterns for cleaning
         self.patterns = {
-            'multiple_spaces': re.compile(r'\s{2,}'),
+            'multiple_spaces': re.compile(r'[ \t]{2,}'),
             'multiple_newlines': re.compile(r'\n{3,}'),
             'trailing_spaces': re.compile(r'[ \t]+$', re.MULTILINE),
             'leading_spaces': re.compile(r'^[ \t]+', re.MULTILINE),
