@@ -6,7 +6,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from martial_arts_ocr.pipeline.document_models import DocumentResult, PageResult
+import cv2
+import numpy as np
+
+from martial_arts_ocr.pipeline.document_models import BoundingBox, DocumentResult, ImageRegion, PageResult
+from martial_arts_ocr.pipeline.extraction_service import ExtractionService, ExtractionServiceOptions
+from utils.image.regions.core_types import ImageRegion as UtilityImageRegion
 
 
 class FakeOCRResult:
@@ -82,6 +87,56 @@ class FakeReconstructor:
     def reconstruct_page(self, processing_result, image_path: str):
         self.last_processing_result = processing_result
         return FakePage()
+
+
+class RecordingExtractionService:
+    def __init__(self):
+        self.calls = []
+
+    def enrich_document_result(self, document_result, *, output_dir):
+        self.calls.append((document_result, output_dir))
+        return DocumentResult(
+            document_id=document_result.document_id,
+            source_path=document_result.source_path,
+            pages=[
+                PageResult(
+                    page_number=1,
+                    width=document_result.pages[0].width if document_result.pages else None,
+                    height=document_result.pages[0].height if document_result.pages else None,
+                    raw_text=document_result.combined_text(),
+                    image_regions=[
+                        ImageRegion(
+                            region_id="recorded_image",
+                            bbox=BoundingBox(x=1, y=2, width=3, height=4),
+                            region_type="diagram",
+                        )
+                    ],
+                    confidence=document_result.confidence,
+                    metadata={"image_extraction": {"enabled": True}},
+                )
+            ],
+            detected_languages=document_result.detected_languages,
+            confidence=document_result.confidence,
+            metadata={**document_result.metadata, "image_extraction": {"enabled": True, "status": "completed"}},
+        )
+
+
+class FakeLayoutAnalyzer:
+    def detect_image_regions_with_diagnostics(self, image):
+        return {
+            "accepted_regions": [
+                UtilityImageRegion(x=20, y=24, width=80, height=70, region_type="diagram", confidence=0.91)
+            ],
+            "accepted": [],
+            "rejected": [],
+            "consolidation": [],
+        }
+
+
+def _write_synthetic_image(path: Path) -> None:
+    image = np.full((180, 220, 3), 255, dtype=np.uint8)
+    cv2.rectangle(image, (20, 24), (100, 94), (0, 0, 0), 3)
+    cv2.imwrite(str(path), image)
 
 
 def _fresh_runtime(monkeypatch, tmp_path):
@@ -233,3 +288,84 @@ def test_orchestrator_missing_image_returns_failed_result(monkeypatch, tmp_path)
         doc = session.get(runtime.Document, document_id)
         assert doc.status == "failed"
         assert "does not exist" in doc.error_message
+
+
+def test_orchestrator_uses_extraction_service_when_injected(monkeypatch, tmp_path):
+    runtime = _fresh_runtime(monkeypatch, tmp_path)
+    image_path = tmp_path / "scan_extraction_injected.png"
+    image_path.write_bytes(b"fake image bytes")
+    document_id = _create_document(runtime, image_path.name)
+    extraction_service = RecordingExtractionService()
+
+    from martial_arts_ocr.pipeline import PipelineRequest, WorkflowOrchestrator
+
+    result = WorkflowOrchestrator(
+        processor=FakeCanonicalProcessor(),
+        page_reconstructor=FakeReconstructor(),
+        session_factory=runtime.get_db_session,
+        processed_path_factory=lambda name: tmp_path / "data" / "processed" / name,
+        document_model=runtime.Document,
+        page_model=runtime.Page,
+        db_processing_result_model=runtime.ProcessingResult,
+        extraction_service=extraction_service,
+    ).process_document(PipelineRequest(document_id=document_id, image_path=image_path))
+
+    assert result.success is True
+    assert len(extraction_service.calls) == 1
+    assert extraction_service.calls[0][1] == tmp_path / "data" / "processed" / f"doc_{document_id}"
+    assert result.payload.metadata["image_extraction"]["status"] == "completed"
+
+
+def test_orchestrator_enabled_extraction_writes_image_regions_to_data_json(monkeypatch, tmp_path):
+    runtime = _fresh_runtime(monkeypatch, tmp_path)
+    image_path = tmp_path / "scan_extraction_enabled.png"
+
+    _write_synthetic_image(image_path)
+    document_id = _create_document(runtime, image_path.name)
+    extraction_service = ExtractionService(
+        ExtractionServiceOptions(enable_image_regions=True),
+        layout_analyzer_factory=lambda: FakeLayoutAnalyzer(),
+    )
+
+    from martial_arts_ocr.pipeline import PipelineRequest, WorkflowOrchestrator
+
+    result = WorkflowOrchestrator(
+        processor=FakeCanonicalProcessor(),
+        page_reconstructor=FakeReconstructor(),
+        session_factory=runtime.get_db_session,
+        processed_path_factory=lambda name: tmp_path / "data" / "processed" / name,
+        document_model=runtime.Document,
+        page_model=runtime.Page,
+        db_processing_result_model=runtime.ProcessingResult,
+        extraction_service=extraction_service,
+    ).process_document(PipelineRequest(document_id=document_id, image_path=image_path))
+
+    assert result.success is True
+    artifact_data = json.loads(result.json_path.read_text(encoding="utf-8"))
+    image_regions = artifact_data["pages"][0]["image_regions"]
+    assert len(image_regions) == 1
+    assert image_regions[0]["image_path"]
+    assert (result.output_dir / "image_regions" / "image_region_001.png").exists()
+
+
+def test_orchestrator_without_extraction_service_keeps_image_regions_empty(monkeypatch, tmp_path):
+    runtime = _fresh_runtime(monkeypatch, tmp_path)
+    image_path = tmp_path / "scan_extraction_disabled.png"
+    image_path.write_bytes(b"fake image bytes")
+    document_id = _create_document(runtime, image_path.name)
+
+    from martial_arts_ocr.pipeline import PipelineRequest, WorkflowOrchestrator
+
+    result = WorkflowOrchestrator(
+        processor=FakeCanonicalProcessor(),
+        page_reconstructor=FakeReconstructor(),
+        session_factory=runtime.get_db_session,
+        processed_path_factory=lambda name: tmp_path / "data" / "processed" / name,
+        document_model=runtime.Document,
+        page_model=runtime.Page,
+        db_processing_result_model=runtime.ProcessingResult,
+    ).process_document(PipelineRequest(document_id=document_id, image_path=image_path))
+
+    assert result.success is True
+    artifact_data = json.loads(result.json_path.read_text(encoding="utf-8"))
+    assert artifact_data["pages"][0]["image_regions"] == []

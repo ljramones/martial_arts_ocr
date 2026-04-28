@@ -65,6 +65,44 @@ def test_create_app_returns_isolated_instances(tmp_path):
     assert second_deps.get_orchestrator() is second_orchestrator
     assert first_deps.upload_dir == first_data_dir / "runtime" / "uploads"
     assert second_deps.upload_dir == second_data_dir / "runtime" / "uploads"
+    assert first_deps.extraction_service.options.enable_image_regions is False
+    assert second_deps.extraction_service.options.enable_image_regions is False
+
+
+def test_create_app_can_enable_extraction_service_for_review_mode(tmp_path):
+    from martial_arts_ocr.app.flask_app import create_app
+
+    data_dir = tmp_path / "review" / "data"
+    app = create_app(
+        {
+            "TESTING": True,
+            "DATA_DIR": data_dir,
+            "DATABASE_PATH": data_dir / "app.db",
+            "ENABLE_IMAGE_REGION_EXTRACTION": True,
+        }
+    )
+
+    deps = app.extensions["martial_arts_ocr"]
+    assert deps.extraction_service.options.enable_image_regions is True
+
+
+def test_create_app_parses_string_extraction_flags(tmp_path):
+    from martial_arts_ocr.app.flask_app import create_app
+
+    data_dir = tmp_path / "string_flags" / "data"
+    app = create_app(
+        {
+            "TESTING": True,
+            "DATA_DIR": data_dir,
+            "DATABASE_PATH": data_dir / "app.db",
+            "ENABLE_IMAGE_REGION_EXTRACTION": "false",
+            "IMAGE_REGION_EXTRACTION_SAVE_CROPS": "true",
+        }
+    )
+
+    deps = app.extensions["martial_arts_ocr"]
+    assert deps.extraction_service.options.enable_image_regions is False
+    assert deps.extraction_service.options.save_crops is True
 
 
 def test_upload_and_process_routes_do_not_share_state(monkeypatch, tmp_path):

@@ -14,12 +14,15 @@ from martial_arts_ocr.pipeline.extraction_adapters import (
     page_result_from_extractions,
     text_region_from_extraction,
 )
+from martial_arts_ocr.pipeline.extraction_service import ExtractionService, ExtractionServiceOptions
 from martial_arts_ocr.pipeline.orchestrator import PipelineRequest, PipelineResult, WorkflowOrchestrator
 
 __all__ = [
     "BoundingBox",
     "DocumentResult",
     "ImageRegion",
+    "ExtractionService",
+    "ExtractionServiceOptions",
     "PageResult",
     "PipelineRequest",
     "PipelineResult",

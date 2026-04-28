@@ -9,6 +9,7 @@ from typing import Callable
 from martial_arts_ocr.db.context import DatabaseContext
 from martial_arts_ocr.db.models import Document, Page, ProcessingResult
 from martial_arts_ocr.pipeline import WorkflowOrchestrator
+from martial_arts_ocr.pipeline.extraction_service import ExtractionService
 
 
 ProcessorFactory = Callable[[], object]
@@ -23,6 +24,7 @@ class AppDependencies:
     upload_dir: Path
     processed_dir: Path
     orchestrator: WorkflowOrchestrator | None = None
+    extraction_service: ExtractionService | None = None
     ocr_processor_factory: ProcessorFactory | None = None
     content_extractor_factory: ProcessorFactory | None = None
     japanese_processor_factory: ProcessorFactory | None = None
@@ -62,5 +64,6 @@ class AppDependencies:
                 document_model=Document,
                 page_model=Page,
                 db_processing_result_model=ProcessingResult,
+                extraction_service=self.extraction_service,
             )
         return self.orchestrator

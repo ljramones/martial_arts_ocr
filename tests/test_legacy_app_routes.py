@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import io
+import json
 import sys
 from pathlib import Path
 
@@ -137,6 +138,38 @@ def test_upload_process_view_and_download_routes_use_data_dir(monkeypatch, tmp_p
     download_response = client.get(f"/download/{document_id}")
     assert download_response.status_code == 200
     assert b"Sample OCR text" in download_response.data
+
+
+def test_route_processing_keeps_image_extraction_disabled_by_default(monkeypatch, tmp_path):
+    legacy_app, data_dir = _import_legacy_app(monkeypatch, tmp_path)
+    monkeypatch.setattr(legacy_app, "_kickoff_processing_async", lambda _document_id: None)
+    client = legacy_app.app.test_client()
+
+    response = client.post(
+        "/upload",
+        data={"file": (io.BytesIO(_png_bytes()), "scan.png")},
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 200
+    document_id = response.get_json()["documentId"]
+
+    from martial_arts_ocr.pipeline import WorkflowOrchestrator
+
+    runtime_dir = data_dir / "runtime"
+    legacy_app.workflow_orchestrator = WorkflowOrchestrator(
+        processor=FakeProcessor(),
+        page_reconstructor=FakeReconstructor(),
+        session_factory=legacy_app.get_db_session,
+        processed_path_factory=lambda name: runtime_dir / "processed" / name,
+        document_model=legacy_app.Document,
+        page_model=legacy_app.Page,
+        db_processing_result_model=legacy_app.ProcessingResult,
+    )
+
+    process_response = client.get(f"/process/{document_id}", follow_redirects=True)
+    assert process_response.status_code == 200
+    data = json.loads((runtime_dir / "processed" / f"doc_{document_id}" / "data.json").read_text(encoding="utf-8"))
+    assert data["pages"][0]["image_regions"] == []
 
 
 def test_optional_processor_failures_return_json_errors(monkeypatch, tmp_path):

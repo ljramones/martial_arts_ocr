@@ -73,4 +73,12 @@ Notebooks are for visual inspection, threshold tuning, and comparing algorithms.
 
 ## Next Implementation Pass
 
-Use notebooks to inspect real page samples, then tune detector thresholds and add fixtures for representative page classes: English lecture page, modern Japanese page, mixed page, diagram-heavy page, and noisy scan.
+Image-region extraction now has a gated runtime integration path through `ExtractionService`. It is disabled by default and should be enabled only for review/workbench processing:
+
+```bash
+ENABLE_IMAGE_REGION_EXTRACTION=true .venv/bin/python app.py
+```
+
+When enabled, extraction enriches `DocumentResult.pages[].image_regions`, saves crops under each processed document output directory, and records diagnostics in metadata. The default remains off because review found broad/label-heavy crops, fragile tall/narrow visual strips, and validation only against the DFD corpus so far.
+
+Before enabling more broadly, run review-mode processing on selected DFD pages and a second corpus to check generalization.

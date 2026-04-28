@@ -30,6 +30,7 @@ from martial_arts_ocr.db.context import DatabaseConfig, DatabaseContext
 from martial_arts_ocr.db.database import get_database_context, get_db_session, init_db
 from martial_arts_ocr.db.models import Document, Page, ProcessingResult
 from martial_arts_ocr.pipeline import PipelineRequest, WorkflowOrchestrator
+from martial_arts_ocr.pipeline.extraction_service import ExtractionService, ExtractionServiceOptions
 
 APP_EXTENSION_KEY = "martial_arts_ocr"
 
@@ -137,6 +138,7 @@ def _attach_dependencies(
     content_extractor_factory=None,
     japanese_processor_factory=None,
     page_reconstructor_factory=None,
+    extraction_service: ExtractionService | None = None,
 ) -> AppDependencies:
     deps = AppDependencies(
         db_context=db_context,
@@ -144,6 +146,7 @@ def _attach_dependencies(
         upload_dir=Path(upload_dir),
         processed_dir=Path(processed_dir),
         orchestrator=orchestrator,
+        extraction_service=extraction_service,
         ocr_processor_factory=processor_factory or _default_ocr_processor_factory,
         content_extractor_factory=content_extractor_factory or _default_content_extractor_factory,
         japanese_processor_factory=japanese_processor_factory or _default_japanese_processor_factory,
@@ -153,12 +156,29 @@ def _attach_dependencies(
     return deps
 
 
+def _build_extraction_service(app_config) -> ExtractionService:
+    return ExtractionService(
+        ExtractionServiceOptions(
+            enable_image_regions=_config_bool(app_config.get("ENABLE_IMAGE_REGION_EXTRACTION", False)),
+            save_crops=_config_bool(app_config.get("IMAGE_REGION_EXTRACTION_SAVE_CROPS", True)),
+            fail_on_extraction_error=_config_bool(app_config.get("IMAGE_REGION_EXTRACTION_FAIL_ON_ERROR", False)),
+        )
+    )
+
+
+def _config_bool(value) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
 _attach_dependencies(
     app,
     db_context=get_database_context(),
     data_dir=config.DATA_DIR,
     upload_dir=Path(config.UPLOAD_FOLDER),
     processed_dir=get_processed_path(""),
+    extraction_service=_build_extraction_service(app.config),
 )
 
 
@@ -276,6 +296,7 @@ def create_app(
     content_extractor_factory=None,
     japanese_processor_factory=None,
     page_reconstructor_factory=None,
+    extraction_service: ExtractionService | None = None,
 ):
     """Create an isolated Flask app instance with app-scoped dependencies."""
     flask_app = _build_flask_app(config_overrides)
@@ -308,6 +329,9 @@ def create_app(
             db_context = DatabaseContext(DatabaseConfig.from_url(flask_app.config["DATABASE_URL"]))
     db_context.init_db()
 
+    if extraction_service is None:
+        extraction_service = _build_extraction_service(flask_app.config)
+
     _attach_dependencies(
         flask_app,
         db_context=db_context,
@@ -319,6 +343,7 @@ def create_app(
         content_extractor_factory=content_extractor_factory,
         japanese_processor_factory=japanese_processor_factory,
         page_reconstructor_factory=page_reconstructor_factory,
+        extraction_service=extraction_service,
     )
     flask_app.config.update(
         DATA_DIR=str(data_dir),

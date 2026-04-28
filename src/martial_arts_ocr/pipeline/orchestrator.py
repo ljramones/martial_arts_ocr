@@ -37,6 +37,7 @@ class WorkflowOrchestrator:
         page_model: Any | None = None,
         db_processing_result_model: Any | None = None,
         db_context: Any | None = None,
+        extraction_service: Any | None = None,
         persist: bool = True,
     ) -> None:
         if db_context is not None and session_factory is None:
@@ -62,6 +63,7 @@ class WorkflowOrchestrator:
         self._document_model = document_model
         self._page_model = page_model
         self._db_processing_result_model = db_processing_result_model
+        self._extraction_service = extraction_service
         self._persist = persist
 
     def process_document(self, request: PipelineRequest) -> PipelineResult:
@@ -87,6 +89,7 @@ class WorkflowOrchestrator:
             document_result = self._process_to_document_result(processor, request, image_path)
 
             output_dir.mkdir(parents=True, exist_ok=True)
+            document_result = self._enrich_with_extraction(document_result, output_dir=output_dir)
             page_id = self._persist_document_result(request, document_result) if self._persist else None
             paths = self._write_artifacts(output_dir, request, document_result)
 
@@ -161,6 +164,11 @@ class WorkflowOrchestrator:
             source_path=image_path,
             language_hint=request.language_hint,
         )
+
+    def _enrich_with_extraction(self, document_result: DocumentResult, *, output_dir: Path) -> DocumentResult:
+        if self._extraction_service is None:
+            return document_result
+        return self._extraction_service.enrich_document_result(document_result, output_dir=output_dir)
 
     def _persist_document_result(self, request: PipelineRequest, document_result: DocumentResult) -> int:
         page_result = document_result.pages[0] if document_result.pages else None

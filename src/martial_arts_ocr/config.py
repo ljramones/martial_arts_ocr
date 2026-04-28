@@ -78,6 +78,21 @@ class Config:
     # Database settings
     DATABASE_URL = f"sqlite:///{DB_DIR / 'martial_arts_ocr.db'}"
 
+    # Review-mode extraction settings. Disabled by default because real-page
+    # review found useful but broad/label-heavy crops on some pages.
+    ENABLE_IMAGE_REGION_EXTRACTION = os.environ.get(
+        "ENABLE_IMAGE_REGION_EXTRACTION",
+        "false",
+    ).lower() == "true"
+    IMAGE_REGION_EXTRACTION_SAVE_CROPS = os.environ.get(
+        "IMAGE_REGION_EXTRACTION_SAVE_CROPS",
+        "true",
+    ).lower() == "true"
+    IMAGE_REGION_EXTRACTION_FAIL_ON_ERROR = os.environ.get(
+        "IMAGE_REGION_EXTRACTION_FAIL_ON_ERROR",
+        "false",
+    ).lower() == "true"
+
     # OCR Engine Configuration
     OCR_ENGINES = {
         'tesseract': {

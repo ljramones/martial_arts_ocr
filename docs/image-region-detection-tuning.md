@@ -148,3 +148,34 @@ Remaining risks:
 - Consolidation improves duplicate/fragmented crops, but it can intentionally create broader crops. This is better for preservation, but not yet ideal for final scholarly layout.
 - Figure/caption separation is still unresolved.
 - Runtime integration should remain gated until another review confirms the broader crops are acceptable.
+
+## Gated Runtime Integration
+
+Image-region extraction can now be enabled through review/workbench configuration, but it remains disabled by default:
+
+```bash
+ENABLE_IMAGE_REGION_EXTRACTION=true .venv/bin/python app.py
+```
+
+When enabled, the pipeline runs `ExtractionService` after OCR produces a canonical `DocumentResult`. The service writes crops under:
+
+```text
+data/runtime/processed/doc_<id>/image_regions/
+```
+
+and enriches:
+
+```text
+DocumentResult.pages[].image_regions[]
+DocumentResult.metadata.image_extraction
+PageResult.metadata.image_extraction
+```
+
+Extraction failures are non-fatal by default and are recorded as metadata. This keeps OCR output available even when image-region extraction fails.
+
+Default remains off because:
+
+- Some accepted crops are broad or label-heavy.
+- Tall/narrow visual strips can still be missed.
+- Only the Donn Draeger DFD corpus has been reviewed in depth.
+- Extracted image regions should be treated as candidate regions, not authoritative layout truth.
