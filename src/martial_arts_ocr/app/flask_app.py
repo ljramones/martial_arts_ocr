@@ -20,11 +20,12 @@ from PIL import Image
 
 from martial_arts_ocr.config import (
     allowed_file,
+    configure_runtime_paths,
     get_config,
     get_processed_path,
     get_upload_path,
 )
-from martial_arts_ocr.db.database import get_db_session, init_db
+from martial_arts_ocr.db.database import configure_database, get_db_session, init_db
 from martial_arts_ocr.db.models import Document, Page, ProcessingResult
 from martial_arts_ocr.pipeline import PipelineRequest, WorkflowOrchestrator
 
@@ -134,8 +135,36 @@ def get_workflow_orchestrator():
 
 def create_app(config_overrides: dict | None = None):
     """Return the legacy Flask app object with optional config overrides."""
+    global workflow_orchestrator
+
     if config_overrides:
+        data_dir = config_overrides.get("DATA_DIR")
+        upload_dir = config_overrides.get("UPLOAD_DIR") or config_overrides.get("UPLOAD_FOLDER")
+        processed_dir = config_overrides.get("PROCESSED_DIR")
+        if data_dir or upload_dir or processed_dir:
+            configure_runtime_paths(data_dir=data_dir, upload_dir=upload_dir, processed_dir=processed_dir)
+
+        database_path = config_overrides.get("DATABASE_PATH")
+        database_url = config_overrides.get("DATABASE_URL")
+        if database_path or database_url or data_dir:
+            if database_path is None and database_url is None and data_dir:
+                database_path = Path(data_dir) / "martial_arts_ocr.db"
+            configure_database(database_path=database_path, database_url=database_url)
+            init_db()
+            workflow_orchestrator = None
+
         app.config.update(config_overrides)
+        active_config = get_config()
+        active_database_url = database_url
+        if not active_database_url and database_path:
+            active_database_url = f"sqlite:///{database_path}"
+        if not active_database_url:
+            active_database_url = active_config.DATABASE_URL
+        app.config.update(
+            DATA_DIR=str(active_config.DATA_DIR),
+            UPLOAD_FOLDER=str(active_config.UPLOAD_FOLDER),
+            DATABASE_URL=active_database_url,
+        )
     return app
 
 # Initialize database

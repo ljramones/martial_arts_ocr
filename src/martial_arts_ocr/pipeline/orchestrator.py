@@ -36,8 +36,11 @@ class WorkflowOrchestrator:
         document_model: Any | None = None,
         page_model: Any | None = None,
         db_processing_result_model: Any | None = None,
+        db_context: Any | None = None,
         persist: bool = True,
     ) -> None:
+        if db_context is not None and session_factory is None:
+            session_factory = db_context.get_db_session
         if session_factory is None:
             from martial_arts_ocr.db.database import get_db_session
 

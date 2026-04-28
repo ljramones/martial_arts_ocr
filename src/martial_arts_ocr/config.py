@@ -18,6 +18,33 @@ for directory in [UPLOAD_DIR, PROCESSED_DIR, EXTRACTED_CONTENT_DIR]:
     directory.mkdir(exist_ok=True, parents=True)
 
 
+def configure_runtime_paths(
+    data_dir: str | Path | None = None,
+    upload_dir: str | Path | None = None,
+    processed_dir: str | Path | None = None,
+) -> None:
+    """Update runtime paths without requiring module reloads."""
+    global DATA_DIR, UPLOAD_DIR, PROCESSED_DIR
+
+    if data_dir is not None:
+        DATA_DIR = Path(data_dir)
+    if upload_dir is not None:
+        UPLOAD_DIR = Path(upload_dir)
+    elif data_dir is not None:
+        UPLOAD_DIR = DATA_DIR / "uploads"
+    if processed_dir is not None:
+        PROCESSED_DIR = Path(processed_dir)
+    elif data_dir is not None:
+        PROCESSED_DIR = DATA_DIR / "processed"
+
+    for directory in [UPLOAD_DIR, PROCESSED_DIR, EXTRACTED_CONTENT_DIR]:
+        directory.mkdir(exist_ok=True, parents=True)
+
+    Config.DATA_DIR = DATA_DIR
+    Config.UPLOAD_FOLDER = str(UPLOAD_DIR)
+    Config.DATABASE_URL = f"sqlite:///{DATA_DIR / 'martial_arts_ocr.db'}"
+
+
 class Config:
     """Base configuration class."""
 

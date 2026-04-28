@@ -3,81 +3,60 @@ Database configuration and operations for Martial Arts OCR.
 Handles SQLite database setup, sessions, and utilities.
 """
 import os
-from contextlib import contextmanager
-from sqlalchemy import create_engine, event
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, scoped_session
-from sqlalchemy.pool import StaticPool
 import logging
+from pathlib import Path
 
 from martial_arts_ocr.config import get_config
+from martial_arts_ocr.db.context import DatabaseConfig, DatabaseContext
 
 logger = logging.getLogger(__name__)
 
 # Get configuration
 config = get_config()
 
-# Create engine with SQLite-specific settings
-engine_kwargs = {
-    'echo': config.DEBUG,  # Log SQL queries in debug mode
-    'poolclass': StaticPool,
-    'pool_pre_ping': True,
-    'connect_args': {
-        'check_same_thread': False,  # Allow multiple threads
-        'timeout': 30,  # Connection timeout
-    }
-}
-
-# Create the engine
-engine = create_engine(config.DATABASE_URL, **engine_kwargs)
-
-
-# Enable foreign key support for SQLite
-@event.listens_for(engine, "connect")
-def set_sqlite_pragma(dbapi_connection, connection_record):
-    """Enable foreign key constraints and other SQLite optimizations."""
-    cursor = dbapi_connection.cursor()
-    # Enable foreign key constraints
-    cursor.execute("PRAGMA foreign_keys=ON")
-    # Enable WAL mode for better concurrency
-    cursor.execute("PRAGMA journal_mode=WAL")
-    # Optimize for faster operations
-    cursor.execute("PRAGMA synchronous=NORMAL")
-    cursor.execute("PRAGMA cache_size=10000")
-    cursor.execute("PRAGMA temp_store=MEMORY")
-    cursor.close()
-
-
-# Create the session factory
-SessionLocal = sessionmaker(
-    bind=engine,
-    autoflush=False,
-    autocommit=False,
-    expire_on_commit=False,
-    future=True,
-)
-# Create a scoped session for thread safety
-Session = scoped_session(SessionLocal)
-
 # Create a declarative base for models
 Base = declarative_base()
+
+_database_context = DatabaseContext(DatabaseConfig.from_url(config.DATABASE_URL, echo=config.DEBUG))
+engine = _database_context.engine
+SessionLocal = _database_context.SessionLocal
+Session = _database_context.Session
+
+
+def configure_database(
+    database_path: str | Path | None = None,
+    database_url: str | None = None,
+    echo: bool | None = None,
+) -> DatabaseContext:
+    """Reconfigure the legacy global DB handles for an explicit database."""
+    global _database_context, engine, SessionLocal, Session
+
+    if database_url:
+        db_config = DatabaseConfig.from_url(database_url, echo=config.DEBUG if echo is None else echo)
+    elif database_path is not None:
+        db_config = DatabaseConfig(database_path=Path(database_path), echo=config.DEBUG if echo is None else echo)
+    else:
+        db_config = DatabaseConfig.from_url(config.DATABASE_URL, echo=config.DEBUG if echo is None else echo)
+
+    _database_context = DatabaseContext(db_config)
+    engine = _database_context.engine
+    SessionLocal = _database_context.SessionLocal
+    Session = _database_context.Session
+    config.DATABASE_URL = db_config.url
+    return _database_context
+
+
+def get_database_context() -> DatabaseContext:
+    """Return the active legacy database context."""
+    return _database_context
 
 
 def init_db():
     """Initialize the database, creating all tables."""
     try:
-        # Import all models to ensure they're registered
-        from martial_arts_ocr.db.models import Document, Page, ProcessingResult
-
-        # Create all tables
-        Base.metadata.create_all(bind=engine)
+        _database_context.init_db()
         logger.info("Database initialized successfully")
-
-        # Create necessary directories
-        from pathlib import Path
-        db_dir = Path(config.DATABASE_URL.replace('sqlite:///', '')).parent
-        db_dir.mkdir(parents=True, exist_ok=True)
-
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise
@@ -86,7 +65,7 @@ def init_db():
 def drop_all_tables():
     """Drop all tables. Use with caution!"""
     try:
-        Base.metadata.drop_all(bind=engine)
+        _database_context.drop_all_tables()
         logger.info("All tables dropped successfully")
     except Exception as e:
         logger.error(f"Failed to drop tables: {e}")
@@ -105,7 +84,6 @@ def reset_database():
         raise
 
 
-@contextmanager
 def get_db_session():
     """
     Context manager for database sessions.
@@ -116,21 +94,12 @@ def get_db_session():
             user = session.query(User).first()
             # session is automatically committed and closed
     """
-    session = SessionLocal()
-    try:
-        yield session
-        session.commit()
-    except Exception as e:
-        session.rollback()
-        logger.error(f"Database session error: {e}")
-        raise
-    finally:
-        session.close()
+    return _database_context.get_db_session()
 
 
 def get_session():
     """Get a new database session. Remember to close it when done!"""
-    return SessionLocal()
+    return _database_context.get_session()
 
 
 class DatabaseManager:
