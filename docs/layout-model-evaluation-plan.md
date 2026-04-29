@@ -81,6 +81,28 @@ Validation showed `2/5` Corpus 2 broad/mixed cases improved, with `0/5` DFD
 hard-page regressions and `0/2` known-good regressions. That does not pass the
 `4/5` improvement gate, so Paddle fusion remains disabled and experimental.
 
+### V2 Additive Fusion
+
+Failure analysis showed the missed V1 cases were not primarily label-mapping
+problems. The classical parent crop was often partial or too narrow relative to
+Paddle's useful visual region. V2 therefore does not lower containment
+thresholds and does not replace classical regions with larger Paddle boxes.
+
+Instead, V2 may add one high-confidence Paddle visual region near an unresolved
+mixed/needs-review classical parent. The relation must be numeric:
+
+- partial bbox overlap, or
+- horizontal span overlap ratio `>= 0.50`, or
+- vertical span overlap ratio `>= 0.50`, or
+- conservative proximity
+
+The original mixed classical parent is preserved for review. Added Paddle
+regions carry `fusion_mode=paddle_additive` metadata. Broad or uncertain added
+regions remain marked `needs_review`.
+
+V2 is still experimental and disabled by default until the real-page validation
+gate passes.
+
 ## Next Implementation Boundary
 
 This plan creates comparison infrastructure only. It does not turn on ML

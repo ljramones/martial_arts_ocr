@@ -263,6 +263,62 @@ def test_paddle_fusion_tightens_mixed_region_when_enabled(tmp_path):
     assert result.metadata["image_extraction"]["paddle_layout_fusion"]["status"] == "completed"
 
 
+def test_paddle_fusion_adds_related_visual_region_when_enabled(tmp_path):
+    image_path = tmp_path / "scan.png"
+    _write_synthetic_image(image_path)
+
+    class MixedAnalyzer(FakeLayoutAnalyzer):
+        def detect_image_regions_with_diagnostics(self, image, ocr_text_boxes=None):
+            return {
+                "accepted_regions": [
+                    UtilityImageRegion(
+                        x=10,
+                        y=10,
+                        width=70,
+                        height=70,
+                        region_type="diagram",
+                        confidence=0.7,
+                        metadata={"mixed_region": True, "needs_review": True},
+                    )
+                ],
+                "rejected": [],
+                "consolidation": [],
+                "refinement": [],
+            }
+
+    paddle_result = LayoutDetectionResult(
+        "paddle_ppstructure",
+        regions=[
+            UtilityImageRegion(
+                x=60,
+                y=24,
+                width=80,
+                height=70,
+                region_type="figure",
+                confidence=0.95,
+                metadata={"layout_label": "image", "raw_label": "image"},
+            )
+        ],
+    )
+    service = ExtractionService(
+        ExtractionServiceOptions(
+            enable_image_regions=True,
+            save_crops=False,
+            enable_paddle_layout_fusion=True,
+        ),
+        layout_analyzer_factory=lambda: MixedAnalyzer(),
+        paddle_strategy_factory=lambda: FakePaddleStrategy(result=paddle_result),
+    )
+
+    result = service.enrich_document_result(_document(image_path), output_dir=tmp_path / "processed")
+
+    assert len(result.pages[0].image_regions) == 2
+    added = result.pages[0].image_regions[1]
+    assert added.bbox.to_dict() == {"x": 60, "y": 24, "width": 80, "height": 70}
+    assert added.metadata["fusion_mode"] == "paddle_additive"
+    assert added.metadata["relation_reason"] == "partial_overlap"
+
+
 def test_paddle_fusion_skip_is_non_fatal(tmp_path):
     image_path = tmp_path / "scan.png"
     _write_synthetic_image(image_path)

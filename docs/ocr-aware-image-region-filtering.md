@@ -118,6 +118,18 @@ The first validation improved `2/5` Corpus 2 broad/mixed cases and caused no
 DFD or known-good regressions, but it did not pass the review gate. Paddle
 fusion therefore remains experimental and disabled.
 
+V2 additive fusion addresses the specific case where the classical parent is
+partial or too narrow. It can add a high-confidence Paddle visual region as a
+separate candidate when it is related to an unresolved mixed classical region by
+overlap, proximity, or a numeric shared-span rule. It does not lower V1
+containment thresholds and does not replace classical regions with larger Paddle
+boxes.
+
+An added region is considered an improvement only if it materially captures the
+intended figure/photo better than the broad classical parent and does not mostly
+capture unrelated body text. The broad classical parent remains available with
+review metadata.
+
 ## Future Work
 
 - Compare PaddleOCR PP-Structure, DocLayout-YOLO, and LayoutParser outputs in

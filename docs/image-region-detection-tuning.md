@@ -271,3 +271,28 @@ cases with `0/5` DFD hard-page regressions and `0/2` known-good regressions.
 This did not pass the `4/5` improvement gate, so Paddle fusion remains
 experimental and disabled. The next improvement should be re-planning fusion or
 adding annotation/layout-model evaluation, not per-corpus presets.
+
+### V2 Additive Paddle Fusion
+
+V1 failure analysis found that the missed Corpus 2 cases usually had a partial
+or wrong classical parent relative to Paddle's useful visual bbox. V2 keeps the
+V1 containment rule unchanged and adds a separate, high-confidence Paddle visual
+candidate only when it is related to an unresolved mixed parent.
+
+Numeric relation signals:
+
+- `partial_overlap`
+- `horizontal_span_overlap_ratio >= 0.50`
+- `vertical_span_overlap_ratio >= 0.50`
+- conservative proximity
+
+V2 adds at most one Paddle visual region per unresolved mixed classical parent.
+It does not add text/table regions, does not duplicate clean classical regions,
+and does not expose new public thresholds. If the Paddle-added region is larger
+than the parent or related only by span/proximity, it is marked `needs_review`
+and `region_role=paddle_added_mixed_or_uncertain`.
+
+Improvement is judged visually, not by region count: added Paddle regions must
+capture intended visual content better than the broad parent without becoming a
+plain-text crop. The broad parent is preserved for review unless V1's original
+inside-parent replacement applies.
