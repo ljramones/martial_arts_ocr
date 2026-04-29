@@ -138,9 +138,10 @@ There are two cleanup layers:
 Line breaks:
 
 - `TextCleaner` preserves useful line breaks and reduces `\n\n\n` to `\n\n`.
-- `OCRPostProcessor` has one risky regex in general corrections:
-  `r'\s+' -> ' '`, which can collapse newlines before the later
-  `\n{3,}` rule can preserve paragraph boundaries.
+- `OCRPostProcessor` previously had one risky regex in general corrections:
+  `r'\s+' -> ' '`, which collapsed newlines before the later `\n{3,}` rule
+  could preserve paragraph boundaries. This has been narrowed to collapse
+  spaces/tabs only.
 - `_process_lines()` can merge soft wraps, but later whitespace cleanup may
   reduce layout signal.
 
@@ -383,6 +384,34 @@ Implemented behavior:
 This does not solve multi-column layout, vertical Japanese, or final page
 reconstruction. It gives the next OCR/text passes stable fixtures and a clear
 word-vs-line distinction.
+
+## Implemented Follow-Up: Full Cleanup Chain Validation
+
+The full fixture chain now covers:
+
+```text
+OCRPostProcessor
+  -> TextCleaner
+  -> adapters
+  -> TextRegion hierarchy
+  -> DocumentResult.to_dict()
+```
+
+Validation added:
+
+- Japanese/macron/punctuation preservation through both cleanup layers.
+- The Japanese long vowel mark `ー` is not rewritten as kanji `一`.
+- Useful line breaks survive while repeated spaces and excessive blank lines are
+  normalized.
+- Word regions retain `metadata["ocr_level"]="word"`.
+- Derived line regions retain `metadata["ocr_level"]="line"`.
+- `PageResult.metadata["readable_text"]`, `ocr_word_count`, and
+  `ocr_line_count` serialize through `DocumentResult.to_dict()`.
+- OCR box metadata remains visible for geometry and review.
+
+The only cleanup bug fixed in this pass was the whitespace regex that flattened
+newlines in `OCRPostProcessor`. No extraction behavior, OCR engine behavior, or
+Japanese analysis model behavior changed.
 
 ## Files Reviewed
 

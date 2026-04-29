@@ -97,7 +97,7 @@ class OCRPostProcessor:
                 (r"they'II\b", "they'll"),
 
                 # Whitespace and punctuation
-                (r'\s+', ' '),
+                (r'[ \t]+', ' '),
                 (r'\n{3,}', '\n\n'),
                 (r'^\s+|\s+$', ''),
                 (r'\s+([.,;:!?])', r'\1'),
