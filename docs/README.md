@@ -5,6 +5,9 @@
 - [Review-Mode Extraction Guide](review-mode-extraction-guide.md): how to run
   explicit image-region review, inspect outputs, and avoid committing generated
   files.
+- [Extraction Architecture Freeze](extraction-architecture-freeze-2026-04-28.md):
+  current extraction architecture, accepted limits, backlog, and the decision to
+  shift focus back to OCR/text/document-output quality.
 - [OCR-Aware Image Region Filtering](ocr-aware-image-region-filtering.md): OCR
   text-box diagnostics, mixed-region triage, and optional Paddle fusion.
 - [Image Region Detection Tuning](image-region-detection-tuning.md): detector
