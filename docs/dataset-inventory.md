@@ -11,6 +11,9 @@ This inventory records observed dataset-like folders. Classifications are based 
 | `data/corpora/donn_draeger/dfd_notes_master/augmented/` | Reserved for rotated, noisy, skewed, tiled, or otherwise transformed copies of the original pages. | Augmented/derived | Use only after original pages have been reviewed. |
 | `data/corpora/donn_draeger/dfd_notes_master/manifests/` | Corpus manifest examples and local review manifest. | Evaluation metadata | Commit examples; keep `manifest.local.json` ignored. |
 | `data/corpora/ad_hoc/modern_japanese/original/` | Small set of Japanese sample images. | Original or ad hoc sample, inferred | Keep separate from Donn Draeger corpus; use as a secondary modern-Japanese review set if provenance is known. |
+| `data/corpora/ad_hoc/corpus2/original/` | Second local corpus, 138 JPEG images formerly at `data/corpus2/`. | Original or ad hoc sample, inferred | Keep separate from Donn Draeger corpus. Treat images as local/private; use for generalization review after DFD validation. |
+| `data/corpora/ad_hoc/corpus2/augmented/` | Reserved for derived variants from Corpus 2 originals. | Augmented/derived | Keep empty until transforms are intentionally generated from `original/`. |
+| `data/corpora/ad_hoc/corpus2/manifests/` | Corpus 2 manifest example and local review manifest location. | Evaluation metadata | Commit examples; keep `manifest.local.json` ignored. |
 | `data/evaluation/ad_hoc/test_folder/` | Two copied page images used for prior testing. | Local/ad hoc sample, inferred | Do not treat as canonical. Prefer manifests pointing to original source pages. |
 | Old `data/uploads/` | Previous Flask upload output. | Superseded runtime/generated | Replaced by `data/runtime/uploads/`. |
 | Old `data/processed/` | Previous processed artifact output. | Superseded runtime/generated | Replaced by `data/runtime/processed/`. |
@@ -29,7 +32,7 @@ This inventory records observed dataset-like folders. Classifications are based 
 
 ## Dataset Lineage Rule
 
-`data/corpora/donn_draeger/dfd_notes_master/original/` is the primary original source corpus for real-page extraction review. Augmented, rotated, tiled, cropped, model-training, diagnostic, and notebook-output folders should remain separate until the original pages have been reviewed.
+`data/corpora/donn_draeger/dfd_notes_master/original/` is the primary original source corpus for real-page extraction review. `data/corpora/ad_hoc/corpus2/original/` is a secondary local corpus for generalization checks. Augmented, rotated, tiled, cropped, model-training, diagnostic, and notebook-output folders should remain separate until the original pages have been reviewed.
 
 Use augmented/generated data later for robustness testing after the current image/text utility thresholds are acceptable on original pages.
 
@@ -44,3 +47,13 @@ Generate a local manifest from the original corpus:
 ```
 
 Then open `notebooks/05_real_page_extraction_review.ipynb` and review original pages first. Do not commit `manifest.local.json`, private scans, runtime output, or notebook output crops.
+
+Generate a local manifest for Corpus 2:
+
+```bash
+.venv/bin/python scripts/generate_real_page_manifest.py \
+  --input data/corpora/ad_hoc/corpus2/original \
+  --output data/corpora/ad_hoc/corpus2/manifests/manifest.local.json \
+  --collection-name corpus2 \
+  --source-kind original
+```

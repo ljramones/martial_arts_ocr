@@ -40,3 +40,9 @@ manifests/manifest.example.json
 ```
 
 Keep corpus-specific provenance in that corpus README.
+
+## Current Local/Ad Hoc Corpora
+
+- `corpora/donn_draeger/dfd_notes_master/`: primary Donn Draeger DFD review corpus.
+- `corpora/ad_hoc/modern_japanese/`: secondary modern-Japanese sample set with provenance still under review.
+- `corpora/ad_hoc/corpus2/`: local second corpus used for extraction generalization checks. Its original JPEG pages are ignored by git; commit only README files and manifest examples.

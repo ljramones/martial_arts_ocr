@@ -1,0 +1,26 @@
+{
+  "samples": [
+    {
+      "id": "corpus2_page_001",
+      "path": "data/corpora/ad_hoc/corpus2/original/example_page_001.jpg",
+      "description": "Example entry for a local Corpus 2 page.",
+      "source": {
+        "collection": "corpus2",
+        "kind": "original",
+        "derived": false
+      },
+      "sample_text": "",
+      "expected": {
+        "has_japanese": false,
+        "has_macrons": false,
+        "has_diagrams_or_images": true,
+        "min_image_regions": 0,
+        "min_text_regions": 1,
+        "notes": [
+          "Adjust expected values after reviewing the local page.",
+          "Use this corpus to check whether DFD-tuned extraction generalizes."
+        ]
+      }
+    }
+  ]
+}

@@ -147,6 +147,10 @@ data/diagnostic_output/
 data/runs/
 static/extracted_content/
 
+# Local/private corpus images
+data/corpora/ad_hoc/corpus2/original/*
+!data/corpora/ad_hoc/corpus2/original/.gitkeep
+
 # Database files
 *.db
 *.sqlite
