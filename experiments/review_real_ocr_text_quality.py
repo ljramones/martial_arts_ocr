@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from types import MethodType
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +15,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from martial_arts_ocr.ocr.processor import OCRProcessor
+from martial_arts_ocr.ocr.models import OCRResult
 from martial_arts_ocr.pipeline.orchestrator import WorkflowOrchestrator
 from martial_arts_ocr.pipeline.result_models import PipelineRequest
 
@@ -50,6 +52,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Specific sample id to run. Can be passed multiple times.",
     )
+    parser.add_argument(
+        "--language",
+        default=None,
+        help="Tesseract language override for this review run, e.g. eng or eng+jpn.",
+    )
+    parser.add_argument(
+        "--psm",
+        action="append",
+        default=None,
+        help="Limit full-page Tesseract OCR to one or more PSM values. Can be passed multiple times.",
+    )
     return parser
 
 
@@ -63,6 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     samples_by_id = _load_samples()
     selected = _select_samples(samples_by_id, args.sample_id)
     processor = OCRProcessor()
+    _configure_processor_for_review(processor, language=args.language, psms=args.psm)
     orchestrator = WorkflowOrchestrator(
         processor=processor,
         processed_path_factory=lambda name: output_root / name,
@@ -76,7 +90,12 @@ def main(argv: list[str] | None = None) -> int:
         pipeline_result = orchestrator.process_document(
             PipelineRequest(document_id=document_id, image_path=image_path)
         )
-        summary = _summarize_pipeline_result(sample, pipeline_result)
+        summary = _summarize_pipeline_result(
+            sample,
+            pipeline_result,
+            requested_language=args.language,
+            requested_psms=args.psm,
+        )
         results.append(summary)
         print(
             f"{sample['id']}: status={summary['status']} "
@@ -122,12 +141,64 @@ def _select_samples(
     return wanted
 
 
-def _summarize_pipeline_result(sample: dict[str, Any], pipeline_result: Any) -> dict[str, Any]:
+def _configure_processor_for_review(
+    processor: OCRProcessor,
+    *,
+    language: str | None,
+    psms: list[str] | None,
+) -> None:
+    if language and getattr(processor.tesseract_engine, "available", False):
+        processor.tesseract_engine.config = dict(processor.tesseract_engine.config)
+        processor.tesseract_engine.config["languages"] = language.split("+")
+
+    if not psms:
+        return
+
+    def _run_review_psms(self: OCRProcessor, image: Any) -> list[OCRResult]:
+        ocr_results: list[OCRResult] = []
+        if self.tesseract_engine.available:
+            for psm in psms:
+                try:
+                    result = self.tesseract_engine.process_image(image, psm=psm)
+                    result.metadata = {
+                        **(result.metadata or {}),
+                        "full_page": True,
+                        "psm": str(psm),
+                        "review_psm_override": True,
+                    }
+                    ocr_results.append(result)
+                except Exception as exc:
+                    print(f"Tesseract PSM {psm} failed: {exc}")
+        if not ocr_results:
+            ocr_results.append(
+                OCRResult(
+                    text="",
+                    confidence=0.0,
+                    processing_time=0.0,
+                    engine="none",
+                    bounding_boxes=[],
+                    metadata={"review_psm_override": list(psms)},
+                )
+            )
+        return ocr_results
+
+    processor._run_full_page_ocr = MethodType(_run_review_psms, processor)
+
+
+def _summarize_pipeline_result(
+    sample: dict[str, Any],
+    pipeline_result: Any,
+    *,
+    requested_language: str | None,
+    requested_psms: list[str] | None,
+) -> dict[str, Any]:
     summary = {
         "corpus": sample["corpus"],
         "sample_id": sample["id"],
         "path": sample["path"],
         "page_type": sample.get("page_type"),
+        "requested_language": requested_language,
+        "requested_psms": requested_psms,
         "status": pipeline_result.status,
         "output_dir": str(pipeline_result.output_dir),
         "data_json": str(pipeline_result.json_path) if pipeline_result.json_path else None,
@@ -149,6 +220,8 @@ def _summarize_pipeline_result(sample: dict[str, Any], pipeline_result: Any) -> 
         if (region.metadata or {}).get("ocr_level") == "line"
     ]
     legacy = document_result.metadata.get("legacy", {})
+    best_result = legacy.get("best_ocr_result", {}) if isinstance(legacy, dict) else {}
+    best_metadata = best_result.get("metadata", {}) if isinstance(best_result, dict) else {}
     raw_text = str(legacy.get("raw_text", page.raw_text or ""))
     cleaned_text = document_result.combined_text()
     readable_text = str(page.metadata.get("readable_text", ""))
@@ -156,6 +229,8 @@ def _summarize_pipeline_result(sample: dict[str, Any], pipeline_result: Any) -> 
     summary.update(
         {
             "ocr_engine": document_result.metadata.get("ocr_engine"),
+            "selected_psm": best_metadata.get("psm", best_metadata.get("psm_used")),
+            "selected_language": best_metadata.get("languages"),
             "confidence": document_result.confidence,
             "raw_text_length": len(raw_text),
             "cleaned_text_length": len(cleaned_text),
