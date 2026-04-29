@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import sys
 import time
@@ -12,6 +13,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "data/notebook_outputs/paddle_layout_eval"
+DEFAULT_PADDLEX_CACHE_DIR = DEFAULT_OUTPUT_DIR / "paddlex_cache"
 DFD_MANIFEST = REPO_ROOT / "data/corpora/donn_draeger/dfd_notes_master/manifests/manifest.local.json"
 CORPUS2_MANIFEST = REPO_ROOT / "data/corpora/ad_hoc/corpus2/manifests/manifest.local.json"
 
@@ -47,6 +49,9 @@ def main() -> int:
     output_dir = (REPO_ROOT / args.output_dir).resolve() if not Path(args.output_dir).is_absolute() else Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "overlays").mkdir(parents=True, exist_ok=True)
+    # PaddleX defaults to ~/.paddlex at import time. Keep experiment caches,
+    # temporary files, and any downloaded model files under ignored repo output.
+    os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(output_dir / "paddlex_cache"))
 
     samples = select_samples(args)
     backend_info = detect_backend()
@@ -55,12 +60,15 @@ def main() -> int:
     print(f"PaddlePaddle: {backend_info.get('paddle_version', 'unavailable')}")
     print(f"API variant: {backend_info.get('api_variant', 'unavailable')}")
 
+    serializable_backend_info = {
+        key: value for key, value in backend_info.items() if key != "api_class"
+    }
     comparison: dict[str, Any] = {
         "environment": {
             "python": platform.python_version(),
             "executable": sys.executable,
             "platform": platform.platform(),
-            **backend_info,
+            **serializable_backend_info,
         },
         "samples": [],
     }
@@ -250,7 +258,7 @@ def evaluate_sample(sample: Sample, engine: Any, backend_info: dict[str, Any], o
         "api_variant": backend_info.get("api_variant"),
         "constructor": backend_info.get("constructor"),
         "regions": regions,
-        "raw": make_jsonable(raw),
+        "raw_summary": summarize_raw(raw),
         "overlay_path": str(overlay_path.relative_to(REPO_ROOT)) if overlay_path else None,
         "elapsed_seconds": elapsed,
         "error": error,
@@ -306,16 +314,41 @@ def flatten_result(raw: Any) -> list[Any]:
         for value in raw:
             unwrapped = unwrap_result(value)
             if isinstance(unwrapped, dict):
-                nested = unwrapped.get("layout") or unwrapped.get("res") or unwrapped.get("boxes") or unwrapped.get("regions")
+                nested = (
+                    unwrapped.get("layout_det_res")
+                    or unwrapped.get("region_det_res")
+                    or unwrapped.get("layout")
+                    or unwrapped.get("res")
+                    or unwrapped.get("boxes")
+                    or unwrapped.get("regions")
+                )
                 if isinstance(nested, list):
                     items.extend(flatten_result(nested))
+                    continue
+                if isinstance(nested, dict):
+                    items.extend(flatten_result(nested))
+                    continue
                 items.append(unwrapped)
             else:
                 items.extend(flatten_result(unwrapped))
         return items
     if isinstance(raw, dict):
-        for key in ("layout", "res", "boxes", "regions", "results"):
+        for key in (
+            "layout_det_res",
+            "region_det_res",
+            "layout",
+            "res",
+            "boxes",
+            "regions",
+            "results",
+            "table_res_list",
+            "seal_res_list",
+            "chart_res_list",
+            "formula_res_list",
+        ):
             if isinstance(raw.get(key), list):
+                return flatten_result(raw[key])
+            if isinstance(raw.get(key), dict):
                 return flatten_result(raw[key])
         return [raw]
     return []
@@ -429,7 +462,16 @@ def make_jsonable(value: Any) -> Any:
         return str(value)
     if isinstance(value, dict):
         return {str(key): make_jsonable(item) for key, item in value.items()}
+    if hasattr(value, "shape"):
+        shape = tuple(int(dim) for dim in getattr(value, "shape", ()))
+        size = 1
+        for dim in shape:
+            size *= dim
+        if size > 1000:
+            return {"array_shape": list(shape), "array_dtype": str(getattr(value, "dtype", "unknown"))}
     if isinstance(value, (list, tuple, set)):
+        if len(value) > 100:
+            return {"list_length": len(value), "truncated": [make_jsonable(item) for item in list(value)[:10]]}
         return [make_jsonable(item) for item in value]
     if hasattr(value, "tolist"):
         try:
@@ -439,6 +481,44 @@ def make_jsonable(value: Any) -> Any:
     if hasattr(value, "__dict__"):
         return make_jsonable(vars(value))
     return repr(value)
+
+
+def summarize_raw(raw: Any) -> Any:
+    """Keep enough backend detail for debugging without serializing images."""
+    raw = unwrap_result(raw)
+    if isinstance(raw, list):
+        return [summarize_raw(item) for item in raw]
+    if not isinstance(raw, dict):
+        return make_jsonable(raw)
+
+    summary: dict[str, Any] = {}
+    for key, value in raw.items():
+        if key in {"input_img", "imgs_in_doc"}:
+            summary[key] = summarize_large_value(value)
+        elif key == "doc_preprocessor_res" and isinstance(value, dict):
+            summary[key] = {
+                nested_key: summarize_large_value(nested_value)
+                if nested_key == "input_img"
+                else summarize_raw(nested_value)
+                for nested_key, nested_value in value.items()
+            }
+        elif key in {"layout_det_res", "region_det_res", "overall_ocr_res"} and isinstance(value, dict):
+            summary[key] = summarize_raw(value)
+        elif key.endswith("_res_list") and isinstance(value, list):
+            summary[key] = [summarize_raw(item) for item in value[:20]]
+            if len(value) > 20:
+                summary[f"{key}_truncated_count"] = len(value) - 20
+        else:
+            summary[key] = make_jsonable(value)
+    return summary
+
+
+def summarize_large_value(value: Any) -> Any:
+    if hasattr(value, "shape"):
+        return {"array_shape": list(value.shape), "array_dtype": str(getattr(value, "dtype", "unknown"))}
+    if isinstance(value, list):
+        return {"list_length": len(value)}
+    return make_jsonable(value)
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
