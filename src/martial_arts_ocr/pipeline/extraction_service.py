@@ -98,6 +98,7 @@ class ExtractionService:
             "accepted_count": len(image_regions),
             "rejected_count": len(diagnostics.get("rejected", [])),
             "consolidation_count": len(diagnostics.get("consolidation", [])),
+            "refinement_count": len(diagnostics.get("refinement", [])),
         }
         enriched_page = replace(
             page,
@@ -113,6 +114,7 @@ class ExtractionService:
             "accepted_count": len(image_regions),
             "rejected": diagnostics.get("rejected", []),
             "consolidation": diagnostics.get("consolidation", []),
+            "refinement": diagnostics.get("refinement", []),
             "crop_dir": str(crop_dir) if self.options.save_crops else None,
             "ocr_text_boxes_used": bool(ocr_text_boxes),
         }

@@ -17,6 +17,7 @@ from .utils.masks import apply_nontext_mask
 
 from .options import RegionDetectionOptions
 from .post.merge import consolidate_regions, merge_overlapping
+from .refinement import refine_mixed_candidate
 
 from .detectors.yolo_figure import YOLOFigureDetector
 
@@ -116,6 +117,7 @@ class LayoutAnalyzer:
             filtered = candidates
 
         filtered, _events = consolidate_regions(filtered, self.region_options)
+        filtered, _refinement_events = self._refine_mixed_regions(gray, filtered, ocr_text_boxes=ocr_text_boxes)
 
         logger.info("Image regions detected: %d", len(filtered))
         return filtered
@@ -163,12 +165,14 @@ class LayoutAnalyzer:
                 accepted.append(self._region_with_diagnostics(region, diagnostic))
 
         accepted, consolidation_events = consolidate_regions(accepted, self.region_options)
+        accepted, refinement_events = self._refine_mixed_regions(gray, accepted, ocr_text_boxes=ocr_text_boxes)
 
         return {
             "accepted_regions": accepted,
             "accepted": [region.to_dict() for region in accepted],
             "rejected": rejected,
             "consolidation": consolidation_events,
+            "refinement": refinement_events,
         }
 
     def _filter_candidates_with_diagnostics(
@@ -251,6 +255,67 @@ class LayoutAnalyzer:
         regions = others + diagrams
 
         return regions
+
+    def _refine_mixed_regions(
+        self,
+        gray: np.ndarray,
+        regions: List[ImageRegion],
+        *,
+        ocr_text_boxes: Optional[list[Any]] = None,
+    ) -> tuple[List[ImageRegion], List[Dict[str, Any]]]:
+        if not self.region_options.enable_mixed_region_refinement or not ocr_text_boxes:
+            return regions, []
+
+        refined_regions: List[ImageRegion] = []
+        events: List[Dict[str, Any]] = []
+        for region in regions:
+            result = refine_mixed_candidate(
+                gray,
+                region,
+                ocr_text_boxes=ocr_text_boxes,
+                options=self.region_options,
+            )
+            metadata = dict(getattr(region, "metadata", {}) or {})
+            if result.refinement_strategy:
+                metadata.update(result.metadata)
+                metadata.update({
+                    "region_role": result.region_role,
+                    "mixed_region": result.region_role in {"mixed", "mixed_labeled", "uncertain"} or result.needs_review,
+                    "mixed_reason": result.mixed_reason,
+                    "needs_review": result.needs_review,
+                    "refinement_applied": result.refinement_applied,
+                    "refinement_strategy": result.refinement_strategy,
+                })
+            new_region = region
+            if result.refinement_applied:
+                x, y, width, height = result.bbox
+                new_region = ImageRegion(
+                    x=x,
+                    y=y,
+                    width=width,
+                    height=height,
+                    region_type=getattr(region, "region_type", None),
+                    confidence=getattr(region, "confidence", None),
+                    id=getattr(region, "id", None),
+                    page_index=getattr(region, "page_index", None),
+                    points=getattr(region, "points", None),
+                    metadata=metadata,
+                )
+            else:
+                new_region = replace(region, metadata=metadata)
+            refined_regions.append(new_region)
+            if result.refinement_strategy:
+                events.append({
+                    "original_region": region.to_dict(),
+                    "result_region": new_region.to_dict(),
+                    "refinement_applied": result.refinement_applied,
+                    "region_role": result.region_role,
+                    "needs_review": result.needs_review,
+                    "mixed_reason": result.mixed_reason,
+                    "refinement_strategy": result.refinement_strategy,
+                    "metadata": result.metadata,
+                })
+        return refined_regions, events
 
     def detect_text_regions(
         self,

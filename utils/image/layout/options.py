@@ -67,6 +67,8 @@ class RegionDetectionOptions:
     ocr_rescue_photo_score_threshold: float = 0.70
     ocr_rescue_sparse_symbol_score_threshold: float = 0.65
     ocr_text_mask_dilation_px: int = 4
+    enable_mixed_region_refinement: bool = False
+    mixed_region_min_ocr_overlap: float = 0.25
 
     @classmethod
     def from_config(cls, cfg: Mapping[str, Any]) -> "RegionDetectionOptions":

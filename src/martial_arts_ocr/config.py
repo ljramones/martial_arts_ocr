@@ -262,6 +262,8 @@ class Config:
         'region_ocr_rescue_photo_score_threshold': 0.70,
         'region_ocr_rescue_sparse_symbol_score_threshold': 0.65,
         'region_ocr_text_mask_dilation_px': 4,
+        'region_enable_mixed_region_refinement': False,
+        'region_mixed_region_min_ocr_overlap': 0.25,
 
         # ---------------------------
         # Merging & NMS postprocess

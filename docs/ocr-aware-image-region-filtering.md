@@ -76,6 +76,25 @@ The OCR adapters currently support Tesseract TSV-style rows, EasyOCR polygon
 tuples, generic `words`/`lines`/`blocks` containers, and existing
 `ocr_text_boxes` metadata.
 
+## Mixed-Region Refinement
+
+OCR-aware filtering passed the safety check on DFD hard pages, but it did not
+reduce broad/mixed parent crops by itself. The optional mixed-region refiner uses
+OCR-mask subtraction as a crop-cleanup signal:
+
+1. Build a saliency mask inside an accepted candidate.
+2. Subtract the OCR text mask.
+3. Reconnect remaining visual mass.
+4. Refine the bbox only when a coherent visual component can be safely isolated.
+5. Preserve interspersed labels and mark the crop as `mixed_labeled` instead of
+   over-cropping diagrams.
+
+The refiner remains disabled unless explicitly enabled with
+`region_enable_mixed_region_refinement=True`. Unresolved broad crops are marked
+`needs_review` with `mixed_region` metadata. If corpus-level review does not
+improve with this layer, the next step is a real document-layout backend
+comparison rather than more heuristic tuning.
+
 ## Future Work
 
 - Compare PaddleOCR PP-Structure, DocLayout-YOLO, and LayoutParser outputs in

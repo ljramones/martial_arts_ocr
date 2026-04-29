@@ -223,3 +223,23 @@ Diagnostics include OCR overlap ratios, intersecting text-box count, mean OCR
 confidence, and text-mask overlap. Image extraction remains disabled by default;
 OCR-aware filtering only participates when review-mode extraction is explicitly
 enabled and OCR geometry is available.
+
+## Mixed-Region Refinement
+
+The current failure mode is broad parent crops that contain both visual content
+and surrounding text. A disabled-by-default mixed-region refiner now exists for
+review-mode experiments. It runs only after candidate generation, text-like
+filtering, OCR-aware diagnostics, and post-filter consolidation.
+
+The refiner uses OCR-mask subtraction to look for remaining visual mass. If it
+can isolate a coherent component safely, it emits a tighter bbox and records the
+original bbox. If OCR labels are interspersed with the visual mass, it preserves
+the original crop, marks it `mixed_labeled`, and sets `needs_review=True`.
+
+Only two public options were added:
+
+- `region_enable_mixed_region_refinement=False`
+- `region_mixed_region_min_ocr_overlap=0.25`
+
+The layer must pass corpus-level review before it becomes a preferred review
+path. It is not a replacement for document-layout ML.
