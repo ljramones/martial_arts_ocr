@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import pytest
 
-from martial_arts_ocr.pipeline.document_models import DocumentResult, PageResult
+from martial_arts_ocr.pipeline.document_models import BoundingBox, DocumentResult, PageResult, TextRegion
 from martial_arts_ocr.pipeline.extraction_service import ExtractionService, ExtractionServiceOptions
 from utils.image.regions.core_types import ImageRegion as UtilityImageRegion
 
@@ -14,8 +14,10 @@ from utils.image.regions.core_types import ImageRegion as UtilityImageRegion
 class FakeLayoutAnalyzer:
     def __init__(self, *, fail: bool = False):
         self.fail = fail
+        self.seen_ocr_text_boxes = None
 
-    def detect_image_regions_with_diagnostics(self, image):
+    def detect_image_regions_with_diagnostics(self, image, ocr_text_boxes=None):
+        self.seen_ocr_text_boxes = ocr_text_boxes
         if self.fail:
             raise RuntimeError("detector failed")
         return {
@@ -101,3 +103,78 @@ def test_extraction_error_can_be_configured_to_raise(tmp_path):
 
     with pytest.raises(RuntimeError, match="detector failed"):
         service.enrich_document_result(_document(image_path), output_dir=tmp_path / "processed")
+
+
+def test_extraction_service_passes_available_text_region_boxes(tmp_path):
+    image_path = tmp_path / "scan.png"
+    _write_synthetic_image(image_path)
+    fake_analyzer = FakeLayoutAnalyzer()
+    document = DocumentResult(
+        document_id=7,
+        source_path=image_path,
+        pages=[
+            PageResult(
+                page_number=1,
+                raw_text="sample text",
+                text_regions=[
+                    TextRegion(
+                        region_id="text_1",
+                        text="sample text",
+                        bbox=BoundingBox(x=10, y=12, width=90, height=18),
+                        confidence=0.93,
+                    )
+                ],
+            )
+        ],
+    )
+    service = ExtractionService(
+        ExtractionServiceOptions(enable_image_regions=True, save_crops=False),
+        layout_analyzer_factory=lambda: fake_analyzer,
+    )
+
+    result = service.enrich_document_result(document, output_dir=tmp_path / "processed")
+
+    assert fake_analyzer.seen_ocr_text_boxes
+    assert fake_analyzer.seen_ocr_text_boxes[0]["bbox"] == {"x": 10, "y": 12, "width": 90, "height": 18}
+    assert result.metadata["image_extraction"]["ocr_text_boxes_used"] is True
+
+
+def test_extraction_service_prefers_engine_boxes_over_non_engine_text_regions(tmp_path):
+    image_path = tmp_path / "scan.png"
+    _write_synthetic_image(image_path)
+    fake_analyzer = FakeLayoutAnalyzer()
+    document = DocumentResult(
+        document_id=7,
+        source_path=image_path,
+        pages=[
+            PageResult(
+                page_number=1,
+                text_regions=[
+                    TextRegion(
+                        region_id="layout_text",
+                        text="layout text",
+                        bbox=BoundingBox(x=1, y=1, width=20, height=10),
+                        metadata={"source": "layout_detector"},
+                    )
+                ],
+                metadata={
+                    "ocr_text_boxes": [
+                        {
+                            "text": "engine text",
+                            "bbox": {"x": 30, "y": 40, "width": 50, "height": 12},
+                            "metadata": {"source": "ocr_engine", "engine": "fake_test", "ocr_level": "line"},
+                        }
+                    ]
+                },
+            )
+        ],
+    )
+    service = ExtractionService(
+        ExtractionServiceOptions(enable_image_regions=True, save_crops=False),
+        layout_analyzer_factory=lambda: fake_analyzer,
+    )
+
+    service.enrich_document_result(document, output_dir=tmp_path / "processed")
+
+    assert len(fake_analyzer.seen_ocr_text_boxes) == 1
+    assert fake_analyzer.seen_ocr_text_boxes[0]["text"] == "engine text"

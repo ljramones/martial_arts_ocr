@@ -62,7 +62,11 @@ class ExtractionService:
             raise ValueError(f"Could not read source image for extraction: {source_path}")
 
         analyzer = self._build_layout_analyzer()
-        diagnostics = analyzer.detect_image_regions_with_diagnostics(image)
+        ocr_text_boxes = self._ocr_text_boxes_from_document(document_result)
+        diagnostics = analyzer.detect_image_regions_with_diagnostics(
+            image,
+            ocr_text_boxes=ocr_text_boxes,
+        )
         accepted_regions = diagnostics.get("accepted_regions", [])
 
         crop_records = []
@@ -110,6 +114,7 @@ class ExtractionService:
             "rejected": diagnostics.get("rejected", []),
             "consolidation": diagnostics.get("consolidation", []),
             "crop_dir": str(crop_dir) if self.options.save_crops else None,
+            "ocr_text_boxes_used": bool(ocr_text_boxes),
         }
         return replace(document_result, pages=pages, metadata=metadata)
 
@@ -126,3 +131,45 @@ class ExtractionService:
                 "filter_text_like": True,
             }
         )
+
+    @staticmethod
+    def _ocr_text_boxes_from_document(document_result: DocumentResult) -> list[dict]:
+        """Collect available OCR text geometry without requiring an OCR engine."""
+        boxes: list[dict] = []
+        metadata_boxes = document_result.metadata.get("ocr_text_boxes")
+        if isinstance(metadata_boxes, list):
+            boxes.extend(metadata_boxes)
+
+        for page in document_result.pages:
+            page_boxes = page.metadata.get("ocr_text_boxes")
+            if isinstance(page_boxes, list):
+                boxes.extend(page_boxes)
+            for region in page.text_regions:
+                if not region.bbox:
+                    continue
+                boxes.append(
+                    {
+                        "text": region.text,
+                        "bbox": region.bbox.to_dict(),
+                        "confidence": region.confidence,
+                        "language": region.language,
+                        "source": region.metadata.get("source", "canonical_text_region"),
+                        "engine": region.metadata.get("engine", "unknown"),
+                        "ocr_level": region.metadata.get("ocr_level", region.metadata.get("level", "block")),
+                    }
+                )
+        engine_boxes = [
+            box
+            for box in boxes
+            if _metadata_value(box, "source") == "ocr_engine" or _metadata_value(box, "engine") not in {None, "", "unknown"}
+        ]
+        return engine_boxes or boxes
+
+
+def _metadata_value(value: dict, key: str):
+    if key in value:
+        return value.get(key)
+    metadata = value.get("metadata")
+    if isinstance(metadata, dict):
+        return metadata.get(key)
+    return None

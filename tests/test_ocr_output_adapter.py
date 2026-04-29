@@ -23,6 +23,7 @@ class ObjectPagedResult:
 class BestOCRResult:
     text = "best text"
     engine = "fake"
+    bounding_boxes = []
     metadata = {"source": "test"}
 
     def to_dict(self):
@@ -107,3 +108,30 @@ def test_adapter_handles_current_processing_result_shape():
     assert result.pages[0].width == 10
     assert result.pages[0].height == 20
     assert result.combined_text() == "cleaned text"
+
+
+def test_adapter_promotes_best_ocr_bounding_boxes_to_text_regions():
+    class BoxedBestOCRResult:
+        text = "boxed text"
+        engine = "fake_test"
+        bounding_boxes = [
+            {"text": "boxed", "x": 10, "y": 12, "width": 34, "height": 11, "confidence": 0.8}
+        ]
+        metadata = {}
+
+    class BoxedProcessingShape(CurrentProcessingShape):
+        cleaned_text = "boxed text"
+        best_ocr_result = BoxedBestOCRResult()
+        ocr_results = []
+
+    result = document_result_from_ocr_output(
+        BoxedProcessingShape(),
+        document_id=6,
+        source_path=Path("scan.png"),
+    )
+
+    text_region = result.pages[0].text_regions[0]
+    assert text_region.text == "boxed"
+    assert text_region.bbox.to_dict() == {"x": 10, "y": 12, "width": 34, "height": 11}
+    assert text_region.metadata["source"] == "ocr_engine"
+    assert text_region.metadata["engine"] == "fake_test"

@@ -49,6 +49,10 @@ def image_region_from_extraction(value: Any, *, index: int = 1) -> ImageRegion:
     """Convert image extraction output into a canonical image region."""
     image_path = _value(value, "image_path")
     region = _value(value, "region", value)
+    metadata = _metadata(value)
+    region_metadata = _metadata(region)
+    if region_metadata:
+        metadata.update(region_metadata)
     return ImageRegion(
         region_id=str(_value(value, "region_id", _value(region, "id", f"image_{index}"))),
         image_path=Path(image_path) if image_path else None,
@@ -57,7 +61,7 @@ def image_region_from_extraction(value: Any, *, index: int = 1) -> ImageRegion:
         caption=_value(value, "caption", _value(value, "description")),
         confidence=_float_or_none(_value(value, "confidence", _value(region, "score"))),
         reading_order=int(_value(value, "reading_order", index) or index),
-        metadata=_metadata(value),
+        metadata=metadata,
     )
 
 

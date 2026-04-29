@@ -254,6 +254,14 @@ class Config:
         'region_photo_like_min_dark_fraction': 0.10,
         'region_photo_like_min_edge_density': 0.16,
         'region_visual_min_dimension_for_photo': 120,
+        'region_enable_ocr_text_suppression': True,
+        'region_ocr_high_overlap_threshold': 0.60,
+        'region_ocr_moderate_overlap_threshold': 0.25,
+        'region_ocr_low_overlap_threshold': 0.10,
+        'region_ocr_rescue_figure_score_threshold': 0.70,
+        'region_ocr_rescue_photo_score_threshold': 0.70,
+        'region_ocr_rescue_sparse_symbol_score_threshold': 0.65,
+        'region_ocr_text_mask_dilation_px': 4,
 
         # ---------------------------
         # Merging & NMS postprocess

@@ -110,6 +110,9 @@ class TesseractEngine:
                     'y': int(ocr_data['top'][i]),
                     'width': int(ocr_data['width'][i]),
                     'height': int(ocr_data['height'][i]),
+                    'source': 'ocr_engine',
+                    'engine': 'tesseract',
+                    'ocr_level': 'word',
                 })
         return text, float(avg_conf), boxes
 
@@ -214,7 +217,11 @@ class EasyOCREngine:
                     bounding_boxes.append({
                         'text': text,
                         'confidence': float(conf),
-                        'x': x, 'y': y, 'width': width, 'height': height
+                        'x': x, 'y': y, 'width': width, 'height': height,
+                        'source': 'ocr_engine',
+                        'engine': 'easyocr',
+                        'ocr_level': 'line' if paragraph else 'word',
+                        'polygon': bbox,
                     })
 
             full_text = '\n'.join(text_lines)

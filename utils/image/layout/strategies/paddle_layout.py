@@ -21,7 +21,7 @@ class PaddleLayoutStrategy:
     def is_available(cls) -> bool:
         return importlib.util.find_spec("paddleocr") is not None
 
-    def detect(self, image: np.ndarray) -> LayoutDetectionResult:
+    def detect(self, image: np.ndarray, *, ocr_text_boxes: list[Any] | None = None) -> LayoutDetectionResult:
         if not self.is_available():
             return skipped_result(self.name, "paddleocr is not installed")
 

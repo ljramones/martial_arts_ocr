@@ -37,7 +37,7 @@ class LayoutDetectionStrategy(Protocol):
     def is_available(cls) -> bool:
         ...
 
-    def detect(self, image: np.ndarray) -> LayoutDetectionResult:
+    def detect(self, image: np.ndarray, *, ocr_text_boxes: list[Any] | None = None) -> LayoutDetectionResult:
         ...
 
 

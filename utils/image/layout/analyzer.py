@@ -96,7 +96,8 @@ class LayoutAnalyzer:
     def detect_image_regions(
             self,
             image: np.ndarray,
-            nontext_mask: Optional[np.ndarray] = None
+            nontext_mask: Optional[np.ndarray] = None,
+            ocr_text_boxes: Optional[list[Any]] = None,
     ) -> List[ImageRegion]:
         gray = self._to_gray_u8(image)
         if isinstance(nontext_mask, np.ndarray):
@@ -106,7 +107,11 @@ class LayoutAnalyzer:
 
         # Optional: allow bypassing text-like rejection (A/B / debugging)
         if bool(self.cfg.get("filter_text_like", True)):
-            filtered = self._filter_candidates_with_diagnostics(gray, candidates)[0]
+            filtered = self._filter_candidates_with_diagnostics(
+                gray,
+                candidates,
+                ocr_text_boxes=ocr_text_boxes,
+            )[0]
         else:
             filtered = candidates
 
@@ -119,6 +124,7 @@ class LayoutAnalyzer:
         self,
         image: np.ndarray,
         nontext_mask: Optional[np.ndarray] = None,
+        ocr_text_boxes: Optional[list[Any]] = None,
     ) -> Dict[str, Any]:
         """Return accepted and rejected image candidates with rejection reasons."""
         gray = self._to_gray_u8(image)
@@ -128,9 +134,19 @@ class LayoutAnalyzer:
         candidates = self._detect_image_region_candidates(gray)
         accepted: List[ImageRegion] = []
         rejected: List[Dict[str, Any]] = []
+        ocr_text_mask = (
+            self.text_filter._build_ocr_text_mask(gray, ocr_text_boxes)
+            if bool(self.cfg.get("filter_text_like", True))
+            else None
+        )
         for region in candidates:
             diagnostic = (
-                self.text_filter.candidate_diagnostics(gray, region)
+                self.text_filter.candidate_diagnostics(
+                    gray,
+                    region,
+                    ocr_text_boxes=ocr_text_boxes,
+                    ocr_text_mask=ocr_text_mask,
+                )
                 if bool(self.cfg.get("filter_text_like", True))
                 else {"rejection_reason": None, "accepted_reason": "text_filter_disabled", "scores": {}, "features": {}}
             )
@@ -139,6 +155,7 @@ class LayoutAnalyzer:
                 rejected.append({
                     "region": region.to_dict(),
                     "rejection_reason": reason,
+                    "region_role": diagnostic.get("region_role"),
                     "scores": diagnostic.get("scores", {}),
                     "features": diagnostic.get("features", {}),
                 })
@@ -158,16 +175,25 @@ class LayoutAnalyzer:
         self,
         gray: np.ndarray,
         candidates: List[ImageRegion],
+        *,
+        ocr_text_boxes: Optional[list[Any]] = None,
     ) -> tuple[List[ImageRegion], List[Dict[str, Any]]]:
         accepted: List[ImageRegion] = []
         rejected: List[Dict[str, Any]] = []
+        ocr_text_mask = self.text_filter._build_ocr_text_mask(gray, ocr_text_boxes)
         for region in candidates:
-            diagnostic = self.text_filter.candidate_diagnostics(gray, region)
+            diagnostic = self.text_filter.candidate_diagnostics(
+                gray,
+                region,
+                ocr_text_boxes=ocr_text_boxes,
+                ocr_text_mask=ocr_text_mask,
+            )
             reason = diagnostic.get("rejection_reason")
             if reason:
                 rejected.append({
                     "region": region.to_dict(),
                     "rejection_reason": reason,
+                    "region_role": diagnostic.get("region_role"),
                     "scores": diagnostic.get("scores", {}),
                     "features": diagnostic.get("features", {}),
                 })
@@ -185,6 +211,7 @@ class LayoutAnalyzer:
             "photo_like_score": diagnostic.get("scores", {}).get("photo_like_score"),
             "sparse_symbol_score": diagnostic.get("scores", {}).get("sparse_symbol_score"),
             "crop_quality_score": diagnostic.get("scores", {}).get("crop_quality_score"),
+            "region_role": diagnostic.get("region_role"),
             "diagnostic_features": diagnostic.get("features", {}),
         })
         return replace(region, metadata=metadata)

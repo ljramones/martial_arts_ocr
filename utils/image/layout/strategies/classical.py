@@ -21,8 +21,11 @@ class ClassicalLayoutStrategy:
     def is_available(cls) -> bool:
         return True
 
-    def detect(self, image: np.ndarray) -> LayoutDetectionResult:
-        diagnostics = self.analyzer.detect_image_regions_with_diagnostics(image)
+    def detect(self, image: np.ndarray, *, ocr_text_boxes: list[Any] | None = None) -> LayoutDetectionResult:
+        diagnostics = self.analyzer.detect_image_regions_with_diagnostics(
+            image,
+            ocr_text_boxes=ocr_text_boxes,
+        )
         return LayoutDetectionResult(
             strategy_name=self.name,
             regions=list(diagnostics.get("accepted_regions", [])),

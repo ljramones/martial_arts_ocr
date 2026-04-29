@@ -204,3 +204,22 @@ The scoring model is still conservative:
 - Corpus 2 text-block false positives are reduced.
 - Corpus 2 photo-grid recall improves but remains partial.
 - Runtime extraction remains disabled by default.
+
+## OCR-Aware Suppression
+
+The next fusion signal is OCR text geometry. When OCR text boxes are available,
+the detector can now compute OCR overlap diagnostics for each candidate and use
+them alongside the existing visual scores.
+
+Key behavior:
+
+- high OCR overlap plus weak visual evidence rejects candidates as text
+- low OCR overlap plus strong visual evidence accepts visual regions
+- partial OCR overlap plus strong figure/photo/symbol evidence preserves
+  labeled diagrams and mixed review candidates
+- no OCR boxes means the visual-only behavior is unchanged
+
+Diagnostics include OCR overlap ratios, intersecting text-box count, mean OCR
+confidence, and text-mask overlap. Image extraction remains disabled by default;
+OCR-aware filtering only participates when review-mode extraction is explicitly
+enabled and OCR geometry is available.

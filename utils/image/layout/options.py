@@ -59,6 +59,14 @@ class RegionDetectionOptions:
     photo_like_min_dark_fraction: float = 0.10
     photo_like_min_edge_density: float = 0.16
     visual_min_dimension_for_photo: int = 120
+    enable_ocr_text_suppression: bool = True
+    ocr_high_overlap_threshold: float = 0.60
+    ocr_moderate_overlap_threshold: float = 0.25
+    ocr_low_overlap_threshold: float = 0.10
+    ocr_rescue_figure_score_threshold: float = 0.70
+    ocr_rescue_photo_score_threshold: float = 0.70
+    ocr_rescue_sparse_symbol_score_threshold: float = 0.65
+    ocr_text_mask_dilation_px: int = 4
 
     @classmethod
     def from_config(cls, cfg: Mapping[str, Any]) -> "RegionDetectionOptions":

@@ -122,7 +122,7 @@ class RecordingExtractionService:
 
 
 class FakeLayoutAnalyzer:
-    def detect_image_regions_with_diagnostics(self, image):
+    def detect_image_regions_with_diagnostics(self, image, ocr_text_boxes=None):
         return {
             "accepted_regions": [
                 UtilityImageRegion(x=20, y=24, width=80, height=70, region_type="diagram", confidence=0.91)

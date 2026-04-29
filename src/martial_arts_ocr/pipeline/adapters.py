@@ -12,6 +12,7 @@ from martial_arts_ocr.pipeline.document_models import (
     PageResult,
     TextRegion,
 )
+from utils.text.geometry import bbox_from_polygon
 
 
 def document_result_from_ocr_output(
@@ -71,18 +72,25 @@ def _page_from_flat_output(ocr_output: Any) -> PageResult:
         _value(ocr_output, "confidence", _value(ocr_output, "overall_confidence"))
     )
     width, height = _dimensions_from_any(ocr_output)
+    ocr_text_regions = ocr_text_regions_from_ocr_output(ocr_output)
+    text_regions = _text_regions_from_any(_value(ocr_output, "text_regions"), text)
+    if ocr_text_regions:
+        text_regions = ocr_text_regions
+    metadata = {"legacy_page": _safe_legacy_dict(ocr_output)}
+    if ocr_text_regions:
+        metadata["ocr_text_boxes"] = [region.to_dict() for region in ocr_text_regions]
     return PageResult(
         page_number=1,
         width=width,
         height=height,
-        text_regions=_text_regions_from_any(_value(ocr_output, "text_regions"), text),
+        text_regions=text_regions,
         image_regions=_image_regions_from_any(
             _value(ocr_output, "image_regions"),
             _value(ocr_output, "extracted_images"),
         ),
         raw_text=text,
         confidence=confidence,
-        metadata={"legacy_page": _safe_legacy_dict(ocr_output)},
+        metadata=metadata,
     )
 
 
@@ -92,19 +100,85 @@ def _page_from_page_output(page_output: Any, page_number: int) -> PageResult:
         _value(page_output, "confidence", _value(page_output, "overall_confidence"))
     )
     width, height = _dimensions_from_any(page_output)
+    ocr_text_regions = ocr_text_regions_from_ocr_output(page_output)
+    text_regions = _text_regions_from_any(_value(page_output, "text_regions"), text)
+    if ocr_text_regions:
+        text_regions = ocr_text_regions
+    metadata = {"legacy_page": _safe_legacy_dict(page_output)}
+    if ocr_text_regions:
+        metadata["ocr_text_boxes"] = [region.to_dict() for region in ocr_text_regions]
     return PageResult(
         page_number=int(_value(page_output, "page_number", page_number) or page_number),
         width=width,
         height=height,
-        text_regions=_text_regions_from_any(_value(page_output, "text_regions"), text),
+        text_regions=text_regions,
         image_regions=_image_regions_from_any(
             _value(page_output, "image_regions"),
             _value(page_output, "extracted_images"),
         ),
         raw_text=text,
         confidence=confidence,
-        metadata={"legacy_page": _safe_legacy_dict(page_output)},
+        metadata=metadata,
     )
+
+
+def ocr_text_regions_from_ocr_output(value: Any, *, engine: str | None = None) -> list[TextRegion]:
+    """Extract OCR engine word/line boxes into canonical text regions."""
+    boxes = ocr_text_boxes_from_ocr_output(value, engine=engine)
+    regions: list[TextRegion] = []
+    for index, box in enumerate(boxes, start=1):
+        bbox = _bbox_from_any(box)
+        if bbox is None:
+            continue
+        metadata = {
+            "source": box.get("source", "ocr_engine"),
+            "engine": box.get("engine", engine or "unknown"),
+            "ocr_level": box.get("ocr_level", box.get("level", "word")),
+        }
+        if "polygon" in box:
+            metadata["polygon"] = box["polygon"]
+        regions.append(
+            TextRegion(
+                region_id=str(box.get("region_id") or box.get("id") or f"ocr_{metadata['ocr_level']}_{index}"),
+                text=str(box.get("text", "")),
+                bbox=bbox,
+                confidence=_float_or_none(box.get("confidence", box.get("conf", box.get("score")))),
+                language=box.get("language"),
+                reading_order=index,
+                metadata=metadata,
+            )
+        )
+    return regions
+
+
+def ocr_text_boxes_from_ocr_output(value: Any, *, engine: str | None = None) -> list[dict[str, Any]]:
+    """Normalize common OCR output box shapes.
+
+    Supported shapes include OCRResult.bounding_boxes, dicts with
+    ``ocr_text_boxes``/``words``/``lines``/``blocks``, Tesseract TSV-style rows,
+    EasyOCR tuples, and existing TextRegion-like objects.
+    """
+    candidates: list[Any] = []
+    explicit_engine = engine or _value(value, "engine")
+
+    for key in ("ocr_text_boxes", "bounding_boxes", "words", "lines", "blocks"):
+        items = _value(value, key)
+        if items:
+            candidates.extend(_iter_items(items))
+
+    best_ocr_result = _value(value, "best_ocr_result")
+    if best_ocr_result is not None and best_ocr_result is not value:
+        candidates.extend(ocr_text_boxes_from_ocr_output(best_ocr_result, engine=_value(best_ocr_result, "engine", explicit_engine)))
+
+    for result in _value(value, "ocr_results", []) or []:
+        candidates.extend(ocr_text_boxes_from_ocr_output(result, engine=_value(result, "engine", explicit_engine)))
+
+    normalized: list[dict[str, Any]] = []
+    for item in candidates:
+        box = _ocr_box_from_any(item, engine=explicit_engine)
+        if box is not None:
+            normalized.append(box)
+    return normalized
 
 
 def _text_from_any(value: Any) -> str:
@@ -196,17 +270,173 @@ def _image_regions_from_any(regions_value: Any, extracted_images_value: Any = No
 def _bbox_from_any(value: Any) -> BoundingBox | None:
     region = _value(value, "region", value)
     bbox = _value(region, "bbox")
-    if bbox and len(bbox) >= 4:
+    if isinstance(bbox, dict):
+        x = _value(bbox, "x")
+        y = _value(bbox, "y")
+        width = _value(bbox, "width")
+        height = _value(bbox, "height")
+        if None not in (x, y, width, height):
+            return BoundingBox(x=int(x), y=int(y), width=int(width), height=int(height))
+    elif bbox and len(bbox) >= 4:
+        if _value(region, "bbox_convention") == "xywh":
+            x, y, width, height = [int(n) for n in bbox[:4]]
+            return BoundingBox(x=x, y=y, width=max(0, width), height=max(0, height))
         x1, y1, x2, y2 = [int(n) for n in bbox[:4]]
         return BoundingBox(x=x1, y=y1, width=max(0, x2 - x1), height=max(0, y2 - y1))
 
+    polygon = _value(region, "polygon", _value(region, "points"))
+    if polygon:
+        x, y, width, height = bbox_from_polygon(polygon)
+        return BoundingBox(x=x, y=y, width=width, height=height)
+
     x = _value(region, "x", _value(region, "x1"))
     y = _value(region, "y", _value(region, "y1"))
+    if x is None:
+        x = _value(region, "left")
+    if y is None:
+        y = _value(region, "top")
     width = _value(region, "width")
     height = _value(region, "height")
     if x is None or y is None or width is None or height is None:
         return None
     return BoundingBox(x=int(x), y=int(y), width=int(width), height=int(height))
+
+
+def _ocr_box_from_any(value: Any, *, engine: str | None = None) -> dict[str, Any] | None:
+    if isinstance(value, TextRegion):
+        if value.bbox is None:
+            return None
+        return {
+            "text": value.text,
+            "x": value.bbox.x,
+            "y": value.bbox.y,
+            "width": value.bbox.width,
+            "height": value.bbox.height,
+            "confidence": value.confidence,
+            "language": value.language,
+            "source": value.metadata.get("source", "ocr_engine"),
+            "engine": value.metadata.get("engine", engine or "unknown"),
+            "ocr_level": value.metadata.get("ocr_level", value.metadata.get("level", "word")),
+        }
+
+    if isinstance(value, (tuple, list)) and len(value) >= 3 and isinstance(value[0], (tuple, list)):
+        polygon, text, confidence = value[0], value[1], value[2]
+        x, y, width, height = bbox_from_polygon(polygon)
+        return _box_dict(
+            text=text,
+            x=x,
+            y=y,
+            width=width,
+            height=height,
+            confidence=confidence,
+            engine=engine or "easyocr",
+            ocr_level="line",
+            polygon=polygon,
+        )
+
+    text = _value(value, "text", "")
+    conf = _value(value, "confidence", _value(value, "conf", _value(value, "score")))
+    ocr_level = _ocr_level_from_any(_value(value, "ocr_level", _value(value, "level", "word")))
+    source = _value(value, "source", "ocr_engine")
+    item_engine = _value(value, "engine", engine or "unknown")
+
+    try:
+        bbox = _bbox_from_any(value)
+    except Exception:
+        bbox = None
+    if bbox is None:
+        return None
+    return _box_dict(
+        text=text,
+        x=bbox.x,
+        y=bbox.y,
+        width=bbox.width,
+        height=bbox.height,
+        confidence=conf,
+        language=_value(value, "language"),
+        source=source,
+        engine=item_engine,
+        ocr_level=ocr_level,
+        polygon=_value(value, "polygon", _value(value, "points")),
+    )
+
+
+def _box_dict(
+    *,
+    text: Any,
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+    confidence: Any = None,
+    language: Any = None,
+    source: str = "ocr_engine",
+    engine: str = "unknown",
+    ocr_level: str = "word",
+    polygon: Any = None,
+) -> dict[str, Any]:
+    box = {
+        "text": str(text or ""),
+        "x": int(x),
+        "y": int(y),
+        "width": max(0, int(width)),
+        "height": max(0, int(height)),
+        "confidence": _ocr_confidence(confidence),
+        "language": language,
+        "source": source,
+        "engine": engine,
+        "ocr_level": ocr_level,
+        "bbox_convention": "xywh",
+    }
+    if polygon is not None:
+        box["polygon"] = polygon
+    return box
+
+
+def _ocr_confidence(value: Any) -> float | None:
+    confidence = _float_or_none(value)
+    if confidence is None:
+        return None
+    if confidence > 1.0 and confidence <= 100.0:
+        return confidence / 100.0
+    return confidence
+
+
+def _ocr_level_from_any(value: Any) -> str:
+    if isinstance(value, int):
+        return {
+            1: "block",
+            2: "block",
+            3: "block",
+            4: "line",
+            5: "word",
+        }.get(value, "word")
+    text = str(value or "word").lower()
+    if text.isdigit():
+        return _ocr_level_from_any(int(text))
+    return text if text in {"word", "line", "block"} else "word"
+
+
+def _iter_items(value: Any) -> list[Any]:
+    if isinstance(value, dict):
+        if {"text", "left", "top", "width", "height"}.issubset(value.keys()):
+            texts = value.get("text", [])
+            length = len(texts) if isinstance(texts, list) else 0
+            return [
+                {
+                    "text": value.get("text", [""] * length)[index],
+                    "left": value.get("left", [0] * length)[index],
+                    "top": value.get("top", [0] * length)[index],
+                    "width": value.get("width", [0] * length)[index],
+                    "height": value.get("height", [0] * length)[index],
+                    "conf": value.get("conf", [None] * length)[index],
+                    "level": value.get("level", ["word"] * length)[index],
+                    "engine": value.get("engine", "tesseract"),
+                }
+                for index in range(length)
+            ]
+        return list(value.values())
+    return list(value or [])
 
 
 def _dimensions_from_any(value: Any) -> tuple[int | None, int | None]:

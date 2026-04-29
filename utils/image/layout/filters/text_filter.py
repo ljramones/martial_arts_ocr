@@ -6,6 +6,15 @@ from typing import List, Dict, Any
 from scipy.signal import find_peaks
 from utils.image.regions.core_image import ImageRegion
 from utils.image.layout.options import RegionDetectionOptions
+from utils.text.geometry import (
+    build_text_mask,
+    compute_bbox_overlap_ratio,
+    compute_mean_text_confidence,
+    compute_text_box_count,
+    compute_text_box_coverage,
+    compute_text_mask_overlap,
+    normalize_text_boxes,
+)
 from ..post.merge import remove_overlaps
 
 logger = logging.getLogger(__name__)
@@ -67,13 +76,20 @@ class TextRegionFilter:
         return remove_overlaps(out, iou_threshold=0.3)
 
     # --------- Rejection of text-like regions (for image candidates) ----------
-    def filter(self, gray: np.ndarray, regions: List[ImageRegion]) -> List[ImageRegion]:
+    def filter(
+        self,
+        gray: np.ndarray,
+        regions: List[ImageRegion],
+        *,
+        ocr_text_boxes: list[Any] | None = None,
+    ) -> List[ImageRegion]:
         if gray.dtype != np.uint8:
             gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
 
+        text_mask = self._build_ocr_text_mask(gray, ocr_text_boxes)
         kept: List[ImageRegion] = []
         for r in regions:
-            reason = self.rejection_reason(gray, r)
+            reason = self.rejection_reason(gray, r, ocr_text_boxes=ocr_text_boxes, ocr_text_mask=text_mask)
             if reason == "invalid_bounds":
                 continue
             if reason is None:
@@ -81,11 +97,30 @@ class TextRegionFilter:
 
         return kept
 
-    def rejection_reason(self, gray: np.ndarray, region: ImageRegion) -> str | None:
+    def rejection_reason(
+        self,
+        gray: np.ndarray,
+        region: ImageRegion,
+        *,
+        ocr_text_boxes: list[Any] | None = None,
+        ocr_text_mask: np.ndarray | None = None,
+    ) -> str | None:
         """Return a rejection reason for text-like image candidates, or None."""
-        return self.candidate_diagnostics(gray, region).get("rejection_reason")
+        return self.candidate_diagnostics(
+            gray,
+            region,
+            ocr_text_boxes=ocr_text_boxes,
+            ocr_text_mask=ocr_text_mask,
+        ).get("rejection_reason")
 
-    def candidate_diagnostics(self, gray: np.ndarray, region: ImageRegion) -> Dict[str, Any]:
+    def candidate_diagnostics(
+        self,
+        gray: np.ndarray,
+        region: ImageRegion,
+        *,
+        ocr_text_boxes: list[Any] | None = None,
+        ocr_text_mask: np.ndarray | None = None,
+    ) -> Dict[str, Any]:
         """Return scoring diagnostics plus the final accept/reject decision."""
         if gray.dtype != np.uint8:
             gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
@@ -94,6 +129,7 @@ class TextRegionFilter:
             return {
                 "rejection_reason": None,
                 "accepted_reason": "exempt_region_type",
+                "region_role": "image",
                 "features": {"region_type": getattr(region, "region_type", None)},
                 "scores": {
                     "text_like_score": 0.0,
@@ -124,32 +160,53 @@ class TextRegionFilter:
             },
         }
         if w <= 0 or h <= 0:
-            return {**base, "rejection_reason": "invalid_bounds", "accepted_reason": None}
+            return {**base, "rejection_reason": "invalid_bounds", "accepted_reason": None, "region_role": "rejected_noise"}
 
         options = self.options
         area = w * h
         aspect = w / float(h) if h else 0.0
         if area < options.min_area or w < options.min_width or h < options.min_height:
-            return {**base, "rejection_reason": "too_small", "accepted_reason": None}
+            return {**base, "rejection_reason": "too_small", "accepted_reason": None, "region_role": "rejected_noise"}
         if not (options.min_diagram_aspect_ratio <= aspect <= options.max_diagram_aspect_ratio):
-            return {**base, "rejection_reason": "bad_aspect_ratio", "accepted_reason": None}
+            return {**base, "rejection_reason": "bad_aspect_ratio", "accepted_reason": None, "region_role": "rejected_noise"}
         if not options.reject_text_like:
-            return {**base, "rejection_reason": None, "accepted_reason": "text_filter_disabled"}
+            return {**base, "rejection_reason": None, "accepted_reason": "text_filter_disabled", "region_role": "image"}
 
         roi = gray[y:y + h, x:x + w]
         metrics = self.text_like_metrics(roi)
         metrics["page_area_ratio"] = float(area) / float(max(1, gray.shape[0] * gray.shape[1]))
         scores = self._candidate_scores(metrics, options)
-        features = {**base["features"], **metrics}
+        ocr_metrics = self._ocr_overlap_metrics(
+            gray,
+            region,
+            ocr_text_boxes=ocr_text_boxes,
+            ocr_text_mask=ocr_text_mask,
+            options=options,
+        )
+        features = {**base["features"], **metrics, **ocr_metrics}
         old_reason = self._legacy_rejection_reason(metrics, options)
         visual_score = max(
             scores["figure_like_score"],
             scores["photo_like_score"],
             scores["sparse_symbol_score"],
         )
+        ocr_overlap = max(
+            float(ocr_metrics.get("ocr_text_overlap_ratio", 0.0)),
+            float(ocr_metrics.get("ocr_text_mask_overlap_ratio", 0.0)),
+        )
+        ocr_available = bool(ocr_metrics.get("ocr_text_boxes_available", False))
 
         reason = None
-        if (
+        accepted_reason = None
+        region_role = "image"
+        if ocr_available and options.enable_ocr_text_suppression:
+            reason, accepted_reason, region_role = self._ocr_aware_decision(
+                ocr_overlap=ocr_overlap,
+                scores=scores,
+                options=options,
+            )
+
+        if reason is None and (
             old_reason in {"regular_text_projection", "text_line_like", "title_text_like"}
             and (
                 (
@@ -163,7 +220,7 @@ class TextRegionFilter:
             )
         ):
             reason = old_reason
-        elif (
+        elif reason is None and (
             old_reason == "regular_text_projection"
             and scores["photo_like_score"] < options.broad_crop_visual_override_threshold
             and (
@@ -175,20 +232,20 @@ class TextRegionFilter:
             )
         ):
             reason = old_reason
-        elif (
+        elif reason is None and (
             old_reason == "text_like_density"
             and bool(metrics.get("regular_text_projection", 0.0))
             and scores["text_like_score"] >= 0.55
         ):
             reason = old_reason
-        elif old_reason and visual_score < options.visual_score_override_threshold:
+        elif reason is None and old_reason and visual_score < options.visual_score_override_threshold:
             reason = old_reason
-        elif (
+        elif reason is None and (
             scores["text_like_score"] >= options.text_score_reject_threshold
             and visual_score < options.visual_score_override_threshold
         ):
             reason = "scored_text_like"
-        elif (
+        elif reason is None and (
             metrics["page_area_ratio"] >= options.broad_crop_area_ratio
             and scores["text_like_score"] >= 0.55
             and visual_score < options.broad_crop_visual_override_threshold
@@ -199,16 +256,112 @@ class TextRegionFilter:
             return {
                 "rejection_reason": reason,
                 "accepted_reason": None,
+                "region_role": "rejected_text" if "text" in reason or "ocr" in reason else "rejected_noise",
                 "features": features,
                 "scores": scores,
             }
 
+        if accepted_reason is None:
+            accepted_reason = self._accepted_reason(scores)
+        elif accepted_reason == "visual_region":
+            accepted_reason = self._accepted_reason(scores)
+
         return {
             "rejection_reason": None,
-            "accepted_reason": self._accepted_reason(scores),
+            "accepted_reason": accepted_reason,
+            "region_role": region_role,
             "features": features,
             "scores": scores,
         }
+
+    def _ocr_aware_decision(
+        self,
+        *,
+        ocr_overlap: float,
+        scores: dict[str, float],
+        options: RegionDetectionOptions,
+    ) -> tuple[str | None, str | None, str]:
+        visual_score = max(
+            scores["figure_like_score"],
+            scores["photo_like_score"],
+            scores["sparse_symbol_score"],
+        )
+        strong_visual = (
+            scores["figure_like_score"] >= options.ocr_rescue_figure_score_threshold
+            or scores["photo_like_score"] >= options.ocr_rescue_photo_score_threshold
+            or scores["sparse_symbol_score"] >= options.ocr_rescue_sparse_symbol_score_threshold
+        )
+        weak_visual = not strong_visual and visual_score < options.visual_score_override_threshold
+
+        if ocr_overlap >= options.ocr_high_overlap_threshold:
+            if (
+                scores["text_like_score"] >= 0.60
+                and scores["figure_like_score"] < options.ocr_rescue_figure_score_threshold
+                and scores["photo_like_score"] < options.ocr_rescue_photo_score_threshold
+            ):
+                return "high_ocr_text_overlap", None, "rejected_text"
+            if weak_visual:
+                return "high_ocr_text_overlap", None, "rejected_text"
+            return None, "mixed_region_visual_evidence", "uncertain"
+
+        if ocr_overlap >= options.ocr_moderate_overlap_threshold:
+            if strong_visual:
+                return None, "labeled_diagram_ocr_rescue", "mixed"
+            if visual_score < options.visual_score_override_threshold and scores["text_like_score"] >= 0.55:
+                return "moderate_ocr_text_overlap", None, "rejected_text"
+            return None, "moderate_ocr_overlap_review", "uncertain"
+
+        if ocr_overlap <= options.ocr_low_overlap_threshold and visual_score >= options.visual_score_override_threshold:
+            return None, "low_ocr_overlap_visual_region", "image"
+
+        return None, None, "image"
+
+    def _ocr_overlap_metrics(
+        self,
+        gray: np.ndarray,
+        region: ImageRegion,
+        *,
+        ocr_text_boxes: list[Any] | None,
+        ocr_text_mask: np.ndarray | None,
+        options: RegionDetectionOptions,
+    ) -> dict[str, float | int | bool | None]:
+        boxes = normalize_text_boxes(ocr_text_boxes)
+        if not boxes:
+            return {
+                "ocr_text_boxes_available": False,
+                "ocr_text_overlap_ratio": 0.0,
+                "ocr_text_area_ratio": 0.0,
+                "ocr_text_box_count": 0,
+                "ocr_text_confidence_mean": None,
+                "ocr_text_mask_overlap_ratio": 0.0,
+            }
+        mask = ocr_text_mask if ocr_text_mask is not None else self._build_ocr_text_mask(gray, boxes, options=options)
+        candidate_bbox = (region.x, region.y, region.width, region.height)
+        return {
+            "ocr_text_boxes_available": True,
+            "ocr_text_overlap_ratio": round(compute_bbox_overlap_ratio(candidate_bbox, boxes), 4),
+            "ocr_text_area_ratio": round(compute_text_box_coverage(candidate_bbox, boxes), 4),
+            "ocr_text_box_count": compute_text_box_count(candidate_bbox, boxes),
+            "ocr_text_confidence_mean": compute_mean_text_confidence(candidate_bbox, boxes),
+            "ocr_text_mask_overlap_ratio": round(compute_text_mask_overlap(candidate_bbox, mask), 4),
+        }
+
+    def _build_ocr_text_mask(
+        self,
+        gray: np.ndarray,
+        ocr_text_boxes: list[Any] | None,
+        *,
+        options: RegionDetectionOptions | None = None,
+    ) -> np.ndarray | None:
+        boxes = normalize_text_boxes(ocr_text_boxes)
+        if not boxes:
+            return None
+        opts = options or self.options
+        return build_text_mask(
+            gray.shape[:2],
+            boxes,
+            dilation_px=opts.ocr_text_mask_dilation_px,
+        )
 
     def _legacy_rejection_reason(self, metrics: dict[str, float], options: RegionDetectionOptions) -> str | None:
         if metrics["density"] > options.max_text_like_density:

@@ -44,6 +44,12 @@ Do not commit private images or generated crops. Notebook output belongs under
 ## Decision Criteria
 
 - Keep classical OpenCV as the default fallback.
+- Use OCR-aware text-box suppression as the first fusion signal before
+  integrating optional layout ML into runtime.
+- Preserve OCR box provenance (`source`, `engine`, `ocr_level`) so true OCR
+  geometry can be distinguished from layout-derived text boxes.
+- Prefer word-level OCR masks for suppression; line/block boxes are useful for
+  diagnostics but can be too coarse near labeled diagrams.
 - If an optional document-layout model clearly improves text/figure separation,
   evaluate it in review mode only.
 - If no off-the-shelf model improves results, prioritize OCR-aware text-box
