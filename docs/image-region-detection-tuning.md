@@ -243,3 +243,31 @@ Only two public options were added:
 
 The layer must pass corpus-level review before it becomes a preferred review
 path. It is not a replacement for document-layout ML.
+
+## Optional Paddle Layout Fusion
+
+Paddle PPStructureV3 has been added as a lazy, optional review-mode layout
+signal. It is not a runtime dependency and is not enabled by default.
+
+Fusion runs after the classical/OCR-aware detector and mixed-region triage. It
+only considers classical candidates already marked `mixed_region` or
+`needs_review`. Clean classical image regions remain unchanged.
+
+The V1 matching rule is containment-based rather than IoU-based:
+
+- `paddle_inside_classical_ratio` checks whether the Paddle visual region is
+  mostly inside the classical mixed parent
+- `area_tightness_ratio` checks whether the Paddle region is meaningfully
+  tighter without becoming a tiny micro-crop
+- IoU is kept as diagnostic metadata only
+
+Only Paddle visual labels can become image regions: `figure`, `image`, `photo`,
+and `diagram`. Paddle table regions are not converted to `ImageRegion` in V1.
+If multiple Paddle visual regions qualify inside one classical parent, V1 emits
+only the best single region and records the limitation in metadata.
+
+Validation on the Paddle 12-page scaffold improved `2/5` Corpus 2 broad/mixed
+cases with `0/5` DFD hard-page regressions and `0/2` known-good regressions.
+This did not pass the `4/5` improvement gate, so Paddle fusion remains
+experimental and disabled. The next improvement should be re-planning fusion or
+adding annotation/layout-model evaluation, not per-corpus presets.

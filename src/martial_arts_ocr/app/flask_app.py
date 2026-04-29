@@ -162,6 +162,8 @@ def _build_extraction_service(app_config) -> ExtractionService:
             enable_image_regions=_config_bool(app_config.get("ENABLE_IMAGE_REGION_EXTRACTION", False)),
             save_crops=_config_bool(app_config.get("IMAGE_REGION_EXTRACTION_SAVE_CROPS", True)),
             fail_on_extraction_error=_config_bool(app_config.get("IMAGE_REGION_EXTRACTION_FAIL_ON_ERROR", False)),
+            enable_paddle_layout_fusion=_config_bool(app_config.get("ENABLE_PADDLE_LAYOUT_FUSION", False)),
+            paddle_layout_model_dir=app_config.get("PADDLE_LAYOUT_MODEL_DIR"),
         )
     )
 

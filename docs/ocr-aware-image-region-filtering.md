@@ -95,12 +95,35 @@ The refiner remains disabled unless explicitly enabled with
 improve with this layer, the next step is a real document-layout backend
 comparison rather than more heuristic tuning.
 
+## Optional Paddle Layout Fusion
+
+Paddle PPStructureV3 was evaluated as a document-layout signal after
+mixed-region refinement marked broad Corpus 2 crops as `needs_review` but did
+not tighten them automatically.
+
+Paddle fusion is disabled by default and is separate from OCR-aware filtering.
+When explicitly enabled, it can attempt to replace a classical mixed parent
+with a tighter Paddle visual region. The match rule is containment-first:
+
+- a Paddle visual region must be mostly inside the classical mixed parent
+- it must be meaningfully tighter than the classical parent
+- it must not be a tiny micro-crop
+- only visual labels are eligible: `figure`, `image`, `photo`, `diagram`
+
+IoU is recorded only as diagnostic metadata because tight figure crops inside
+broad mixed parents can have low IoU. Paddle `table` regions are not converted
+to image regions in V1.
+
+The first validation improved `2/5` Corpus 2 broad/mixed cases and caused no
+DFD or known-good regressions, but it did not pass the review gate. Paddle
+fusion therefore remains experimental and disabled.
+
 ## Future Work
 
 - Compare PaddleOCR PP-Structure, DocLayout-YOLO, and LayoutParser outputs in
   the layout model workbench.
-- Add a fusion layer that combines OpenCV proposals, OCR geometry, and optional
-  layout-model classes.
+- Improve or re-plan fusion across OpenCV proposals, OCR geometry, and optional
+  layout-model classes before treating it as a preferred review-mode path.
 - Add annotation and correction workflows for broad/mixed crops.
 - Preserve labeled diagrams while distinguishing captions and body text more
   reliably.

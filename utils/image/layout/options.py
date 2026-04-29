@@ -69,6 +69,8 @@ class RegionDetectionOptions:
     ocr_text_mask_dilation_px: int = 4
     enable_mixed_region_refinement: bool = False
     mixed_region_min_ocr_overlap: float = 0.25
+    enable_paddle_layout_fusion: bool = False
+    paddle_layout_model_dir: str | None = None
 
     @classmethod
     def from_config(cls, cfg: Mapping[str, Any]) -> "RegionDetectionOptions":

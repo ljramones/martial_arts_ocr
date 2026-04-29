@@ -57,6 +57,30 @@ Do not commit private images or generated crops. Notebook output belongs under
 - Do not enable any ML backend by default until it is tested on both DFD and
   Corpus 2 and its dependencies are documented.
 
+## Paddle PPStructureV3 Fusion Experiment
+
+The isolated Paddle evaluation on macOS arm64 used PaddlePaddle `3.3.0`,
+PaddleOCR `3.5.0`, and the observed `PPStructureV3` API. It was useful on
+Corpus 2 broad/mixed pages and did not regress known-good DFD examples, but it
+is too heavy for default runtime and remains optional.
+
+The V1 fusion experiment keeps Paddle as a semantic layout signal, not a
+replacement detector. It only attempts to tighten classical regions already
+marked `mixed_region` or `needs_review`. Matching is containment-based rather
+than IoU-gated:
+
+- `paddle_inside_classical_ratio` is the primary match signal
+- `area_tightness_ratio` ensures the Paddle visual crop is meaningfully tighter
+- IoU is recorded as diagnostic metadata only
+
+V1 emits at most one best Paddle visual region per classical mixed parent.
+Paddle `table` regions are not converted to `ImageRegion`; they remain
+diagnostic layout evidence.
+
+Validation showed `2/5` Corpus 2 broad/mixed cases improved, with `0/5` DFD
+hard-page regressions and `0/2` known-good regressions. That does not pass the
+`4/5` improvement gate, so Paddle fusion remains disabled and experimental.
+
 ## Next Implementation Boundary
 
 This plan creates comparison infrastructure only. It does not turn on ML

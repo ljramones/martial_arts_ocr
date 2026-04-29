@@ -92,6 +92,11 @@ class Config:
         "IMAGE_REGION_EXTRACTION_FAIL_ON_ERROR",
         "false",
     ).lower() == "true"
+    ENABLE_PADDLE_LAYOUT_FUSION = os.environ.get(
+        "ENABLE_PADDLE_LAYOUT_FUSION",
+        "false",
+    ).lower() == "true"
+    PADDLE_LAYOUT_MODEL_DIR = os.environ.get("PADDLE_LAYOUT_MODEL_DIR") or None
 
     # OCR Engine Configuration
     OCR_ENGINES = {
@@ -264,6 +269,8 @@ class Config:
         'region_ocr_text_mask_dilation_px': 4,
         'region_enable_mixed_region_refinement': False,
         'region_mixed_region_min_ocr_overlap': 0.25,
+        'region_enable_paddle_layout_fusion': False,
+        'region_paddle_layout_model_dir': None,
 
         # ---------------------------
         # Merging & NMS postprocess

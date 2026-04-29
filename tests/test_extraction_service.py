@@ -8,6 +8,7 @@ import pytest
 
 from martial_arts_ocr.pipeline.document_models import BoundingBox, DocumentResult, PageResult, TextRegion
 from martial_arts_ocr.pipeline.extraction_service import ExtractionService, ExtractionServiceOptions
+from utils.image.layout.strategy import LayoutDetectionResult, skipped_result
 from utils.image.regions.core_types import ImageRegion as UtilityImageRegion
 
 
@@ -28,6 +29,19 @@ class FakeLayoutAnalyzer:
             "rejected": [{"region": {"bbox": (1, 2, 3, 4)}, "rejection_reason": "text_like_components"}],
             "consolidation": [{"reason": "overlap_merge"}],
         }
+
+
+class FakePaddleStrategy:
+    name = "paddle_ppstructure"
+
+    def __init__(self, result=None, fail: bool = False):
+        self.result = result
+        self.fail = fail
+
+    def detect(self, image, *, ocr_text_boxes=None):
+        if self.fail:
+            raise RuntimeError("paddle failed")
+        return self.result
 
 
 def _document(image_path: Path) -> DocumentResult:
@@ -178,3 +192,116 @@ def test_extraction_service_prefers_engine_boxes_over_non_engine_text_regions(tm
 
     assert len(fake_analyzer.seen_ocr_text_boxes) == 1
     assert fake_analyzer.seen_ocr_text_boxes[0]["text"] == "engine text"
+
+
+def test_paddle_fusion_disabled_by_default(tmp_path):
+    image_path = tmp_path / "scan.png"
+    _write_synthetic_image(image_path)
+    service = ExtractionService(
+        ExtractionServiceOptions(enable_image_regions=True, save_crops=False),
+        layout_analyzer_factory=lambda: FakeLayoutAnalyzer(),
+        paddle_strategy_factory=lambda: FakePaddleStrategy(fail=True),
+    )
+
+    result = service.enrich_document_result(_document(image_path), output_dir=tmp_path / "processed")
+
+    assert "paddle_layout_fusion" not in result.metadata["image_extraction"]
+
+
+def test_paddle_fusion_tightens_mixed_region_when_enabled(tmp_path):
+    image_path = tmp_path / "scan.png"
+    _write_synthetic_image(image_path)
+
+    class MixedAnalyzer(FakeLayoutAnalyzer):
+        def detect_image_regions_with_diagnostics(self, image, ocr_text_boxes=None):
+            return {
+                "accepted_regions": [
+                    UtilityImageRegion(
+                        x=0,
+                        y=0,
+                        width=160,
+                        height=160,
+                        region_type="diagram",
+                        confidence=0.7,
+                        metadata={"mixed_region": True, "needs_review": True},
+                    )
+                ],
+                "rejected": [],
+                "consolidation": [],
+                "refinement": [],
+            }
+
+    paddle_result = LayoutDetectionResult(
+        "paddle_ppstructure",
+        regions=[
+            UtilityImageRegion(
+                x=20,
+                y=24,
+                width=80,
+                height=70,
+                region_type="figure",
+                confidence=0.95,
+                metadata={"layout_label": "image", "raw_label": "image"},
+            )
+        ],
+    )
+    service = ExtractionService(
+        ExtractionServiceOptions(
+            enable_image_regions=True,
+            save_crops=False,
+            enable_paddle_layout_fusion=True,
+        ),
+        layout_analyzer_factory=lambda: MixedAnalyzer(),
+        paddle_strategy_factory=lambda: FakePaddleStrategy(result=paddle_result),
+    )
+
+    result = service.enrich_document_result(_document(image_path), output_dir=tmp_path / "processed")
+
+    region = result.pages[0].image_regions[0]
+    assert region.bbox.to_dict() == {"x": 20, "y": 24, "width": 80, "height": 70}
+    assert region.metadata["layout_fusion_applied"] is True
+    assert result.metadata["image_extraction"]["paddle_layout_fusion"]["status"] == "completed"
+
+
+def test_paddle_fusion_skip_is_non_fatal(tmp_path):
+    image_path = tmp_path / "scan.png"
+    _write_synthetic_image(image_path)
+    service = ExtractionService(
+        ExtractionServiceOptions(
+            enable_image_regions=True,
+            save_crops=False,
+            enable_paddle_layout_fusion=True,
+        ),
+        layout_analyzer_factory=lambda: FakeLayoutAnalyzer(),
+        paddle_strategy_factory=lambda: FakePaddleStrategy(
+            result=skipped_result("paddle_ppstructure", "paddleocr is not installed")
+        ),
+    )
+
+    result = service.enrich_document_result(_document(image_path), output_dir=tmp_path / "processed")
+
+    assert len(result.pages[0].image_regions) == 1
+    fusion = result.metadata["image_extraction"]["paddle_layout_fusion"]
+    assert fusion["status"] == "skipped"
+    assert fusion["reason"] == "paddleocr is not installed"
+
+
+def test_paddle_fusion_failure_is_non_fatal(tmp_path):
+    image_path = tmp_path / "scan.png"
+    _write_synthetic_image(image_path)
+    service = ExtractionService(
+        ExtractionServiceOptions(
+            enable_image_regions=True,
+            save_crops=False,
+            enable_paddle_layout_fusion=True,
+        ),
+        layout_analyzer_factory=lambda: FakeLayoutAnalyzer(),
+        paddle_strategy_factory=lambda: FakePaddleStrategy(fail=True),
+    )
+
+    result = service.enrich_document_result(_document(image_path), output_dir=tmp_path / "processed")
+
+    assert len(result.pages[0].image_regions) == 1
+    fusion = result.metadata["image_extraction"]["paddle_layout_fusion"]
+    assert fusion["status"] == "failed"
+    assert "paddle failed" in fusion["error"]

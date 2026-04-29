@@ -19,6 +19,8 @@ class ExtractionServiceOptions:
     save_crops: bool = True
     fail_on_extraction_error: bool = False
     crop_subdir: str = "image_regions"
+    enable_paddle_layout_fusion: bool = False
+    paddle_layout_model_dir: str | None = None
 
 
 class ExtractionService:
@@ -29,9 +31,15 @@ class ExtractionService:
     silent default for all OCR processing.
     """
 
-    def __init__(self, options: ExtractionServiceOptions | None = None, layout_analyzer_factory=None):
+    def __init__(
+        self,
+        options: ExtractionServiceOptions | None = None,
+        layout_analyzer_factory=None,
+        paddle_strategy_factory=None,
+    ):
         self.options = options or ExtractionServiceOptions()
         self._layout_analyzer_factory = layout_analyzer_factory
+        self._paddle_strategy_factory = paddle_strategy_factory
 
     def enrich_document_result(
         self,
@@ -68,6 +76,12 @@ class ExtractionService:
             ocr_text_boxes=ocr_text_boxes,
         )
         accepted_regions = diagnostics.get("accepted_regions", [])
+        paddle_fusion = None
+        if self.options.enable_paddle_layout_fusion:
+            accepted_regions, paddle_fusion = self._fuse_paddle_layout(
+                image,
+                accepted_regions,
+            )
 
         crop_records = []
         crop_dir = output_dir / self.options.crop_subdir
@@ -100,6 +114,8 @@ class ExtractionService:
             "consolidation_count": len(diagnostics.get("consolidation", [])),
             "refinement_count": len(diagnostics.get("refinement", [])),
         }
+        if paddle_fusion is not None:
+            page_metadata["image_extraction"]["paddle_layout_fusion"] = paddle_fusion
         enriched_page = replace(
             page,
             image_regions=list(page.image_regions) + image_regions,
@@ -118,7 +134,43 @@ class ExtractionService:
             "crop_dir": str(crop_dir) if self.options.save_crops else None,
             "ocr_text_boxes_used": bool(ocr_text_boxes),
         }
+        if paddle_fusion is not None:
+            metadata["image_extraction"]["paddle_layout_fusion"] = paddle_fusion
         return replace(document_result, pages=pages, metadata=metadata)
+
+    def _fuse_paddle_layout(self, image, accepted_regions):
+        from utils.image.layout.fusion import fuse_paddle_layout_regions
+
+        try:
+            strategy = self._build_paddle_strategy()
+            layout_result = strategy.detect(image)
+            if not layout_result.available:
+                return accepted_regions, {
+                    "enabled": True,
+                    "status": "skipped",
+                    "backend": layout_result.strategy_name,
+                    "reason": layout_result.skipped_reason,
+                }
+            fusion_result = fuse_paddle_layout_regions(
+                accepted_regions,
+                layout_result.regions,
+                backend_name=layout_result.strategy_name,
+            )
+            return fusion_result.regions, {
+                "enabled": True,
+                "status": "completed",
+                "backend": layout_result.strategy_name,
+                "layout_region_count": len(layout_result.regions),
+                "fusion_event_count": len(fusion_result.events),
+                "events": fusion_result.events,
+                "layout_metadata": layout_result.metadata,
+            }
+        except Exception as exc:
+            return accepted_regions, {
+                "enabled": True,
+                "status": "failed",
+                "error": str(exc),
+            }
 
     def _build_layout_analyzer(self):
         if self._layout_analyzer_factory is not None:
@@ -133,6 +185,16 @@ class ExtractionService:
                 "filter_text_like": True,
             }
         )
+
+    def _build_paddle_strategy(self):
+        if self._paddle_strategy_factory is not None:
+            return self._paddle_strategy_factory()
+        from utils.image.layout.strategies import PaddleLayoutStrategy
+
+        config = {}
+        if self.options.paddle_layout_model_dir:
+            config["model_dir"] = self.options.paddle_layout_model_dir
+        return PaddleLayoutStrategy(config)
 
     @staticmethod
     def _ocr_text_boxes_from_document(document_result: DocumentResult) -> list[dict]:
