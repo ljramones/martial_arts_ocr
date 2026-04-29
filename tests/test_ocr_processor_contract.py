@@ -33,6 +33,11 @@ def test_ocr_processor_process_to_document_result_adapts_legacy_output(monkeypat
     assert result.document_id == 12
     assert result.combined_text() == "contract text"
     assert result.confidence == 0.88
-    assert result.pages[0].text_regions[0].text == "contract"
-    assert result.pages[0].text_regions[0].metadata["source"] == "ocr_engine"
-    assert result.pages[0].text_regions[0].metadata["engine"] == "fake_test"
+    word_region = next(
+        region for region in result.pages[0].text_regions
+        if region.metadata.get("ocr_level") == "word"
+    )
+    assert word_region.text == "contract"
+    assert word_region.metadata["source"] == "ocr_engine"
+    assert word_region.metadata["engine"] == "fake_test"
+    assert result.pages[0].metadata["readable_text"] == "contract"

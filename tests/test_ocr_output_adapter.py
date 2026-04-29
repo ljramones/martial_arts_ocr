@@ -130,8 +130,15 @@ def test_adapter_promotes_best_ocr_bounding_boxes_to_text_regions():
         source_path=Path("scan.png"),
     )
 
-    text_region = result.pages[0].text_regions[0]
+    text_region = next(
+        region for region in result.pages[0].text_regions
+        if region.metadata.get("ocr_level") == "word"
+    )
     assert text_region.text == "boxed"
     assert text_region.bbox.to_dict() == {"x": 10, "y": 12, "width": 34, "height": 11}
     assert text_region.metadata["source"] == "ocr_engine"
     assert text_region.metadata["engine"] == "fake_test"
+    assert any(
+        region.text == "boxed" and region.metadata.get("source") == "ocr_normalization"
+        for region in result.pages[0].text_regions
+    )

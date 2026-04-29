@@ -100,6 +100,15 @@ def test_document_adapter_preserves_existing_ocr_text_boxes_metadata():
         source_path=Path("scan.png"),
     )
 
-    assert len(result.pages[0].text_regions) == 1
-    assert result.pages[0].text_regions[0].metadata["engine"] == "fake_test"
+    word_regions = [
+        region for region in result.pages[0].text_regions
+        if region.metadata.get("ocr_level") == "word"
+    ]
+    line_regions = [
+        region for region in result.pages[0].text_regions
+        if region.metadata.get("ocr_level") == "line"
+    ]
+    assert len(word_regions) == 1
+    assert len(line_regions) == 1
+    assert word_regions[0].metadata["engine"] == "fake_test"
     assert result.pages[0].metadata["ocr_text_boxes"][0]["metadata"]["source"] == "ocr_engine"

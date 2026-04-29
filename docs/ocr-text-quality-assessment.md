@@ -362,6 +362,28 @@ Target:
 Implementation should not promote Japanese analysis yet. First make text and box
 serialization reliable and reviewable.
 
+## Implemented Follow-Up: OCR Text Hierarchy Fixtures and Normalization
+
+The first follow-up added synthetic OCR text-quality fixtures and a small
+canonical text hierarchy helper.
+
+Implemented behavior:
+
+- OCR word boxes remain available as `TextRegion` objects with
+  `metadata["source"]="ocr_engine"` and `metadata["ocr_level"]="word"`.
+- Derived line regions are added with
+  `metadata["source"]="ocr_normalization"` and
+  `metadata["ocr_level"]="line"`.
+- `PageResult.metadata["readable_text"]` provides compact line-oriented text.
+- `PageResult.metadata["ocr_word_count"]` and
+  `PageResult.metadata["ocr_line_count"]` summarize the hierarchy.
+- Fixtures cover English word boxes, mixed English/Japanese martial arts text,
+  macrons, Japanese punctuation, Tesseract-like rows, and EasyOCR-like polygons.
+
+This does not solve multi-column layout, vertical Japanese, or final page
+reconstruction. It gives the next OCR/text passes stable fixtures and a clear
+word-vs-line distinction.
+
 ## Files Reviewed
 
 - `src/martial_arts_ocr/ocr/processor.py`

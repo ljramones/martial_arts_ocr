@@ -12,6 +12,7 @@ from martial_arts_ocr.pipeline.document_models import (
     PageResult,
     TextRegion,
 )
+from martial_arts_ocr.pipeline.text_normalization import add_readable_lines_to_page
 from utils.text.geometry import bbox_from_polygon
 
 
@@ -79,7 +80,7 @@ def _page_from_flat_output(ocr_output: Any) -> PageResult:
     metadata = {"legacy_page": _safe_legacy_dict(ocr_output)}
     if ocr_text_regions:
         metadata["ocr_text_boxes"] = [region.to_dict() for region in ocr_text_regions]
-    return PageResult(
+    page = PageResult(
         page_number=1,
         width=width,
         height=height,
@@ -92,6 +93,7 @@ def _page_from_flat_output(ocr_output: Any) -> PageResult:
         confidence=confidence,
         metadata=metadata,
     )
+    return add_readable_lines_to_page(page) if ocr_text_regions else page
 
 
 def _page_from_page_output(page_output: Any, page_number: int) -> PageResult:
@@ -107,7 +109,7 @@ def _page_from_page_output(page_output: Any, page_number: int) -> PageResult:
     metadata = {"legacy_page": _safe_legacy_dict(page_output)}
     if ocr_text_regions:
         metadata["ocr_text_boxes"] = [region.to_dict() for region in ocr_text_regions]
-    return PageResult(
+    page = PageResult(
         page_number=int(_value(page_output, "page_number", page_number) or page_number),
         width=width,
         height=height,
@@ -120,6 +122,7 @@ def _page_from_page_output(page_output: Any, page_number: int) -> PageResult:
         confidence=confidence,
         metadata=metadata,
     )
+    return add_readable_lines_to_page(page) if ocr_text_regions else page
 
 
 def ocr_text_regions_from_ocr_output(value: Any, *, engine: str | None = None) -> list[TextRegion]:
