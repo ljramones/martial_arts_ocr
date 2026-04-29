@@ -2,6 +2,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 import logging
+from dataclasses import replace
 from typing import Any, Dict, List, Optional
 
 from config import get_config
@@ -105,7 +106,7 @@ class LayoutAnalyzer:
 
         # Optional: allow bypassing text-like rejection (A/B / debugging)
         if bool(self.cfg.get("filter_text_like", True)):
-            filtered = self.text_filter.filter(gray, candidates)
+            filtered = self._filter_candidates_with_diagnostics(gray, candidates)[0]
         else:
             filtered = candidates
 
@@ -128,11 +129,21 @@ class LayoutAnalyzer:
         accepted: List[ImageRegion] = []
         rejected: List[Dict[str, Any]] = []
         for region in candidates:
-            reason = self.text_filter.rejection_reason(gray, region) if bool(self.cfg.get("filter_text_like", True)) else None
+            diagnostic = (
+                self.text_filter.candidate_diagnostics(gray, region)
+                if bool(self.cfg.get("filter_text_like", True))
+                else {"rejection_reason": None, "accepted_reason": "text_filter_disabled", "scores": {}, "features": {}}
+            )
+            reason = diagnostic.get("rejection_reason")
             if reason:
-                rejected.append({"region": region.to_dict(), "rejection_reason": reason})
+                rejected.append({
+                    "region": region.to_dict(),
+                    "rejection_reason": reason,
+                    "scores": diagnostic.get("scores", {}),
+                    "features": diagnostic.get("features", {}),
+                })
             else:
-                accepted.append(region)
+                accepted.append(self._region_with_diagnostics(region, diagnostic))
 
         accepted, consolidation_events = consolidate_regions(accepted, self.region_options)
 
@@ -142,6 +153,41 @@ class LayoutAnalyzer:
             "rejected": rejected,
             "consolidation": consolidation_events,
         }
+
+    def _filter_candidates_with_diagnostics(
+        self,
+        gray: np.ndarray,
+        candidates: List[ImageRegion],
+    ) -> tuple[List[ImageRegion], List[Dict[str, Any]]]:
+        accepted: List[ImageRegion] = []
+        rejected: List[Dict[str, Any]] = []
+        for region in candidates:
+            diagnostic = self.text_filter.candidate_diagnostics(gray, region)
+            reason = diagnostic.get("rejection_reason")
+            if reason:
+                rejected.append({
+                    "region": region.to_dict(),
+                    "rejection_reason": reason,
+                    "scores": diagnostic.get("scores", {}),
+                    "features": diagnostic.get("features", {}),
+                })
+            else:
+                accepted.append(self._region_with_diagnostics(region, diagnostic))
+        return accepted, rejected
+
+    @staticmethod
+    def _region_with_diagnostics(region: ImageRegion, diagnostic: Dict[str, Any]) -> ImageRegion:
+        metadata = dict(getattr(region, "metadata", {}) or {})
+        metadata.update({
+            "accepted_reason": diagnostic.get("accepted_reason"),
+            "text_like_score": diagnostic.get("scores", {}).get("text_like_score"),
+            "figure_like_score": diagnostic.get("scores", {}).get("figure_like_score"),
+            "photo_like_score": diagnostic.get("scores", {}).get("photo_like_score"),
+            "sparse_symbol_score": diagnostic.get("scores", {}).get("sparse_symbol_score"),
+            "crop_quality_score": diagnostic.get("scores", {}).get("crop_quality_score"),
+            "diagnostic_features": diagnostic.get("features", {}),
+        })
+        return replace(region, metadata=metadata)
 
     def _detect_image_region_candidates(self, gray: np.ndarray) -> List[ImageRegion]:
         regions: List[ImageRegion] = []

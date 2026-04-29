@@ -32,9 +32,9 @@ class TextRegionFilter:
         self.cc_median_max = float(cfg.get('text_cc_median_max', 180.0)) # default 180.0
         self.options = RegionDetectionOptions.from_config(cfg)
 
-        # Exempt region types. Classical contour diagrams should not be exempt,
-        # because real-page review showed they may actually be text fragments.
-        self.exempt_types = set(cfg.get('filter_text_exempt_types', ['figure']))
+        # Exempt region types. Keep empty by default: real-page review showed
+        # heuristic "figure" candidates can be plain text fragments.
+        self.exempt_types = set(cfg.get('filter_text_exempt_types', []))
 
     # --------- Detection of text blocks (MSER) ----------
     def detect_mser(self, gray: np.ndarray,
@@ -83,37 +83,139 @@ class TextRegionFilter:
 
     def rejection_reason(self, gray: np.ndarray, region: ImageRegion) -> str | None:
         """Return a rejection reason for text-like image candidates, or None."""
+        return self.candidate_diagnostics(gray, region).get("rejection_reason")
+
+    def candidate_diagnostics(self, gray: np.ndarray, region: ImageRegion) -> Dict[str, Any]:
+        """Return scoring diagnostics plus the final accept/reject decision."""
         if gray.dtype != np.uint8:
             gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
 
         if getattr(region, "region_type", "") in self.exempt_types:
-            return None
+            return {
+                "rejection_reason": None,
+                "accepted_reason": "exempt_region_type",
+                "features": {"region_type": getattr(region, "region_type", None)},
+                "scores": {
+                    "text_like_score": 0.0,
+                    "figure_like_score": 1.0,
+                    "photo_like_score": 0.0,
+                    "sparse_symbol_score": 0.0,
+                    "crop_quality_score": 1.0,
+                },
+            }
 
         x, y, w, h = region.x, region.y, region.width, region.height
         x = max(0, x); y = max(0, y)
         w = min(w, gray.shape[1] - x); h = min(h, gray.shape[0] - y)
+        base = {
+            "features": {
+                "region_type": getattr(region, "region_type", None),
+                "x": x,
+                "y": y,
+                "width": w,
+                "height": h,
+            },
+            "scores": {
+                "text_like_score": 0.0,
+                "figure_like_score": 0.0,
+                "photo_like_score": 0.0,
+                "sparse_symbol_score": 0.0,
+                "crop_quality_score": 0.0,
+            },
+        }
         if w <= 0 or h <= 0:
-            return "invalid_bounds"
+            return {**base, "rejection_reason": "invalid_bounds", "accepted_reason": None}
 
         options = self.options
         area = w * h
         aspect = w / float(h) if h else 0.0
         if area < options.min_area or w < options.min_width or h < options.min_height:
-            return "too_small"
+            return {**base, "rejection_reason": "too_small", "accepted_reason": None}
         if not (options.min_diagram_aspect_ratio <= aspect <= options.max_diagram_aspect_ratio):
-            return "bad_aspect_ratio"
+            return {**base, "rejection_reason": "bad_aspect_ratio", "accepted_reason": None}
         if not options.reject_text_like:
-            return None
+            return {**base, "rejection_reason": None, "accepted_reason": "text_filter_disabled"}
 
         roi = gray[y:y + h, x:x + w]
         metrics = self.text_like_metrics(roi)
+        metrics["page_area_ratio"] = float(area) / float(max(1, gray.shape[0] * gray.shape[1]))
+        scores = self._candidate_scores(metrics, options)
+        features = {**base["features"], **metrics}
+        old_reason = self._legacy_rejection_reason(metrics, options)
+        visual_score = max(
+            scores["figure_like_score"],
+            scores["photo_like_score"],
+            scores["sparse_symbol_score"],
+        )
+
+        reason = None
+        if (
+            old_reason in {"regular_text_projection", "text_line_like", "title_text_like"}
+            and (
+                (
+                    scores["text_like_score"] >= options.text_score_reject_threshold
+                    and scores["photo_like_score"] < options.broad_crop_visual_override_threshold
+                )
+                or (
+                    metrics["max_dark_component_area_ratio"] < 0.20
+                    and visual_score < options.broad_crop_visual_override_threshold
+                )
+            )
+        ):
+            reason = old_reason
+        elif (
+            old_reason == "regular_text_projection"
+            and scores["photo_like_score"] < options.broad_crop_visual_override_threshold
+            and (
+                scores["text_like_score"] >= 0.55
+                or (
+                    scores["figure_like_score"] < 0.75
+                    and metrics["max_dark_component_area_ratio"] < 0.12
+                )
+            )
+        ):
+            reason = old_reason
+        elif (
+            old_reason == "text_like_density"
+            and bool(metrics.get("regular_text_projection", 0.0))
+            and scores["text_like_score"] >= 0.55
+        ):
+            reason = old_reason
+        elif old_reason and visual_score < options.visual_score_override_threshold:
+            reason = old_reason
+        elif (
+            scores["text_like_score"] >= options.text_score_reject_threshold
+            and visual_score < options.visual_score_override_threshold
+        ):
+            reason = "scored_text_like"
+        elif (
+            metrics["page_area_ratio"] >= options.broad_crop_area_ratio
+            and scores["text_like_score"] >= 0.55
+            and visual_score < options.broad_crop_visual_override_threshold
+        ):
+            reason = "broad_text_like_crop"
+
+        if reason:
+            return {
+                "rejection_reason": reason,
+                "accepted_reason": None,
+                "features": features,
+                "scores": scores,
+            }
+
+        return {
+            "rejection_reason": None,
+            "accepted_reason": self._accepted_reason(scores),
+            "features": features,
+            "scores": scores,
+        }
+
+    def _legacy_rejection_reason(self, metrics: dict[str, float], options: RegionDetectionOptions) -> str | None:
         if metrics["density"] > options.max_text_like_density:
             return "text_like_density"
 
         if self._looks_like_sparse_text_band(metrics, options):
             return "sparse_text_band"
-        if self._looks_like_labeled_diagram(metrics, options):
-            return None
         if self._looks_like_text_fragment(metrics, options):
             return "text_like_components"
         if options.reject_rotated_text_like and self._looks_like_rotated_text(metrics, options):
@@ -125,7 +227,21 @@ class TextRegionFilter:
         if (
             metrics["component_count"] >= options.text_like_min_components
             and metrics["small_component_fraction"] <= options.text_like_max_small_component_fraction
-            and self._has_regular_text_projection(roi)
+            and bool(metrics.get("regular_text_projection", 0.0))
+        ):
+            return "regular_text_projection"
+        if (
+            bool(metrics.get("regular_text_projection", 0.0))
+            and metrics["aspect_ratio"] >= 1.5
+            and metrics["component_count"] >= 20
+            and metrics["max_dark_component_area_ratio"] < 0.02
+        ):
+            return "regular_text_projection"
+        if (
+            bool(metrics.get("regular_text_projection", 0.0))
+            and metrics["density"] >= 0.08
+            and metrics["component_count"] <= options.title_text_max_components + 20
+            and metrics["max_dark_component_area_ratio"] < 0.12
         ):
             return "regular_text_projection"
         return None
@@ -149,6 +265,11 @@ class TextRegionFilter:
         col_occupancy = float(np.mean(vertical_projection > 0))
 
         h, w = inv.shape[:2]
+        edge_density, hough_line_count = self._edge_metrics(roi)
+        max_dark_component_ratio, large_dark_component_count = self._dark_component_metrics(roi)
+        horizontal_peak_count, horizontal_peak_std = self._projection_peak_metrics(horizontal_projection, max(1, w))
+        vertical_peak_count, vertical_peak_std = self._projection_peak_metrics(vertical_projection, max(1, h))
+        component_area_ratio = mean_area / max(1.0, median_area)
         return {
             "width": float(w),
             "height": float(h),
@@ -158,9 +279,25 @@ class TextRegionFilter:
             "component_count": float(component_count),
             "median_component_area": median_area,
             "mean_component_area": mean_area,
+            "component_area_ratio": float(component_area_ratio),
             "small_component_fraction": small_fraction,
             "row_occupancy": row_occupancy,
             "col_occupancy": col_occupancy,
+            "edge_density": edge_density,
+            "hough_line_count": float(hough_line_count),
+            "gray_std": float(np.std(roi)),
+            "dark80_fraction": float(np.mean(roi < 80)),
+            "dark120_fraction": float(np.mean(roi < 120)),
+            "max_dark_component_area_ratio": max_dark_component_ratio,
+            "large_dark_component_count": float(large_dark_component_count),
+            "horizontal_peak_count": float(horizontal_peak_count),
+            "horizontal_peak_spacing_std": float(horizontal_peak_std),
+            "vertical_peak_count": float(vertical_peak_count),
+            "vertical_peak_spacing_std": float(vertical_peak_std),
+            "regular_text_projection": float(
+                self._regular_peak_pattern(horizontal_peak_count, horizontal_peak_std)
+                or self._regular_peak_pattern(vertical_peak_count, vertical_peak_std)
+            ),
         }
 
     def _looks_like_text_fragment(self, metrics: dict[str, float], options: RegionDetectionOptions) -> bool:
@@ -170,6 +307,111 @@ class TextRegionFilter:
             and options.text_like_min_median_component_area <= metrics["median_component_area"] <= options.text_like_max_median_component_area
             and metrics["small_component_fraction"] <= options.text_like_max_small_component_fraction
         )
+
+    def _candidate_scores(
+        self,
+        metrics: dict[str, float],
+        options: RegionDetectionOptions,
+    ) -> dict[str, float]:
+        text_score = 0.0
+        if options.text_like_min_density <= metrics["density"] <= options.text_like_max_density:
+            text_score += 0.18
+        if (
+            metrics["component_count"] >= options.text_like_min_components
+            and metrics["small_component_fraction"] >= 0.85
+            and metrics["median_component_area"] <= 90.0
+        ):
+            text_score += 0.35
+        if metrics["row_occupancy"] >= 0.70 and metrics["col_occupancy"] >= 0.70:
+            text_score += 0.15
+        if metrics["regular_text_projection"]:
+            text_score += 0.25
+        if (
+            metrics["height"] <= options.text_line_max_height
+            and metrics["aspect_ratio"] >= options.text_line_min_aspect_ratio
+        ):
+            text_score += 0.20
+        if metrics["page_area_ratio"] >= options.broad_crop_area_ratio:
+            text_score += 0.18
+        if metrics["aspect_ratio"] <= options.vertical_text_max_aspect_ratio + 0.15:
+            text_score += 0.12
+        text_score = min(1.0, text_score)
+
+        figure_score = 0.0
+        if 0.015 <= metrics["edge_density"] <= 0.28:
+            figure_score += 0.18
+        if metrics["hough_line_count"] >= 3:
+            figure_score += 0.25
+        if metrics["max_dark_component_area_ratio"] >= 0.025:
+            figure_score += 0.25
+        if (
+            metrics["component_area_ratio"] >= options.labeled_diagram_min_component_area_ratio
+            and 0.25 <= metrics["small_component_fraction"] <= 0.85
+            and metrics["density"] <= options.labeled_diagram_max_density
+        ):
+            figure_score += 0.25
+        figure_score = min(1.0, figure_score)
+
+        photo_score = 0.0
+        if (
+            metrics["gray_std"] >= options.photo_like_min_std
+            and metrics["dark120_fraction"] >= options.photo_like_min_dark_fraction
+            and metrics["edge_density"] >= options.photo_like_min_edge_density
+            and min(metrics["width"], metrics["height"]) >= options.visual_min_dimension_for_photo
+        ):
+            photo_score += 0.58
+        min_dimension = min(metrics["width"], metrics["height"])
+        if metrics["max_dark_component_area_ratio"] >= 0.08 and min_dimension >= 80:
+            photo_score += 0.25
+        if metrics["max_dark_component_area_ratio"] >= 0.15 and min_dimension >= 80:
+            photo_score += 0.50
+        if metrics["large_dark_component_count"] >= 1 and min_dimension >= 80:
+            photo_score += 0.10
+        photo_score = min(1.0, photo_score)
+
+        sparse_symbol_score = 0.0
+        if (
+            metrics["density"] <= 0.16
+            and metrics["edge_density"] >= 0.015
+            and metrics["hough_line_count"] >= 2
+            and (
+                metrics["max_dark_component_area_ratio"] >= 0.02
+                or metrics["component_count"] <= 24
+            )
+        ):
+            sparse_symbol_score += 0.65
+        if metrics["max_dark_component_area_ratio"] >= 0.02 and metrics["density"] <= 0.25:
+            sparse_symbol_score += 0.20
+        sparse_symbol_score = min(1.0, sparse_symbol_score)
+
+        crop_quality = 1.0
+        if metrics["page_area_ratio"] >= options.broad_crop_area_ratio:
+            crop_quality -= min(0.45, (metrics["page_area_ratio"] - options.broad_crop_area_ratio) * 1.4)
+        if metrics["aspect_ratio"] < options.min_diagram_aspect_ratio or metrics["aspect_ratio"] > options.max_diagram_aspect_ratio:
+            crop_quality -= 0.4
+        if text_score > 0.65 and max(figure_score, photo_score, sparse_symbol_score) < 0.6:
+            crop_quality -= 0.25
+        crop_quality = max(0.0, min(1.0, crop_quality))
+
+        return {
+            "text_like_score": round(text_score, 4),
+            "figure_like_score": round(figure_score, 4),
+            "photo_like_score": round(photo_score, 4),
+            "sparse_symbol_score": round(sparse_symbol_score, 4),
+            "crop_quality_score": round(crop_quality, 4),
+        }
+
+    @staticmethod
+    def _accepted_reason(scores: dict[str, float]) -> str:
+        visual = {
+            "figure_like": scores["figure_like_score"],
+            "photo_like": scores["photo_like_score"],
+            "sparse_symbol": scores["sparse_symbol_score"],
+        }
+        best = max(visual, key=visual.get)
+        if visual[best] >= 0.58:
+            return best
+        return "low_text_evidence"
 
     def _looks_like_labeled_diagram(self, metrics: dict[str, float], options: RegionDetectionOptions) -> bool:
         """Preserve drawings that contain labels plus larger strokes/shapes.
@@ -251,3 +493,42 @@ class TextRegionFilter:
             pass
 
         return False
+
+    @staticmethod
+    def _edge_metrics(roi: np.ndarray) -> tuple[float, int]:
+        edges = cv2.Canny(roi, 50, 150)
+        edge_density = float(np.mean(edges > 0))
+        min_len = max(12, int(min(roi.shape[:2]) * 0.20))
+        lines = cv2.HoughLinesP(
+            edges,
+            1,
+            np.pi / 180,
+            35,
+            minLineLength=min_len,
+            maxLineGap=8,
+        )
+        return edge_density, int(len(lines)) if lines is not None else 0
+
+    @staticmethod
+    def _dark_component_metrics(roi: np.ndarray) -> tuple[float, int]:
+        _, binary = cv2.threshold(roi, 80, 255, cv2.THRESH_BINARY_INV)
+        num_labels, _labels, stats, _centroids = cv2.connectedComponentsWithStats(binary, connectivity=8)
+        areas = stats[1:, cv2.CC_STAT_AREA]
+        if not areas.size:
+            return 0.0, 0
+        area = max(1, int(roi.shape[0] * roi.shape[1]))
+        return float(np.max(areas) / area), int(np.sum(areas >= 500))
+
+    @staticmethod
+    def _projection_peak_metrics(projection: np.ndarray, span: int) -> tuple[int, float]:
+        if projection.size <= 10:
+            return 0, 999.0
+        prominence = max(1.0, span * 0.02)
+        peaks, _ = find_peaks(projection, distance=8, prominence=prominence)
+        if peaks.size <= 2:
+            return int(peaks.size), 999.0
+        return int(peaks.size), float(np.std(np.diff(peaks)))
+
+    @staticmethod
+    def _regular_peak_pattern(count: int | float, spacing_std: float) -> bool:
+        return bool(count >= 5 and spacing_std < 8.0)

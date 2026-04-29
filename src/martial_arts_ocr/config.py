@@ -202,9 +202,11 @@ class Config:
         'yolo_imgsz': 1536,  # good balance for thin lines
         'yolo_tta': False,  # set True for high-recall QA runs only
 
-        # Make sure the text filter never rejects YOLO boxes. Classical contour
-        # "diagram" candidates are still filtered because they can be text.
-        'filter_text_exempt_types': ['figure'],
+        # Classical heuristic "figure" candidates are filtered because they can
+        # be text. YOLO remains opt-in and should use its own high-confidence
+        # path rather than broad corpus-specific exemptions.
+        'filter_text_exempt_types': [],
+        'figure_isolation_white': 0.55,
 
         # OCR-free text-like rejection for image/diagram candidates
         'region_reject_text_like': True,
@@ -215,7 +217,7 @@ class Config:
         'region_text_like_min_median_component_area': 60.0,
         'region_text_like_max_median_component_area': 260.0,
         'region_text_like_max_small_component_fraction': 0.45,
-        'region_title_text_max_components': 24,
+        'region_title_text_max_components': 40,
         'region_title_text_max_row_occupancy': 0.55,
         'region_title_text_min_col_occupancy': 0.62,
         'region_text_line_max_height': 90,
@@ -244,6 +246,14 @@ class Config:
         'region_adjacent_merge_gap_px': 24,
         'region_adjacent_merge_max_area_growth_ratio': 1.75,
         'region_adjacent_merge_min_axis_overlap_ratio': 0.25,
+        'region_text_score_reject_threshold': 0.72,
+        'region_visual_score_override_threshold': 0.58,
+        'region_broad_crop_area_ratio': 0.25,
+        'region_broad_crop_visual_override_threshold': 0.78,
+        'region_photo_like_min_std': 55.0,
+        'region_photo_like_min_dark_fraction': 0.10,
+        'region_photo_like_min_edge_density': 0.16,
+        'region_visual_min_dimension_for_photo': 120,
 
         # ---------------------------
         # Merging & NMS postprocess

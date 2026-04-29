@@ -179,3 +179,28 @@ Default remains off because:
 - Tall/narrow visual strips can still be missed.
 - Only the Donn Draeger DFD corpus has been reviewed in depth.
 - Extracted image regions should be treated as candidate regions, not authoritative layout truth.
+
+## Cross-Corpus Scoring Pass
+
+Corpus 2 showed that DFD-tuned hard rejection rules did not generalize cleanly: text columns, title/sidebar bands, and broad mixed crops were accepted again. The detector now adds candidate-level scoring diagnostics rather than per-corpus presets.
+
+Accepted and rejected candidate metadata may include:
+
+```text
+accepted_reason
+text_like_score
+figure_like_score
+photo_like_score
+sparse_symbol_score
+crop_quality_score
+diagnostic_features
+```
+
+The default review-mode detector now filters heuristic `figure` candidates too. This matters because non-ML figure proposals can still be plain text after thresholding. YOLO remains opt-in and is not the default path.
+
+The scoring model is still conservative:
+
+- DFD known-good image regions are retained.
+- Corpus 2 text-block false positives are reduced.
+- Corpus 2 photo-grid recall improves but remains partial.
+- Runtime extraction remains disabled by default.

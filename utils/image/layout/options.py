@@ -22,7 +22,7 @@ class RegionDetectionOptions:
     text_like_min_median_component_area: float = 60.0
     text_like_max_median_component_area: float = 260.0
     text_like_max_small_component_fraction: float = 0.45
-    title_text_max_components: int = 24
+    title_text_max_components: int = 40
     title_text_max_row_occupancy: float = 0.55
     title_text_min_col_occupancy: float = 0.62
     text_line_max_height: int = 90
@@ -51,6 +51,14 @@ class RegionDetectionOptions:
     adjacent_merge_gap_px: int = 24
     adjacent_merge_max_area_growth_ratio: float = 1.75
     adjacent_merge_min_axis_overlap_ratio: float = 0.25
+    text_score_reject_threshold: float = 0.72
+    visual_score_override_threshold: float = 0.58
+    broad_crop_area_ratio: float = 0.25
+    broad_crop_visual_override_threshold: float = 0.78
+    photo_like_min_std: float = 55.0
+    photo_like_min_dark_fraction: float = 0.10
+    photo_like_min_edge_density: float = 0.16
+    visual_min_dimension_for_photo: int = 120
 
     @classmethod
     def from_config(cls, cfg: Mapping[str, Any]) -> "RegionDetectionOptions":
