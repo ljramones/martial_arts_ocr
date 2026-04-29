@@ -162,9 +162,18 @@ def _summarize_pipeline_result(sample: dict[str, Any], pipeline_result: Any) -> 
             "readable_text_length": len(readable_text),
             "word_region_count": len(word_regions),
             "line_region_count": len(line_regions),
+            "canonical_word_region_count": len(word_regions),
+            "canonical_line_region_count": len(line_regions),
             "metadata_ocr_word_count": page.metadata.get("ocr_word_count"),
             "metadata_ocr_line_count": page.metadata.get("ocr_line_count"),
             "ocr_text_box_count": len(page.metadata.get("ocr_text_boxes", [])),
+            "alternate_candidate_count": len(page.metadata.get("ocr_alternative_candidates", [])),
+            "alternate_candidate_word_box_count": sum(
+                int(candidate.get("word_box_count") or 0)
+                for candidate in page.metadata.get("ocr_alternative_candidates", [])
+                if not candidate.get("selected")
+            ),
+            "alternate_candidates": page.metadata.get("ocr_alternative_candidates", []),
             "raw_text_preview": _first_lines(raw_text),
             "cleaned_text_preview": _first_lines(cleaned_text),
             "readable_text_preview": _first_lines(readable_text),

@@ -77,6 +77,23 @@ Serialization expectations:
 - `DocumentResult.to_dict()` keeps both compact readable metadata and OCR box
   metadata
 
+## Selected OCR Result as Canonical Text Source
+
+When an OCR run produces multiple candidates, such as Tesseract PSM `11`, `3`,
+and `6`, canonical word regions now come from the selected/best OCR result only.
+
+```text
+best_ocr_result.bounding_boxes
+  -> word TextRegions
+  -> derived line TextRegions
+  -> readable_text
+```
+
+Alternate OCR candidates are retained as compact diagnostics in
+`PageResult.metadata["ocr_alternative_candidates"]`. Their boxes are not mixed
+into canonical `text_regions`, which prevents repeated words in
+`readable_text`.
+
 ## Current Limits
 
 - Grouping is simple: sort by vertical center, then horizontal position.
@@ -87,6 +104,8 @@ Serialization expectations:
 - This is not final page reconstruction.
 - The tests use synthetic OCR outputs. Real DFD/Corpus 2 OCR text still needs a
   review fixture pass.
+- Real Japanese/macron preservation still needs a language-enabled OCR sampling
+  pass; current real-page validation used English-only OCR.
 
 ## Next Work
 

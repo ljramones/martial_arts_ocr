@@ -73,13 +73,20 @@ def _page_from_flat_output(ocr_output: Any) -> PageResult:
         _value(ocr_output, "confidence", _value(ocr_output, "overall_confidence"))
     )
     width, height = _dimensions_from_any(ocr_output)
-    ocr_text_regions = ocr_text_regions_from_ocr_output(ocr_output)
+    ocr_source = _canonical_ocr_box_source(ocr_output)
+    ocr_text_regions = ocr_text_regions_from_ocr_output(
+        ocr_source,
+        engine=_value(ocr_source, "engine"),
+    )
     text_regions = _text_regions_from_any(_value(ocr_output, "text_regions"), text)
     if ocr_text_regions:
         text_regions = ocr_text_regions
     metadata = {"legacy_page": _safe_legacy_dict(ocr_output)}
     if ocr_text_regions:
         metadata["ocr_text_boxes"] = [region.to_dict() for region in ocr_text_regions]
+    alternatives = _ocr_alternative_candidate_summaries(ocr_output, selected=ocr_source)
+    if alternatives:
+        metadata["ocr_alternative_candidates"] = alternatives
     page = PageResult(
         page_number=1,
         width=width,
@@ -102,13 +109,20 @@ def _page_from_page_output(page_output: Any, page_number: int) -> PageResult:
         _value(page_output, "confidence", _value(page_output, "overall_confidence"))
     )
     width, height = _dimensions_from_any(page_output)
-    ocr_text_regions = ocr_text_regions_from_ocr_output(page_output)
+    ocr_source = _canonical_ocr_box_source(page_output)
+    ocr_text_regions = ocr_text_regions_from_ocr_output(
+        ocr_source,
+        engine=_value(ocr_source, "engine"),
+    )
     text_regions = _text_regions_from_any(_value(page_output, "text_regions"), text)
     if ocr_text_regions:
         text_regions = ocr_text_regions
     metadata = {"legacy_page": _safe_legacy_dict(page_output)}
     if ocr_text_regions:
         metadata["ocr_text_boxes"] = [region.to_dict() for region in ocr_text_regions]
+    alternatives = _ocr_alternative_candidate_summaries(page_output, selected=ocr_source)
+    if alternatives:
+        metadata["ocr_alternative_candidates"] = alternatives
     page = PageResult(
         page_number=int(_value(page_output, "page_number", page_number) or page_number),
         width=width,
@@ -182,6 +196,70 @@ def ocr_text_boxes_from_ocr_output(value: Any, *, engine: str | None = None) -> 
         if box is not None:
             normalized.append(box)
     return normalized
+
+
+def _canonical_ocr_box_source(value: Any) -> Any:
+    """Return the OCR result whose boxes should become canonical text regions."""
+
+    for key in ("best_ocr_result", "selected_result", "primary_result"):
+        result = _value(value, key)
+        if result is not None:
+            return result
+    return value
+
+
+def _ocr_alternative_candidate_summaries(value: Any, *, selected: Any) -> list[dict[str, Any]]:
+    """Summarize non-selected OCR candidates without promoting their boxes."""
+
+    candidates = list(_value(value, "ocr_results", []) or [])
+    summaries: list[dict[str, Any]] = []
+    selected_matched = False
+    selected_index = _candidate_identity(selected)
+
+    for candidate in candidates:
+        candidate_index = _candidate_identity(candidate)
+        is_selected = candidate is selected or (
+            selected_index is not None and candidate_index == selected_index
+        )
+        selected_matched = selected_matched or is_selected
+        summaries.append(_ocr_candidate_summary(candidate, selected=is_selected))
+
+    if selected is not value and selected is not None and not selected_matched:
+        summaries.insert(0, _ocr_candidate_summary(selected, selected=True))
+
+    return summaries
+
+
+def _ocr_candidate_summary(candidate: Any, *, selected: bool) -> dict[str, Any]:
+    text = _text_from_any(candidate)
+    metadata = _value(candidate, "metadata", {}) or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    return {
+        "engine": _value(candidate, "engine", metadata.get("engine", "unknown")),
+        "psm": metadata.get("psm", metadata.get("psm_used")),
+        "confidence": _float_or_none(
+            _value(candidate, "confidence", _value(candidate, "overall_confidence"))
+        ),
+        "text_length": len(text),
+        "word_box_count": len(ocr_text_boxes_from_ocr_output(candidate)),
+        "selected": bool(selected),
+    }
+
+
+def _candidate_identity(candidate: Any) -> tuple[Any, ...] | None:
+    if candidate is None:
+        return None
+    metadata = _value(candidate, "metadata", {}) or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    return (
+        _value(candidate, "engine", metadata.get("engine")),
+        metadata.get("psm", metadata.get("psm_used")),
+        _text_from_any(candidate),
+        _float_or_none(_value(candidate, "confidence", _value(candidate, "overall_confidence"))),
+        len(ocr_text_boxes_from_ocr_output(candidate)),
+    )
 
 
 def _text_from_any(value: Any) -> str:

@@ -413,6 +413,32 @@ The only cleanup bug fixed in this pass was the whitespace regex that flattened
 newlines in `OCRPostProcessor`. No extraction behavior, OCR engine behavior, or
 Japanese analysis model behavior changed.
 
+## Implemented Follow-Up: Selected OCR Box Source
+
+Real-page validation showed that canonical OCR boxes were being aggregated from
+both `best_ocr_result` and every alternate Tesseract PSM candidate. That made
+derived `readable_text` much noisier than cleaned text because the same words
+appeared several times in overlapping boxes.
+
+Canonical text geometry now uses the selected OCR result only:
+
+```text
+best_ocr_result.bounding_boxes
+  -> canonical word TextRegions
+  -> derived line TextRegions
+  -> readable_text
+```
+
+Alternate PSM candidates remain available as compact metadata under
+`PageResult.metadata["ocr_alternative_candidates"]` with engine, PSM,
+confidence, text length, word-box count, and selected status. Their boxes are
+not promoted into canonical `text_regions` and do not participate in line
+grouping.
+
+This preserves diagnostics while avoiding duplicated readable text. Real
+Japanese/macron preservation still needs a language-enabled OCR sampling pass,
+because the first real-page review used English-only Tesseract output.
+
 ## Files Reviewed
 
 - `src/martial_arts_ocr/ocr/processor.py`
