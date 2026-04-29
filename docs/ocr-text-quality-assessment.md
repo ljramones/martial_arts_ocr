@@ -439,6 +439,27 @@ This preserves diagnostics while avoiding duplicated readable text. Real
 Japanese/macron preservation still needs a language-enabled OCR sampling pass,
 because the first real-page review used English-only Tesseract output.
 
+## Implemented Follow-Up: Adaptive Line Grouping
+
+Line grouping now uses selected OCR word boxes with adaptive geometry:
+
+- default grouping tolerance is based on median word height
+- words can join a line by close vertical center or strong vertical overlap
+- words are ordered left-to-right within each derived line
+- large horizontal gaps are preserved in `readable_text`
+- uncertain wide-gap lines are marked with
+  `metadata["reading_order_uncertain"]=true`
+- derived lines record
+  `metadata["line_grouping_method"]="adaptive_center_overlap_v1"`
+
+Fixture coverage now includes normal paragraph lines, y-jitter on one visual
+line, close but separate lines, large x gaps, caption-like lines, list-like
+text, and Japanese/macron/punctuation preservation.
+
+This is still not full page reconstruction. Multi-column documents, vertical
+Japanese, figure/caption interleaving, and article/photo layouts remain future
+work.
+
 ## Files Reviewed
 
 - `src/martial_arts_ocr/ocr/processor.py`

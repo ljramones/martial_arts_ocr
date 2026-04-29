@@ -28,6 +28,27 @@ Readable page text:
 - built by sorting line regions by reading order
 - preserves line breaks between derived lines
 
+## Line Grouping
+
+Line grouping now uses an adaptive geometry rule:
+
+- candidate words are ordered by vertical center and x position
+- default y tolerance is based on median word height
+- words can join a line by close vertical center or strong y-overlap
+- words within a line are sorted left-to-right
+- unusually large x gaps are preserved with extra spacing and marked as
+  `reading_order_uncertain`
+
+Derived line metadata includes:
+
+```text
+line_grouping_method=adaptive_center_overlap_v1
+reading_order_uncertain=true|false
+```
+
+This improves simple paragraph/list/caption readability without attempting full
+multi-column reconstruction.
+
 ## Preservation Rules
 
 Japanese, macrons, and martial-arts punctuation must survive normalization:
@@ -96,7 +117,7 @@ into canonical `text_regions`, which prevents repeated words in
 
 ## Current Limits
 
-- Grouping is simple: sort by vertical center, then horizontal position.
+- Grouping is still local and line-oriented, not full page layout analysis.
 - Multi-column reading order is not solved.
 - Vertical Japanese layout is not solved.
 - Word boxes are still serialized alongside line regions, so `data.json` can
@@ -109,6 +130,6 @@ into canonical `text_regions`, which prevents repeated words in
 
 ## Next Work
 
-The next pass should use the validated cleanup/hierarchy path on representative
-real OCR outputs before promoting Japanese analysis or changing page
-reconstruction.
+The next pass should evaluate whether `data.json` and `page_1.html` expose the
+line hierarchy clearly enough for review before promoting Japanese analysis or
+changing reconstruction.
