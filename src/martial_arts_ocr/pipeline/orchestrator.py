@@ -233,10 +233,12 @@ class WorkflowOrchestrator:
         document_result: DocumentResult,
     ) -> dict[str, Path]:
         paths: dict[str, Path] = {}
+        reconstructed_html: str | None = None
 
         try:
             reconstructor = self._page_reconstructor or self._build_default_reconstructor()
             reconstructed_page = reconstructor.reconstruct_page(document_result, str(request.image_path))
+            reconstructed_html = reconstructed_page.to_dict().get("html_content")
             page_data_path = output_dir / "page_data.json"
             page_data_path.write_text(
                 json.dumps(reconstructed_page.to_dict(), ensure_ascii=False, indent=2),
@@ -262,7 +264,7 @@ class WorkflowOrchestrator:
         json_path.write_text(json.dumps(json_data, ensure_ascii=False, indent=2), encoding="utf-8")
         paths["json_path"] = json_path
 
-        html = self._legacy_field(document_result, "html_content")
+        html = reconstructed_html or self._legacy_field(document_result, "html_content")
         if not html and "page_data_path" in paths:
             try:
                 page_data = json.loads(paths["page_data_path"].read_text(encoding="utf-8"))

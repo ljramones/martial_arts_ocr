@@ -89,11 +89,24 @@ text.txt
 `data.json` includes full canonical serialization plus legacy aliases.
 `text.txt` now prefers document readable text when available, falling back to
 combined page text.
+`page_1.html` now prefers canonical `PageReconstructor` HTML when it is
+available, while legacy `html_content` remains available in `data.json` and as
+a fallback.
+
+`PageReconstructor` now uses line regions as the default visible text layer for
+canonical `DocumentResult` input. Word regions remain serialized for geometry
+and debugging, but they are not rendered as visible text by default. When line
+regions are unavailable, reconstruction falls back to page `readable_text`, then
+`raw_text`, then combined text.
+
+When line grouping marks a page as uncertain, reconstruction metadata and HTML
+surface that state so reviewers know the visible text may need ordering review.
 
 ## Current Limits
 
 - Word boxes are still present in full `data.json`; the output is not a minimal
   review-only format.
 - Multi-column reading order is not solved.
-- `page_1.html` remains a debug/review artifact, not final reconstruction.
+- `page_1.html` is more readable than the word-level debug dump, but remains a
+  debug/review artifact, not final reconstruction.
 - Japanese analysis has not been promoted into first-class fields.

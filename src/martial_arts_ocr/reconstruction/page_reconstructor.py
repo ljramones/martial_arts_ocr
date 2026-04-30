@@ -191,8 +191,12 @@ class PageReconstructor:
         page_width = page.width or 1240
         page_height = page.height or 1754
         elements: List[PageElement] = []
+        visible_text_source = self._canonical_visible_text_source(page)
+        reading_order_uncertain = self._canonical_reading_order_uncertain(page)
+        word_regions = page.word_regions()
+        line_regions = page.line_regions()
 
-        for index, region in enumerate(page.text_regions, start=1):
+        for index, region in enumerate(self._canonical_visible_text_regions(page), start=1):
             bbox = region.bbox
             elements.append(
                 PageElement(
@@ -203,7 +207,14 @@ class PageReconstructor:
                     width=bbox.width if bbox else page_width - 80,
                     height=bbox.height if bbox else 24,
                     confidence=region.confidence or page.confidence or 0.0,
-                    metadata={"region_id": region.region_id, **region.metadata},
+                    metadata={
+                        "region_id": region.region_id,
+                        "visible_text_source": visible_text_source,
+                        "ocr_word_count": page.metadata.get("ocr_word_count", len(word_regions)),
+                        "ocr_line_count": page.metadata.get("ocr_line_count", len(line_regions)),
+                        "reading_order_uncertain": reading_order_uncertain,
+                        **region.metadata,
+                    },
                 )
             )
 
@@ -232,11 +243,23 @@ class PageReconstructor:
                     width=page_width - 80,
                     height=24,
                     confidence=page.confidence or 0.0,
-                    metadata={},
+                    metadata={
+                        "visible_text_source": "fallback",
+                        "ocr_word_count": page.metadata.get("ocr_word_count", len(word_regions)),
+                        "ocr_line_count": page.metadata.get("ocr_line_count", len(line_regions)),
+                        "reading_order_uncertain": reading_order_uncertain,
+                    },
                 )
             )
 
         css_styles = self._generate_css_styles(page_width, page_height)
+        warning = ""
+        if reading_order_uncertain:
+            warning = (
+                '<div class="reconstruction-warning">'
+                "Reading order may be uncertain for this page."
+                "</div>"
+            )
         body = "\n".join(
             f'<div class="element {element.element_type}">{html.escape(element.content)}</div>'
             for element in elements
@@ -250,10 +273,24 @@ class PageReconstructor:
 </head>
 <body>
     <div class="page-container">
+        {warning}
         {body}
     </div>
 </body>
 </html>"""
+        reconstruction_metadata = {
+            "reconstruction_date": datetime.now().isoformat(),
+            "source_image": original_image_path,
+            "source_model": type(result).__name__,
+            "total_elements": len(elements),
+            "text_elements": len([e for e in elements if e.element_type == "text"]),
+            "image_elements": len([e for e in elements if e.element_type == "image"]),
+            "overall_confidence": page.confidence,
+            "visible_text_source": visible_text_source,
+            "ocr_word_count": page.metadata.get("ocr_word_count", len(word_regions)),
+            "ocr_line_count": page.metadata.get("ocr_line_count", len(line_regions)),
+            "reading_order_uncertain": reading_order_uncertain,
+        }
         return ReconstructedPage(
             page_id=f"page_{page.page_number}",
             title=f"Document {document_id or page.page_number}",
@@ -262,16 +299,70 @@ class PageReconstructor:
             css_styles=css_styles,
             page_width=page_width,
             page_height=page_height,
-            reconstruction_metadata={
-                "reconstruction_date": datetime.now().isoformat(),
-                "source_image": original_image_path,
-                "source_model": type(result).__name__,
-                "total_elements": len(elements),
-                "text_elements": len([e for e in elements if e.element_type == "text"]),
-                "image_elements": len([e for e in elements if e.element_type == "image"]),
-                "overall_confidence": page.confidence,
-            },
+            reconstruction_metadata=reconstruction_metadata,
         )
+
+    def _canonical_visible_text_regions(self, page: PipelinePageResult) -> List[Any]:
+        """Return text regions that should be visible in canonical reconstruction."""
+        line_regions = page.line_regions()
+        if line_regions:
+            return line_regions
+
+        readable_text = page.metadata.get("readable_text")
+        if readable_text:
+            return [
+                self._synthetic_text_region(
+                    region_id="readable_text",
+                    text=str(readable_text),
+                    source="readable_text",
+                    confidence=page.confidence,
+                )
+            ]
+
+        if page.raw_text:
+            return [
+                self._synthetic_text_region(
+                    region_id="raw_text",
+                    text=page.raw_text,
+                    source="raw_text",
+                    confidence=page.confidence,
+                )
+            ]
+
+        return []
+
+    def _synthetic_text_region(
+        self,
+        *,
+        region_id: str,
+        text: str,
+        source: str,
+        confidence: float | None = None,
+    ):
+        from martial_arts_ocr.pipeline.document_models import TextRegion
+
+        return TextRegion(
+            region_id=region_id,
+            text=text,
+            confidence=confidence,
+            metadata={"source": source},
+        )
+
+    def _canonical_visible_text_source(self, page: PipelinePageResult) -> str:
+        if page.line_regions():
+            return "line_regions"
+        if page.metadata.get("readable_text"):
+            return "readable_text"
+        if page.raw_text:
+            return "raw_text"
+        if page.combined_text():
+            return "fallback"
+        return "none"
+
+    def _canonical_reading_order_uncertain(self, page: PipelinePageResult) -> bool:
+        if page.metadata.get("reading_order_uncertain") is not None:
+            return bool(page.metadata.get("reading_order_uncertain"))
+        return bool(page.text_summary().get("reading_order_uncertain"))
 
     def _get_page_dimensions(self, image_path: str,
                              processing_result: ProcessingResult) -> Tuple[int, int]:

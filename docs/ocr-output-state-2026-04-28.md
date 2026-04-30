@@ -98,6 +98,13 @@ text.txt
 
 `page_1.html`:
 
+- uses line regions as the default visible text layer for canonical
+  `DocumentResult` reconstruction
+- keeps OCR word regions as serialized geometry/debug data rather than default
+  visible text
+- surfaces `reading_order_uncertain` when line grouping marks review risk
+- prefers canonical reconstruction HTML when available, with legacy
+  `html_content` retained as fallback
 - remains useful for debugging/review
 - is not yet polished page reconstruction
 
@@ -144,6 +151,9 @@ Summary:
 - Adaptive line grouping stabilized simple pages and added method/uncertainty
   metadata.
 - Serialization polish made `data.json` and `text.txt` easier to inspect.
+- The first reconstruction polish pass made canonical reconstruction prefer
+  line regions over word regions for visible text and surfaced reading-order
+  uncertainty.
 
 ## Known Limitations
 
@@ -156,6 +166,7 @@ Summary:
 - Word boxes are still present in full `data.json`, so output is readable but
   not minimal.
 - `page_1.html` remains a debugging artifact, not polished reconstruction.
+  It is no longer intended to render every OCR word as visible text by default.
 
 ## Do Not Change Right Now
 
@@ -172,7 +183,8 @@ Summary:
 - Focused Japanese OCR evaluation with better-selected samples.
 - OCR engine config / PSM / language selection strategy.
 - Line grouping and reading-order v2 for mixed layouts.
-- Page reconstruction from `line_regions` and `image_regions`.
+- Page reconstruction from `line_regions` and `image_regions`, beyond the
+  current line-visible debug artifact.
 - Japanese analysis promotion into canonical model fields.
 - Review/export workflow for correcting OCR text and boxes.
 - Annotation data for OCR/layout correction.

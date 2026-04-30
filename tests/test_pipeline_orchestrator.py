@@ -115,6 +115,22 @@ class FakeReadableTextProcessor:
         )
 
 
+class FakeReadableTextWithLegacyHtmlProcessor(FakeReadableTextProcessor):
+    def process_to_document_result(self, image_path, document_id: int | None = None):
+        result = super().process_to_document_result(image_path, document_id=document_id)
+        return DocumentResult(
+            document_id=result.document_id,
+            source_path=result.source_path,
+            pages=result.pages,
+            detected_languages=result.detected_languages,
+            confidence=result.confidence,
+            metadata={
+                **result.metadata,
+                "legacy": {"html_content": "<html>legacy WORD_ONLY_DEBUG</html>"},
+            },
+        )
+
+
 class FakePage:
     def to_dict(self):
         return {"pages": [], "source": "fake"}
@@ -437,3 +453,26 @@ def test_orchestrator_data_json_exposes_readable_text_summary(monkeypatch, tmp_p
     assert page["line_regions"][0]["text"] == "readable OCR text"
     assert page["word_regions"][0]["text"] == "readable"
     assert result.text_path.read_text(encoding="utf-8") == "readable OCR text"
+
+
+def test_orchestrator_page_html_prefers_canonical_reconstruction(monkeypatch, tmp_path):
+    runtime = _fresh_runtime(monkeypatch, tmp_path)
+    image_path = tmp_path / "scan_readable_text_with_legacy_html.png"
+    image_path.write_bytes(b"fake image bytes")
+    document_id = _create_document(runtime, image_path.name)
+
+    from martial_arts_ocr.pipeline import PipelineRequest, WorkflowOrchestrator
+
+    result = WorkflowOrchestrator(
+        processor=FakeReadableTextWithLegacyHtmlProcessor(),
+        session_factory=runtime.get_db_session,
+        processed_path_factory=lambda name: tmp_path / "data" / "processed" / name,
+        document_model=runtime.Document,
+        page_model=runtime.Page,
+        db_processing_result_model=runtime.ProcessingResult,
+    ).process_document(PipelineRequest(document_id=document_id, image_path=image_path))
+
+    assert result.success is True
+    html = result.html_path.read_text(encoding="utf-8")
+    assert "readable OCR text" in html
+    assert "legacy WORD_ONLY_DEBUG" not in html
