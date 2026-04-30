@@ -115,6 +115,19 @@ Alternate OCR candidates are retained as compact diagnostics in
 into canonical `text_regions`, which prevents repeated words in
 `readable_text`.
 
+## Serialization
+
+`PageResult.to_dict()` now exposes readable fields alongside the full region
+list:
+
+- `readable_text`
+- `text_summary`
+- `line_regions`
+- `word_regions`
+
+The original `text_regions` list remains intact for compatibility. See
+`docs/document-result-serialization.md` for artifact shape details.
+
 ## Current Limits
 
 - Grouping is still local and line-oriented, not full page layout analysis.

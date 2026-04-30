@@ -9,7 +9,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from martial_arts_ocr.pipeline.document_models import BoundingBox, DocumentResult, ImageRegion, PageResult
+from martial_arts_ocr.pipeline.document_models import BoundingBox, DocumentResult, ImageRegion, PageResult, TextRegion
 from martial_arts_ocr.pipeline.extraction_service import ExtractionService, ExtractionServiceOptions
 from utils.image.regions.core_types import ImageRegion as UtilityImageRegion
 
@@ -74,6 +74,45 @@ class FakeCanonicalProcessor:
     def process_document(self, image_path: str, document_id: int | None = None):
         self.process_document_called = True
         raise AssertionError("orchestrator should prefer process_to_document_result")
+
+
+class FakeReadableTextProcessor:
+    def process_to_document_result(self, image_path, document_id: int | None = None):
+        return DocumentResult(
+            document_id=document_id,
+            source_path=Path(image_path),
+            pages=[
+                PageResult(
+                    page_number=1,
+                    raw_text="raw OCR text",
+                    text_regions=[
+                        TextRegion(
+                            region_id="line_1",
+                            text="readable OCR text",
+                            bbox=BoundingBox(x=1, y=2, width=30, height=10),
+                            metadata={
+                                "source": "ocr_normalization",
+                                "ocr_level": "line",
+                                "line_grouping_method": "adaptive_center_overlap_v1",
+                                "reading_order_uncertain": False,
+                            },
+                        ),
+                        TextRegion(
+                            region_id="word_1",
+                            text="readable",
+                            bbox=BoundingBox(x=1, y=2, width=20, height=10),
+                            metadata={"source": "ocr_engine", "ocr_level": "word"},
+                        ),
+                    ],
+                    metadata={
+                        "readable_text": "readable OCR text",
+                        "ocr_word_count": 1,
+                        "ocr_line_count": 1,
+                    },
+                )
+            ],
+            metadata={"ocr_engine": "canonical"},
+        )
 
 
 class FakePage:
@@ -369,3 +408,32 @@ def test_orchestrator_without_extraction_service_keeps_image_regions_empty(monke
     assert result.success is True
     artifact_data = json.loads(result.json_path.read_text(encoding="utf-8"))
     assert artifact_data["pages"][0]["image_regions"] == []
+
+
+def test_orchestrator_data_json_exposes_readable_text_summary(monkeypatch, tmp_path):
+    runtime = _fresh_runtime(monkeypatch, tmp_path)
+    image_path = tmp_path / "scan_readable_text.png"
+    image_path.write_bytes(b"fake image bytes")
+    document_id = _create_document(runtime, image_path.name)
+
+    from martial_arts_ocr.pipeline import PipelineRequest, WorkflowOrchestrator
+
+    result = WorkflowOrchestrator(
+        processor=FakeReadableTextProcessor(),
+        page_reconstructor=FakeReconstructor(),
+        session_factory=runtime.get_db_session,
+        processed_path_factory=lambda name: tmp_path / "data" / "processed" / name,
+        document_model=runtime.Document,
+        page_model=runtime.Page,
+        db_processing_result_model=runtime.ProcessingResult,
+    ).process_document(PipelineRequest(document_id=document_id, image_path=image_path))
+
+    assert result.success is True
+    artifact_data = json.loads(result.json_path.read_text(encoding="utf-8"))
+    page = artifact_data["pages"][0]
+    assert artifact_data["text_summary"]["readable_text"] == "readable OCR text"
+    assert page["text_summary"]["word_count"] == 1
+    assert page["text_summary"]["line_count"] == 1
+    assert page["line_regions"][0]["text"] == "readable OCR text"
+    assert page["word_regions"][0]["text"] == "readable"
+    assert result.text_path.read_text(encoding="utf-8") == "readable OCR text"

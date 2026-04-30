@@ -253,7 +253,7 @@ class WorkflowOrchestrator:
         json_data["legacy_processing_result"] = legacy_data
         json_data["raw_text"] = legacy_data.get("raw_text", combined_text)
         json_data["cleaned_text"] = legacy_data.get("cleaned_text", combined_text)
-        json_data["text"] = combined_text
+        json_data["text"] = document_result.text_summary().get("readable_text") or combined_text
         if "html_content" in legacy_data:
             json_data["html_content"] = legacy_data["html_content"]
         if "overall_confidence" in legacy_data:
@@ -276,7 +276,7 @@ class WorkflowOrchestrator:
             html_path.write_text(html, encoding="utf-8")
             paths["html_path"] = html_path
 
-        text = combined_text
+        text = document_result.text_summary().get("readable_text") or combined_text
         if text:
             text_path = output_dir / "text.txt"
             text_path.write_text(text, encoding="utf-8")

@@ -96,14 +96,52 @@ class PageResult:
             return self.raw_text
         return "\n".join(region.text for region in self.text_regions if region.text)
 
+    def line_regions(self) -> list[TextRegion]:
+        return [
+            region for region in self.text_regions
+            if (region.metadata or {}).get("ocr_level") == "line"
+        ]
+
+    def word_regions(self) -> list[TextRegion]:
+        return [
+            region for region in self.text_regions
+            if (region.metadata or {}).get("ocr_level") == "word"
+        ]
+
+    def text_summary(self) -> dict[str, Any]:
+        line_regions = self.line_regions()
+        word_regions = self.word_regions()
+        grouping_methods = sorted(
+            {
+                str(region.metadata.get("line_grouping_method"))
+                for region in line_regions
+                if region.metadata.get("line_grouping_method")
+            }
+        )
+        return {
+            "raw_text": self.raw_text,
+            "readable_text": self.metadata.get("readable_text", self.combined_text()),
+            "word_count": self.metadata.get("ocr_word_count", len(word_regions)),
+            "line_count": self.metadata.get("ocr_line_count", len(line_regions)),
+            "line_grouping_method": grouping_methods[0] if len(grouping_methods) == 1 else grouping_methods,
+            "reading_order_uncertain": any(
+                bool(region.metadata.get("reading_order_uncertain"))
+                for region in line_regions
+            ),
+        }
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "page_number": self.page_number,
             "width": self.width,
             "height": self.height,
             "text_regions": [region.to_dict() for region in self.text_regions],
+            "line_regions": [region.to_dict() for region in self.line_regions()],
+            "word_regions": [region.to_dict() for region in self.word_regions()],
             "image_regions": [region.to_dict() for region in self.image_regions],
             "raw_text": self.raw_text,
+            "readable_text": self.metadata.get("readable_text"),
+            "text_summary": self.text_summary(),
             "confidence": self.confidence,
             "metadata": dict(self.metadata),
         }
@@ -124,11 +162,28 @@ class DocumentResult:
     def combined_text(self) -> str:
         return "\n\n".join(page.combined_text() for page in self.pages if page.combined_text())
 
+    def text_summary(self) -> dict[str, Any]:
+        pages = [page.text_summary() for page in self.pages]
+        return {
+            "page_count": len(self.pages),
+            "word_count": sum(int(page.get("word_count") or 0) for page in pages),
+            "line_count": sum(int(page.get("line_count") or 0) for page in pages),
+            "readable_text": "\n\n".join(
+                str(page.get("readable_text") or "")
+                for page in pages
+                if page.get("readable_text")
+            ),
+            "reading_order_uncertain": any(
+                bool(page.get("reading_order_uncertain")) for page in pages
+            ),
+        }
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "document_id": self.document_id,
             "source_path": str(self.source_path),
             "pages": [page.to_dict() for page in self.pages],
+            "text_summary": self.text_summary(),
             "language_hint": self.language_hint,
             "detected_languages": list(self.detected_languages),
             "confidence": self.confidence,

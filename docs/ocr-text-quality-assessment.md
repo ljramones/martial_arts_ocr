@@ -460,6 +460,25 @@ This is still not full page reconstruction. Multi-column documents, vertical
 Japanese, figure/caption interleaving, and article/photo layouts remain future
 work.
 
+## Implemented Follow-Up: Serialization Readability
+
+`DocumentResult.to_dict()` and `PageResult.to_dict()` now expose compact
+readability summaries without removing existing full fields.
+
+Added page-level fields:
+
+- `readable_text`
+- `text_summary`
+- `line_regions`
+- `word_regions`
+
+The original `text_regions` list remains available for backward compatibility.
+`WorkflowOrchestrator` writes `text.txt` from document readable text when it is
+available, while preserving legacy aliases in `data.json`.
+
+See `docs/document-result-serialization.md` for the current artifact shape and
+limitations.
+
 ## Files Reviewed
 
 - `src/martial_arts_ocr/ocr/processor.py`
