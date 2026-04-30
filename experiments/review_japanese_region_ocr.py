@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -19,14 +20,94 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_ROOT = REPO_ROOT / "data/notebook_outputs/japanese_region_ocr_eval"
 DEFAULT_LANGUAGES = ["jpn", "eng+jpn", "eng"]
 DEFAULT_PSMS = ["6"]
-DEFAULT_VARIANTS = [
-    "original_crop",
+DEFAULT_PREPROCESS_PROFILES = [
+    "none",
     "grayscale",
     "threshold",
     "upscale_2x",
     "upscale_3x",
-    "contrast_or_sharpen",
+    "contrast_sharpen",
 ]
+DEFAULT_VARIANTS = DEFAULT_PREPROCESS_PROFILES
+
+
+@dataclass(frozen=True)
+class OcrRoute:
+    language: str
+    psm: str
+    preprocess_profiles: tuple[str, ...]
+    role: str = "primary"
+
+
+@dataclass(frozen=True)
+class RegionProfile:
+    name: str
+    description: str
+    routes: tuple[OcrRoute, ...]
+    needs_review_default: bool = False
+    notes: str = ""
+
+
+REGION_PROFILES: dict[str, RegionProfile] = {
+    "horizontal_modern_japanese": RegionProfile(
+        name="horizontal_modern_japanese",
+        description="Horizontal modern Japanese body or line text.",
+        routes=(
+            OcrRoute("jpn", "6", ("none", "upscale_2x", "threshold")),
+            OcrRoute("jpn", "7", ("none", "upscale_2x"), role="single_line_diagnostic"),
+        ),
+        notes="Use jpn first; PSM 7 remains diagnostic until more single-line samples exist.",
+    ),
+    "vertical_modern_japanese": RegionProfile(
+        name="vertical_modern_japanese",
+        description="Vertical modern Japanese columns, sidebars, or headers.",
+        routes=(
+            OcrRoute("jpn_vert", "5", ("none", "upscale_2x", "threshold")),
+            OcrRoute("jpn", "6", ("none", "upscale_2x"), role="horizontal_comparison"),
+        ),
+        notes="jpn_vert + PSM 5 was decisive on the vertical sidebar sample.",
+    ),
+    "mixed_english_japanese": RegionProfile(
+        name="mixed_english_japanese",
+        description="English-heavy regions with Japanese parentheticals or labels.",
+        routes=(
+            OcrRoute("eng+jpn", "6", ("none", "upscale_2x")),
+            OcrRoute("eng+jpn", "11", ("none", "upscale_2x"), role="sparse_text_diagnostic"),
+            OcrRoute("jpn", "6", ("none", "upscale_2x"), role="japanese_term_diagnostic"),
+        ),
+        notes="Keep English full-page OCR separate; route crop diagnostics for Japanese terms.",
+    ),
+    "romanized_japanese_macrons": RegionProfile(
+        name="romanized_japanese_macrons",
+        description="Latin romanized Japanese text with possible macrons.",
+        routes=(
+            OcrRoute("eng", "6", ("none", "upscale_2x")),
+            OcrRoute("eng+jpn", "6", ("none", "upscale_2x"), role="mixed_language_diagnostic"),
+        ),
+        notes="Real macron OCR remains unproven; avoid threshold by default.",
+    ),
+    "stylized_calligraphy": RegionProfile(
+        name="stylized_calligraphy",
+        description="Brush-like, decorative, or calligraphic Japanese.",
+        routes=(
+            OcrRoute("jpn_vert", "5", ("none", "contrast_sharpen"), role="diagnostic"),
+            OcrRoute("jpn", "6", ("none", "contrast_sharpen"), role="diagnostic"),
+        ),
+        needs_review_default=True,
+        notes="Tesseract remains unreliable; treat as review/manual transcription candidate.",
+    ),
+    "unknown_japanese_like": RegionProfile(
+        name="unknown_japanese_like",
+        description="Japanese-like region with unknown orientation or text type.",
+        routes=(
+            OcrRoute("jpn", "6", ("none", "upscale_2x"), role="diagnostic"),
+            OcrRoute("jpn_vert", "5", ("none", "upscale_2x"), role="diagnostic"),
+            OcrRoute("eng+jpn", "6", ("none", "upscale_2x"), role="diagnostic"),
+        ),
+        needs_review_default=True,
+        notes="Exploratory route; use compact diagnostics only.",
+    ),
+}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -60,6 +141,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Attempt EasyOCR if available locally. May require existing local model files.",
     )
+    parser.add_argument(
+        "--profile",
+        choices=sorted(REGION_PROFILES),
+        default=None,
+        help="Override all manifest region types with a named region routing profile.",
+    )
+    parser.add_argument(
+        "--use-routing-profiles",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use manifest region_type/japanese_region_type routing profiles. Defaults to enabled.",
+    )
     return parser
 
 
@@ -83,21 +176,25 @@ def main(argv: list[str] | None = None) -> int:
             crops_dir=crops_dir,
             languages=languages,
             psms=psms,
+            profile_override=args.profile,
+            use_routing_profiles=args.use_routing_profiles,
             easyocr_reader=easyocr_reader,
         )
         results.append(result)
         best = result.get("best_tesseract") or {}
         print(
             f"{sample['id']}: variants={len(result.get('variants', []))} "
+            f"route_profile={result.get('routing_profile', {}).get('name')} "
             f"best={best.get('language')} psm={best.get('psm')} "
-            f"variant={best.get('variant')} hits={best.get('expected_terms_recovered')}"
+            f"preprocess={best.get('preprocess_profile')} hits={best.get('expected_terms_recovered')}"
         )
 
     payload = {
         "manifest": str(manifest_path),
         "languages": languages,
         "psms": psms,
-        "preprocessing_variants": DEFAULT_VARIANTS,
+        "preprocessing_profiles": DEFAULT_PREPROCESS_PROFILES,
+        "available_region_profiles": list(REGION_PROFILES),
         "easyocr_tested": easyocr_reader is not None,
         "results": results,
     }
@@ -114,6 +211,8 @@ def _process_sample(
     crops_dir: Path,
     languages: list[str],
     psms: list[str],
+    profile_override: str | None,
+    use_routing_profiles: bool,
     easyocr_reader: Any,
 ) -> dict[str, Any]:
     source_path = _resolve(sample["source_image"])
@@ -125,27 +224,42 @@ def _process_sample(
     sample_dir = crops_dir / sample["id"]
     sample_dir.mkdir(parents=True, exist_ok=True)
 
-    variants = _build_variants(crop)
+    routing_profile = _select_region_profile(
+        sample,
+        profile_override=profile_override,
+        use_routing_profiles=use_routing_profiles,
+    )
+    route_plan = _route_plan_for_sample(
+        routing_profile,
+        languages=languages,
+        psms=psms,
+        use_routing_profiles=use_routing_profiles,
+    )
+    variants = _build_preprocess_variants(crop)
     variant_results = []
-    for variant_name, variant_image in variants.items():
-        image_path = sample_dir / f"{variant_name}.png"
-        variant_image.save(image_path)
-        for language in languages:
-            for psm in psms:
-                text, elapsed = _run_tesseract(variant_image, language=language, psm=psm)
-                variant_results.append(
-                    {
-                        "engine": "tesseract",
-                        "language": language,
-                        "psm": str(psm),
-                        "variant": variant_name,
-                        "text": text,
-                        "text_length": len(text),
-                        "japanese_char_count": _count_japanese(text),
-                        "expected_terms_recovered": _term_hits(text, expected_terms),
-                        "processing_time": elapsed,
-                    }
-                )
+    for route in route_plan:
+        for profile_name in route.preprocess_profiles:
+            variant_image = variants[profile_name]
+            image_path = sample_dir / f"{profile_name}.png"
+            if not image_path.exists():
+                variant_image.save(image_path)
+            text, elapsed = _run_tesseract(variant_image, language=route.language, psm=route.psm)
+            variant_results.append(
+                {
+                    "engine": "tesseract",
+                    "language": route.language,
+                    "psm": str(route.psm),
+                    "preprocess_profile": profile_name,
+                    "variant": profile_name,
+                    "route_role": route.role,
+                    "text": text,
+                    "text_length": len(text),
+                    "japanese_char_count": _count_japanese(text),
+                    "expected_terms_recovered": _term_hits(text, expected_terms),
+                    "quality_judgment": _quality_judgment(text, expected_terms),
+                    "processing_time": elapsed,
+                }
+            )
 
     full_page_results = []
     for language in languages:
@@ -173,10 +287,15 @@ def _process_sample(
         "sample_id": sample["id"],
         "source_image": str(source_path),
         "bbox": bbox,
+        "routing_profile": _profile_to_dict(routing_profile),
+        "selected_routes": [_route_to_dict(route) for route in route_plan],
         "description": sample.get("description"),
         "visible_text": sample.get("visible_text"),
         "expected_terms": expected_terms,
         "notes": sample.get("notes"),
+        "needs_human_review": bool(
+            sample.get("needs_human_review", routing_profile.needs_review_default)
+        ),
         "full_page_results": full_page_results,
         "variants": [
             {k: v for k, v in result.items() if k != "text"} | {"text_preview": _preview(result["text"])}
@@ -191,17 +310,78 @@ def _process_sample(
     }
 
 
-def _build_variants(crop: Image.Image) -> dict[str, Image.Image]:
+def _select_region_profile(
+    sample: dict[str, Any],
+    *,
+    profile_override: str | None,
+    use_routing_profiles: bool,
+) -> RegionProfile:
+    if not use_routing_profiles:
+        return REGION_PROFILES["unknown_japanese_like"]
+    profile_name = (
+        profile_override
+        or sample.get("japanese_region_type")
+        or sample.get("region_type")
+        or sample.get("profile")
+        or "unknown_japanese_like"
+    )
+    return REGION_PROFILES.get(str(profile_name), REGION_PROFILES["unknown_japanese_like"])
+
+
+def _route_plan_for_sample(
+    profile: RegionProfile,
+    *,
+    languages: list[str],
+    psms: list[str],
+    use_routing_profiles: bool,
+) -> tuple[OcrRoute, ...]:
+    if use_routing_profiles:
+        return profile.routes
+    return tuple(
+        OcrRoute(language, str(psm), tuple(DEFAULT_PREPROCESS_PROFILES))
+        for language in languages
+        for psm in psms
+    )
+
+
+def _profile_to_dict(profile: RegionProfile) -> dict[str, Any]:
+    return {
+        "name": profile.name,
+        "description": profile.description,
+        "needs_review_default": profile.needs_review_default,
+        "notes": profile.notes,
+    }
+
+
+def _route_to_dict(route: OcrRoute) -> dict[str, Any]:
+    return {
+        "language": route.language,
+        "psm": route.psm,
+        "preprocess_profiles": list(route.preprocess_profiles),
+        "role": route.role,
+    }
+
+
+def _build_preprocess_variants(crop: Image.Image) -> dict[str, Image.Image]:
     gray = ImageOps.grayscale(crop)
     threshold = gray.point(lambda px: 255 if px > 165 else 0, mode="1").convert("RGB")
     sharp = ImageEnhance.Contrast(crop).enhance(1.8).filter(ImageFilter.SHARPEN)
     return {
-        "original_crop": crop,
+        "none": crop,
         "grayscale": gray.convert("RGB"),
         "threshold": threshold,
         "upscale_2x": crop.resize((crop.width * 2, crop.height * 2), Image.Resampling.LANCZOS),
         "upscale_3x": crop.resize((crop.width * 3, crop.height * 3), Image.Resampling.LANCZOS),
-        "contrast_or_sharpen": sharp,
+        "contrast_sharpen": sharp,
+    }
+
+
+def _build_variants(crop: Image.Image) -> dict[str, Image.Image]:
+    """Backward-compatible alias for older review snippets/tests."""
+    variants = _build_preprocess_variants(crop)
+    return variants | {
+        "original_crop": variants["none"],
+        "contrast_or_sharpen": variants["contrast_sharpen"],
     }
 
 
@@ -289,6 +469,19 @@ def _count_japanese(text: str) -> int:
 
 def _term_hits(text: str, terms: list[str]) -> list[str]:
     return [term for term in terms if term and term in text]
+
+
+def _quality_judgment(text: str, expected_terms: list[str]) -> str:
+    if text.startswith("[tesseract_error]"):
+        return "fail"
+    hits = _term_hits(text, expected_terms)
+    if expected_terms and len(hits) == len(expected_terms):
+        return "meaningful"
+    if hits:
+        return "partial"
+    if _count_japanese(text) >= 5:
+        return "noisy"
+    return "fail"
 
 
 def _preview(text: str, *, limit: int = 6) -> list[str]:
