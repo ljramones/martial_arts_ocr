@@ -53,6 +53,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Specific sample id to run. Can be passed multiple times.",
     )
     parser.add_argument(
+        "--manifest",
+        action="append",
+        default=None,
+        help=(
+            "Additional manifest JSON to load for ad hoc review samples. "
+            "Can be passed multiple times."
+        ),
+    )
+    parser.add_argument(
         "--language",
         default=None,
         help="Tesseract language override for this review run, e.g. eng or eng+jpn.",
@@ -73,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
         output_root = (Path.cwd() / output_root).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
 
-    samples_by_id = _load_samples()
+    samples_by_id = _load_samples(args.manifest)
     selected = _select_samples(samples_by_id, args.sample_id)
     processor = OCRProcessor()
     _configure_processor_for_review(processor, language=args.language, psms=args.psm)
@@ -110,15 +119,32 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _load_samples() -> dict[str, dict[str, Any]]:
+def _load_samples(extra_manifest_paths: list[str] | None = None) -> dict[str, dict[str, Any]]:
     samples: dict[str, dict[str, Any]] = {}
     for corpus, manifest_path in MANIFESTS.items():
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        for sample in manifest.get("samples", []):
-            record = dict(sample)
-            record["corpus"] = corpus
-            samples[record["id"]] = record
+        _load_manifest_samples(samples, manifest_path, default_corpus=corpus)
+
+    for manifest_path in extra_manifest_paths or []:
+        _load_manifest_samples(samples, Path(manifest_path))
+
     return samples
+
+
+def _load_manifest_samples(
+    samples: dict[str, dict[str, Any]],
+    manifest_path: Path,
+    *,
+    default_corpus: str | None = None,
+) -> None:
+    if not manifest_path.is_absolute():
+        manifest_path = (Path.cwd() / manifest_path).resolve()
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest_corpus = manifest.get("corpus") or manifest.get("collection") or default_corpus
+    for sample in manifest.get("samples", []):
+        record = dict(sample)
+        record["corpus"] = record.get("corpus") or manifest_corpus or manifest_path.stem
+        record["manifest_path"] = str(manifest_path)
+        samples[record["id"]] = record
 
 
 def _select_samples(
