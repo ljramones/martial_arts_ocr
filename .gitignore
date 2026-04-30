@@ -156,6 +156,7 @@ data/corpora/ad_hoc/corpus2/original/*
 data/corpora/modern_japanese_ocr/**/original/**
 data/corpora/modern_japanese_ocr/**/derived/**
 data/corpora/modern_japanese_ocr/**/manifests/manifest.local.json
+data/corpora/modern_japanese_ocr/**/manifests/*.local.json
 !data/corpora/modern_japanese_ocr/**/README.md
 !data/corpora/modern_japanese_ocr/**/manifests/
 !data/corpora/modern_japanese_ocr/**/manifests/manifest.example.json
