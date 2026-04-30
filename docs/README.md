@@ -26,6 +26,9 @@
 
 ## OCR And Document Output
 
+- [Document Output State](document-output-state-2026-04-28.md): current
+  `data.json`, `page_data.json`, `text.txt`, and `page_1.html` artifact
+  contract.
 - [OCR Output State](ocr-output-state-2026-04-28.md): current OCR/text artifact
   state, accepted limits, validation trail, and recommended next branch.
 - [OCR Text Quality Assessment](ocr-text-quality-assessment.md): assessment of
