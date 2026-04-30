@@ -15,7 +15,8 @@ def test_parser_exposes_routing_profile_flags():
 
 def test_region_profiles_encode_expected_routes():
     vertical = helper.REGION_PROFILES["vertical_modern_japanese"]
-    mixed = helper.REGION_PROFILES["mixed_english_japanese"]
+    mixed_page_text = helper.REGION_PROFILES["mixed_english_japanese_page_text"]
+    mixed_parentheticals = helper.REGION_PROFILES["mixed_japanese_parentheticals"]
     calligraphy = helper.REGION_PROFILES["stylized_calligraphy"]
 
     assert vertical.routes[0].language == "jpn_vert"
@@ -23,11 +24,16 @@ def test_region_profiles_encode_expected_routes():
     assert "upscale_2x" in vertical.routes[0].preprocess_profiles
 
     assert ("eng+jpn", "6") in {
-        (route.language, route.psm) for route in mixed.routes
+        (route.language, route.psm) for route in mixed_page_text.routes
     }
     assert ("eng+jpn", "11") in {
-        (route.language, route.psm) for route in mixed.routes
+        (route.language, route.psm) for route in mixed_page_text.routes
     }
+    assert mixed_page_text.routes[0].language == "eng+jpn"
+
+    assert mixed_parentheticals.routes[0].language == "jpn"
+    assert mixed_parentheticals.routes[0].role == "primary_term_recovery"
+    assert helper.REGION_PROFILES["mixed_english_japanese"] is mixed_page_text
 
     assert calligraphy.needs_review_default is True
 

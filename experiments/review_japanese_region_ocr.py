@@ -67,15 +67,25 @@ REGION_PROFILES: dict[str, RegionProfile] = {
         ),
         notes="jpn_vert + PSM 5 was decisive on the vertical sidebar sample.",
     ),
-    "mixed_english_japanese": RegionProfile(
-        name="mixed_english_japanese",
-        description="English-heavy regions with Japanese parentheticals or labels.",
+    "mixed_english_japanese_page_text": RegionProfile(
+        name="mixed_english_japanese_page_text",
+        description="English-heavy regions where the goal is blended readable text.",
         routes=(
             OcrRoute("eng+jpn", "6", ("none", "upscale_2x")),
             OcrRoute("eng+jpn", "11", ("none", "upscale_2x"), role="sparse_text_diagnostic"),
             OcrRoute("jpn", "6", ("none", "upscale_2x"), role="japanese_term_diagnostic"),
         ),
-        notes="Keep English full-page OCR separate; route crop diagnostics for Japanese terms.",
+        notes="Optimize for blended readability; keep jpn as a diagnostic for embedded terms.",
+    ),
+    "mixed_japanese_parentheticals": RegionProfile(
+        name="mixed_japanese_parentheticals",
+        description="Japanese terms or parentheticals embedded inside mostly English context.",
+        routes=(
+            OcrRoute("jpn", "6", ("none", "upscale_2x"), role="primary_term_recovery"),
+            OcrRoute("eng+jpn", "6", ("none", "upscale_2x"), role="blended_readability_comparison"),
+            OcrRoute("eng+jpn", "11", ("none", "upscale_2x"), role="sparse_text_diagnostic"),
+        ),
+        notes="Optimize for Japanese term recovery in parenthetical/list regions.",
     ),
     "romanized_japanese_macrons": RegionProfile(
         name="romanized_japanese_macrons",
@@ -108,6 +118,7 @@ REGION_PROFILES: dict[str, RegionProfile] = {
         notes="Exploratory route; use compact diagnostics only.",
     ),
 }
+REGION_PROFILES["mixed_english_japanese"] = REGION_PROFILES["mixed_english_japanese_page_text"]
 
 
 def build_parser() -> argparse.ArgumentParser:
