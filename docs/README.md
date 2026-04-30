@@ -24,6 +24,17 @@
 - [Dataset Inventory](dataset-inventory.md): current corpus/data folders and
   lineage notes.
 
+## OCR And Document Output
+
+- [OCR Output State](ocr-output-state-2026-04-28.md): current OCR/text artifact
+  state, accepted limits, validation trail, and recommended next branch.
+- [OCR Text Quality Assessment](ocr-text-quality-assessment.md): assessment of
+  OCR output, cleanup, Japanese handling, and canonical model gaps.
+- [OCR Text Normalization Notes](ocr-text-normalization-notes.md): word/line
+  hierarchy, readable text, cleanup-chain guardrails, and current limits.
+- [DocumentResult Serialization](document-result-serialization.md): current
+  `data.json`, `text.txt`, line/word alias, and text summary behavior.
+
 ## Current Rule
 
 Region extraction is review-mode only. Image extraction and Paddle fusion remain
