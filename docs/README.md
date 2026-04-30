@@ -37,6 +37,9 @@
   contract.
 - [OCR Output State](ocr-output-state-2026-04-28.md): current OCR/text artifact
   state, accepted limits, validation trail, and recommended next branch.
+- [Japanese Region OCR Routing Design](japanese-region-ocr-routing-design.md):
+  evidence-based review-mode design for routing Japanese-bearing regions to
+  language, PSM, and preprocessing profiles.
 - [OCR Text Quality Assessment](ocr-text-quality-assessment.md): assessment of
   OCR output, cleanup, Japanese handling, and canonical model gaps.
 - [OCR Text Normalization Notes](ocr-text-normalization-notes.md): word/line
