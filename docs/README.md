@@ -37,6 +37,9 @@
   contract.
 - [OCR Output State](ocr-output-state-2026-04-28.md): current OCR/text artifact
   state, accepted limits, validation trail, and recommended next branch.
+- [Japanese OCR Experimental State](japanese-ocr-experimental-state-2026-04-28.md):
+  current experiment-only Japanese OCR profiles, evidence, deferrals, and next
+  recommended evidence branch.
 - [Japanese Region OCR Routing Design](japanese-region-ocr-routing-design.md):
   evidence-based review-mode design for routing Japanese-bearing regions to
   language, PSM, and preprocessing profiles.
