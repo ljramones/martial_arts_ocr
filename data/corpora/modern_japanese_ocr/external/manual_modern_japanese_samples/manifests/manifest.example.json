@@ -1,0 +1,25 @@
+{
+  "samples": [
+    {
+      "id": "manual_modern_japanese_sample_001",
+      "path": "data/corpora/modern_japanese_ocr/external/manual_modern_japanese_samples/original/JapText2.jpg",
+      "description": "Example loose modern Japanese image sample with unknown provenance",
+      "source": {
+        "collection": "manual_modern_japanese_samples",
+        "kind": "original",
+        "derived": false,
+        "provenance": "unknown"
+      },
+      "expected": {
+        "has_japanese": true,
+        "has_macrons": false,
+        "has_diagrams_or_images": false,
+        "min_text_regions": 1,
+        "notes": [
+          "Qualitative smoke-test candidate only",
+          "Do not redistribute until provenance/license is confirmed"
+        ]
+      }
+    }
+  ]
+}

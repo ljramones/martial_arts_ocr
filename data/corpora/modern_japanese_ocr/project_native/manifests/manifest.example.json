@@ -1,0 +1,24 @@
+{
+  "samples": [
+    {
+      "id": "example_project_native_japanese_page_001",
+      "path": "data/corpora/donn_draeger/dfd_notes_master/original/IMG_3336.jpg",
+      "description": "Example project-native page with visible Japanese calligraphy and romanized Japanese terms",
+      "source": {
+        "collection": "dfd_notes_master",
+        "kind": "original",
+        "derived": false
+      },
+      "expected": {
+        "has_japanese": true,
+        "has_macrons": false,
+        "has_diagrams_or_images": true,
+        "min_text_regions": 1,
+        "notes": [
+          "Use for project-native modern Japanese OCR evaluation",
+          "Prefer references to existing source corpus paths instead of copying images"
+        ]
+      }
+    }
+  ]
+}

@@ -23,6 +23,12 @@
 
 - [Dataset Inventory](dataset-inventory.md): current corpus/data folders and
   lineage notes.
+- [Modern Japanese OCR Corpus Plan](modern-japanese-ocr-corpus-plan.md):
+  organization, provenance notes, commit policy, and next steps for modern
+  Japanese OCR evaluation resources.
+- [Modern Japanese OCR Corpora](../data/corpora/modern_japanese_ocr/README.md):
+  local corpus area for project-native, external, and synthetic/text fixture
+  resources.
 
 ## OCR And Document Output
 

@@ -152,6 +152,19 @@ static/extracted_content/
 data/corpora/ad_hoc/corpus2/original/*
 !data/corpora/ad_hoc/corpus2/original/.gitkeep
 
+# Modern Japanese OCR datasets: keep dataset payloads local/private by default.
+data/corpora/modern_japanese_ocr/**/original/**
+data/corpora/modern_japanese_ocr/**/derived/**
+data/corpora/modern_japanese_ocr/**/manifests/manifest.local.json
+!data/corpora/modern_japanese_ocr/**/README.md
+!data/corpora/modern_japanese_ocr/**/manifests/
+!data/corpora/modern_japanese_ocr/**/manifests/manifest.example.json
+!data/corpora/modern_japanese_ocr/**/original/
+!data/corpora/modern_japanese_ocr/**/original/.gitkeep
+!data/corpora/modern_japanese_ocr/external/manual_modern_japanese_samples/original/JapText2.jpg
+!data/corpora/modern_japanese_ocr/external/manual_modern_japanese_samples/original/S__34193423.jpg
+!data/corpora/modern_japanese_ocr/external/manual_modern_japanese_samples/original/istockphoto-1015263364-612x612.jpg
+
 # Database files
 *.db
 *.sqlite

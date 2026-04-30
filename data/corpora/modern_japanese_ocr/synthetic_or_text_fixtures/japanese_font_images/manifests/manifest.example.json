@@ -1,0 +1,25 @@
+{
+  "samples": [
+    {
+      "id": "japanese_font_images_example_00000000",
+      "path": "data/corpora/modern_japanese_ocr/synthetic_or_text_fixtures/japanese_font_images/original/00000000.jpg",
+      "description": "Example generated Japanese font image with text metadata in labels.csv",
+      "source": {
+        "collection": "japanese_font_images",
+        "kind": "synthetic",
+        "derived": true,
+        "provenance": "unknown"
+      },
+      "expected": {
+        "has_japanese": true,
+        "has_macrons": false,
+        "has_diagrams_or_images": false,
+        "min_text_regions": 1,
+        "notes": [
+          "Synthetic/font-image fixture, not scanned-page OCR data",
+          "Use labels.csv as ground truth if source/license permits"
+        ]
+      }
+    }
+  ]
+}

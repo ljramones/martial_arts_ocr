@@ -1,0 +1,25 @@
+{
+  "samples": [
+    {
+      "id": "img_ocr_jp_cn_contract_example_001",
+      "path": "data/corpora/modern_japanese_ocr/external/img_ocr_jp_cn/original/CONTRACTS/JAPANESE_CONTRACT_024243.jpg",
+      "description": "Example modern Japanese contract page with paired JSON region annotations",
+      "source": {
+        "collection": "img_ocr_jp_cn",
+        "kind": "original",
+        "derived": false,
+        "provenance": "unknown"
+      },
+      "expected": {
+        "has_japanese": true,
+        "has_macrons": false,
+        "has_diagrams_or_images": false,
+        "min_text_regions": 1,
+        "notes": [
+          "Use only after source/license is confirmed",
+          "Paired JSON may contain OCR transcription and region geometry"
+        ]
+      }
+    }
+  ]
+}
