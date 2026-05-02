@@ -13,6 +13,10 @@ def test_parser_exposes_review_inputs():
     assert "--no-fixtures" in help_text
     assert "--decisions-file" in help_text
     assert "--reviewed-export" in help_text
+    assert "--filter" in help_text
+    assert "--source-filter" in help_text
+    assert "--sort" in help_text
+    assert "--limit" in help_text
 
 
 def test_load_text_sources_from_summary_json_extracts_relevant_text(tmp_path):
@@ -180,3 +184,89 @@ def test_reviewed_export_separates_pending_reviewed_and_stale_decisions():
     assert len(export["reviewed_decisions"]) == 2
     assert export["reviewed_decisions"][0]["review_decision"]["reviewed_value"] == "Daitō-ryū"
     assert export["stale_decisions"] == [{"candidate_id": "sha256:stale", "decision": "accept"}]
+
+
+def test_source_kind_distinguishes_fixture_synthetic_and_real_ocr():
+    assert helper.source_kind_for({"source_type": "fixture", "source_path": None}) == "fixture"
+    assert (
+        helper.source_kind_for(
+            {
+                "source_type": "summary_json",
+                "source_path": "data/notebook_outputs/macron_ocr_eval/summary.json",
+            }
+        )
+        == "synthetic"
+    )
+    assert (
+        helper.source_kind_for(
+            {
+                "source_type": "summary_json",
+                "source_path": "data/notebook_outputs/ocr_text_quality_review/summary.json",
+            }
+        )
+        == "real_ocr"
+    )
+
+
+def test_review_queue_filters_sorts_and_limits_candidates():
+    sources = [
+        source
+        for source in helper.review_text_sources(
+            [
+                helper.TextSource(source_id="fixture", source_type="fixture", text="Daito-ryu budo"),
+                helper.TextSource(
+                    source_id="real",
+                    source_type="summary_json",
+                    source_path="data/notebook_outputs/ocr_text_quality_review/summary.json",
+                    field_path="$.text",
+                    text="BUDO",
+                ),
+            ]
+        )
+        if source["candidate_count"]
+    ]
+    decisions = helper.build_decisions_template(sources)
+    decisions["decisions"][0]["decision"] = "accept"
+    decisions["decisions"][0]["reviewed_value"] = decisions["decisions"][0]["candidate"]
+    decisions["decisions"][1]["decision"] = "defer"
+
+    queue = helper.build_review_queue(
+        sources,
+        decisions,
+        decision_filter="reviewed",
+        source_filter="fixture",
+        sort_key="candidate",
+        limit=1,
+    )
+
+    assert len(queue) == 1
+    assert queue[0]["source_kind"] == "fixture"
+    assert queue[0]["decision"] == "defer"
+    assert queue[0]["candidate"] == "budō"
+
+
+def test_review_queue_markdown_and_csv_include_context(tmp_path):
+    rows = [
+        {
+            "candidate_id": "sha256:1",
+            "decision": "pending",
+            "source_kind": "real_ocr",
+            "source_id": "source",
+            "source_path": "summary.json",
+            "field_path": "$.text",
+            "observed": "BUDO",
+            "candidate": "budō",
+            "match_type": "variant_exact",
+            "context": "BUJUTSU AND BUDO",
+            "reviewed_value": None,
+            "notes": ["needs image review"],
+        }
+    ]
+
+    markdown_path = tmp_path / "queue.md"
+    csv_path = tmp_path / "queue.csv"
+    helper.write_review_queue_markdown(markdown_path, rows)
+    helper.write_review_queue_csv(csv_path, rows)
+
+    assert "BUJUTSU AND BUDO" in markdown_path.read_text(encoding="utf-8")
+    assert "needs image review" in csv_path.read_text(encoding="utf-8")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 import sys
@@ -44,6 +45,10 @@ TEXT_KEYS = {
     "text",
     "text_txt",
 }
+
+FILTER_CHOICES = ("all", "pending", "accepted", "rejected", "deferred", "edited", "reviewed", "stale")
+SORT_CHOICES = ("source", "candidate", "observed", "decision", "match_type")
+SOURCE_FILTER_CHOICES = ("all", "fixture", "summary_json", "real_ocr", "synthetic", "macron_eval")
 
 FIXTURE_TEXTS = [
     {
@@ -112,6 +117,30 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Overwrite an existing local decisions template. Existing files are preserved by default.",
     )
+    parser.add_argument(
+        "--filter",
+        choices=FILTER_CHOICES,
+        default="all",
+        help="Candidate queue filter for Markdown/CSV review exports.",
+    )
+    parser.add_argument(
+        "--source-filter",
+        choices=SOURCE_FILTER_CHOICES,
+        default="all",
+        help="Source filter for Markdown/CSV review queue exports.",
+    )
+    parser.add_argument(
+        "--sort",
+        choices=SORT_CHOICES,
+        default="source",
+        help="Sort key for Markdown/CSV review queue exports.",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Maximum candidates to include in the review queue exports.",
+    )
     return parser
 
 
@@ -170,6 +199,18 @@ def main(argv: list[str] | None = None) -> int:
     decisions_payload = load_decisions_file(decisions_path)
     reviewed_export = build_reviewed_export(candidate_sources, decisions_payload)
     reviewed_export_path.write_text(json.dumps(reviewed_export, ensure_ascii=False, indent=2), encoding="utf-8")
+    queue = build_review_queue(
+        candidate_sources,
+        decisions_payload,
+        decision_filter=args.filter,
+        source_filter=args.source_filter,
+        sort_key=args.sort,
+        limit=args.limit,
+    )
+    queue_markdown_path = output_dir / f"review_queue_{args.filter}_{args.source_filter}.md"
+    queue_csv_path = output_dir / f"review_queue_{args.filter}_{args.source_filter}.csv"
+    write_review_queue_markdown(queue_markdown_path, queue)
+    write_review_queue_csv(queue_csv_path, queue)
 
     print(
         f"Scanned {payload['sources_scanned']} text sources; "
@@ -181,6 +222,8 @@ def main(argv: list[str] | None = None) -> int:
         f"{' (created)' if decisions_template_written else ' (preserved existing)'}"
     )
     print(f"Reviewed export: {reviewed_export_path}")
+    print(f"Review queue: {queue_markdown_path}")
+    print(f"Review queue CSV: {queue_csv_path}")
     return 0
 
 
@@ -344,6 +387,170 @@ def build_reviewed_export(
         "reviewed_decisions": reviewed,
         "stale_decisions": stale,
     }
+
+
+def build_review_queue(
+    candidate_sources: list[dict[str, Any]],
+    decisions_payload: dict[str, Any],
+    *,
+    decision_filter: str = "all",
+    source_filter: str = "all",
+    sort_key: str = "source",
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    decisions_by_id = {
+        decision["candidate_id"]: decision
+        for decision in decisions_payload.get("decisions", [])
+        if decision.get("candidate_id")
+    }
+    rows = []
+    for source in candidate_sources:
+        for candidate in source["candidates"]:
+            decision = decisions_by_id.get(candidate["candidate_id"], {})
+            row = {
+                "candidate_id": candidate["candidate_id"],
+                "source_id": source["source_id"],
+                "source_type": source["source_type"],
+                "source_kind": source_kind_for(source),
+                "source_path": source["source_path"],
+                "field_path": source["field_path"],
+                "observed": candidate["observed"],
+                "candidate": candidate["candidate"],
+                "match_type": candidate["match_type"],
+                "decision": _normalized_decision(decision.get("decision")),
+                "reviewed_value": decision.get("reviewed_value"),
+                "context": candidate["context"],
+                "notes": decision.get("notes", []),
+            }
+            if _queue_row_matches(row, decision_filter=decision_filter, source_filter=source_filter):
+                rows.append(row)
+
+    rows = sorted(rows, key=_sort_key(sort_key))
+    if limit is not None and limit >= 0:
+        rows = rows[:limit]
+    return rows
+
+
+def source_kind_for(source: dict[str, Any]) -> str:
+    if source["source_type"] == "fixture":
+        return "fixture"
+    source_path = source.get("source_path") or ""
+    if "macron_ocr_eval" in source_path or "macron_ocr_engine_comparison" in source_path:
+        return "synthetic"
+    return "real_ocr"
+
+
+def write_review_queue_markdown(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# Macron Candidate Review Queue",
+        "",
+        f"Candidate count: {len(rows)}",
+        "",
+        "| Decision | Source Kind | Observed | Candidate | Match Type | Source ID | Context | Notes |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for row in rows:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    _markdown_cell(row["decision"]),
+                    _markdown_cell(row["source_kind"]),
+                    _markdown_cell(row["observed"]),
+                    _markdown_cell(row["candidate"]),
+                    _markdown_cell(row["match_type"]),
+                    _markdown_cell(row["source_id"]),
+                    _markdown_cell(row["context"]),
+                    _markdown_cell("; ".join(row.get("notes") or [])),
+                ]
+            )
+            + " |"
+        )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_review_queue_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    columns = [
+        "candidate_id",
+        "decision",
+        "source_kind",
+        "source_id",
+        "source_path",
+        "field_path",
+        "observed",
+        "candidate",
+        "match_type",
+        "context",
+        "reviewed_value",
+        "notes",
+    ]
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: _csv_value(row.get(column)) for column in columns})
+
+
+def _queue_row_matches(row: dict[str, Any], *, decision_filter: str, source_filter: str) -> bool:
+    if decision_filter != "all":
+        decision = row["decision"]
+        if decision_filter == "pending" and decision != "pending":
+            return False
+        if decision_filter == "accepted" and decision != "accept":
+            return False
+        if decision_filter == "rejected" and decision != "reject":
+            return False
+        if decision_filter == "deferred" and decision != "defer":
+            return False
+        if decision_filter == "edited" and decision != "edit":
+            return False
+        if decision_filter == "reviewed" and decision == "pending":
+            return False
+        if decision_filter == "stale":
+            return False
+
+    if source_filter == "all":
+        return True
+    if source_filter == "macron_eval":
+        source_path = row.get("source_path") or ""
+        return "macron_ocr_eval" in source_path or "macron_ocr_engine_comparison" in source_path
+    return row["source_kind"] == source_filter
+
+
+def _sort_key(sort_key: str):
+    def key(row: dict[str, Any]) -> tuple[str, ...]:
+        if sort_key == "candidate":
+            return (row["candidate"].casefold(), row["observed"].casefold(), row["source_id"])
+        if sort_key == "observed":
+            return (row["observed"].casefold(), row["candidate"].casefold(), row["source_id"])
+        if sort_key == "decision":
+            return (row["decision"], row["candidate"].casefold(), row["source_id"])
+        if sort_key == "match_type":
+            return (row["match_type"], row["candidate"].casefold(), row["source_id"])
+        return (row["source_kind"], row["source_id"], row["candidate"].casefold(), row["observed"].casefold())
+
+    return key
+
+
+def _normalized_decision(decision: Any) -> str:
+    if decision in {None, ""}:
+        return "pending"
+    return str(decision)
+
+
+def _markdown_cell(value: Any) -> str:
+    text = _csv_value(value)
+    return text.replace("|", "\\|").replace("\n", " ")
+
+
+def _csv_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return "; ".join(str(item) for item in value)
+    return str(value)
 
 
 def summarize_candidates(candidates: list[dict[str, Any]]) -> dict[str, Any]:
