@@ -52,6 +52,9 @@
 - [Macron Candidate Review Workflow Design](macron-candidate-review-workflow-design.md):
   review/export workflow design for accepting, rejecting, or deferring macron
   candidates without mutating original OCR text.
+- [Macron Candidate Review Operator Guide](macron-candidate-review-operator-guide.md):
+  commands and local-file workflow for running macron candidate review exports
+  and editing `decisions.local.json`.
 - [OCR Text Quality Assessment](ocr-text-quality-assessment.md): assessment of
   OCR output, cleanup, Japanese handling, and canonical model gaps.
 - [OCR Text Normalization Notes](ocr-text-normalization-notes.md): word/line
