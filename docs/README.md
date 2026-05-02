@@ -16,6 +16,9 @@
   document-layout backend comparison plan and Paddle evaluation results.
 - [Extraction Workbench Plan](extraction-workbench-plan.md): notebook and
   corpus review workflow.
+- [Local Research Review Workbench Design](local-research-review-workbench-design.md):
+  local-only research UI design for page viewing, editable region overlays,
+  review state, OCR routing, translation review, and exports.
 - [Extraction Quality Rubric](extraction-quality-rubric.md): criteria for
   judging image, text, and layout extraction quality.
 

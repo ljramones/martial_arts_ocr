@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sys
 import time
@@ -211,6 +212,12 @@ def main(argv: list[str] | None = None) -> int:
     }
     summary_path = output_dir / "summary.json"
     summary_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    review_results = [result["review_result"] for result in results if result.get("review_result")]
+    _write_review_exports(
+        review_results,
+        output_dir=output_dir,
+        manifest_path=manifest_path,
+    )
     print(f"Summary: {summary_path}")
     return 0
 
@@ -294,6 +301,16 @@ def _process_sample(
         easyocr_result = _run_easyocr(easyocr_reader, crop, expected_terms)
 
     best = _best_tesseract_result(variant_results)
+    needs_review = bool(sample.get("needs_human_review", routing_profile.needs_review_default))
+    review_result = _build_review_result(
+        sample,
+        source_path=source_path,
+        bbox=bbox,
+        routing_profile=routing_profile,
+        best=best,
+        expected_terms=expected_terms,
+        needs_review=needs_review,
+    )
     return {
         "sample_id": sample["id"],
         "source_image": str(source_path),
@@ -304,9 +321,7 @@ def _process_sample(
         "visible_text": sample.get("visible_text"),
         "expected_terms": expected_terms,
         "notes": sample.get("notes"),
-        "needs_human_review": bool(
-            sample.get("needs_human_review", routing_profile.needs_review_default)
-        ),
+        "needs_human_review": needs_review,
         "full_page_results": full_page_results,
         "variants": [
             {k: v for k, v in result.items() if k != "text"} | {"text_preview": _preview(result["text"])}
@@ -317,8 +332,172 @@ def _process_sample(
             if best
             else None
         ),
+        "review_result": review_result,
         "easyocr": easyocr_result,
     }
+
+
+def _build_review_result(
+    sample: dict[str, Any],
+    *,
+    source_path: Path,
+    bbox: list[int],
+    routing_profile: RegionProfile,
+    best: dict[str, Any] | None,
+    expected_terms: list[str],
+    needs_review: bool,
+) -> dict[str, Any]:
+    text = str(best.get("text", "")) if best else ""
+    terms_recovered = _term_hits(text, expected_terms)
+    terms_missing = [term for term in expected_terms if term not in terms_recovered]
+    route = {
+        "language": best.get("language") if best else None,
+        "psm": _coerce_psm(best.get("psm")) if best else None,
+        "preprocess_profile": best.get("preprocess_profile") if best else None,
+        "role": best.get("route_role") if best else None,
+    }
+    quality = best.get("quality_judgment") if best else _quality_judgment(text, expected_terms)
+    return {
+        "sample_id": sample["id"],
+        "source_image": str(source_path),
+        "bbox": bbox,
+        "region_type": routing_profile.name,
+        "route": route,
+        "ocr_output": text,
+        "ocr_output_preview": _preview(text),
+        "expected_terms": expected_terms,
+        "terms_recovered": terms_recovered,
+        "terms_missing": terms_missing,
+        "quality_judgment": quality,
+        "needs_review": needs_review or quality in {"partial", "noisy", "fail"},
+        "notes": sample.get("notes") or routing_profile.notes or "",
+    }
+
+
+def _write_review_exports(
+    review_results: list[dict[str, Any]],
+    *,
+    output_dir: Path,
+    manifest_path: Path,
+) -> None:
+    json_path = output_dir / "region_ocr_results.json"
+    csv_path = output_dir / "region_ocr_results.csv"
+    markdown_path = output_dir / "region_ocr_review.md"
+
+    payload = {
+        "schema_version": "japanese_region_ocr_review.v1",
+        "manifest": str(manifest_path),
+        "result_count": len(review_results),
+        "results": review_results,
+    }
+    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_review_csv(review_results, csv_path)
+    _write_review_markdown(review_results, markdown_path)
+
+
+def _write_review_csv(review_results: list[dict[str, Any]], csv_path: Path) -> None:
+    fieldnames = [
+        "sample_id",
+        "source_image",
+        "bbox",
+        "region_type",
+        "language",
+        "psm",
+        "preprocess_profile",
+        "quality_judgment",
+        "expected_terms",
+        "terms_recovered",
+        "terms_missing",
+        "needs_review",
+    ]
+    with csv_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for result in review_results:
+            route = result.get("route", {})
+            writer.writerow(
+                {
+                    "sample_id": result.get("sample_id", ""),
+                    "source_image": result.get("source_image", ""),
+                    "bbox": json.dumps(result.get("bbox", []), ensure_ascii=False),
+                    "region_type": result.get("region_type", ""),
+                    "language": route.get("language", ""),
+                    "psm": route.get("psm", ""),
+                    "preprocess_profile": route.get("preprocess_profile", ""),
+                    "quality_judgment": result.get("quality_judgment", ""),
+                    "expected_terms": " | ".join(result.get("expected_terms", [])),
+                    "terms_recovered": " | ".join(result.get("terms_recovered", [])),
+                    "terms_missing": " | ".join(result.get("terms_missing", [])),
+                    "needs_review": str(bool(result.get("needs_review"))).lower(),
+                }
+            )
+
+
+def _write_review_markdown(review_results: list[dict[str, Any]], markdown_path: Path) -> None:
+    lines = [
+        "# Japanese Region OCR Review",
+        "",
+        "## Summary",
+        "",
+        "| Sample | Region Type | Route | Quality | Terms Recovered | Needs Review |",
+        "|---|---|---|---|---|---|",
+    ]
+    for result in review_results:
+        route = _format_route(result.get("route", {}))
+        lines.append(
+            "| {sample} | {region_type} | {route} | {quality} | {terms} | {needs_review} |".format(
+                sample=result.get("sample_id", ""),
+                region_type=result.get("region_type", ""),
+                route=route,
+                quality=result.get("quality_judgment", ""),
+                terms=", ".join(result.get("terms_recovered", [])) or "-",
+                needs_review=str(bool(result.get("needs_review"))).lower(),
+            )
+        )
+
+    lines.extend(["", "## Per-Sample Details", ""])
+    for result in review_results:
+        route = _format_route(result.get("route", {}))
+        lines.extend(
+            [
+                f"### {result.get('sample_id', '')}",
+                "",
+                f"- Source: `{result.get('source_image', '')}`",
+                f"- BBox: `{result.get('bbox', [])}`",
+                f"- Region type: `{result.get('region_type', '')}`",
+                f"- Route: `{route}`",
+                f"- Expected terms: {', '.join(result.get('expected_terms', [])) or '-'}",
+                f"- Terms recovered: {', '.join(result.get('terms_recovered', [])) or '-'}",
+                f"- Terms missing: {', '.join(result.get('terms_missing', [])) or '-'}",
+                f"- Quality: `{result.get('quality_judgment', '')}`",
+                f"- Needs review: `{str(bool(result.get('needs_review'))).lower()}`",
+                f"- Notes: {result.get('notes') or '-'}",
+                "",
+                "OCR output:",
+                "",
+                "```text",
+                str(result.get("ocr_output", "")).strip() or "[empty]",
+                "```",
+                "",
+            ]
+        )
+    markdown_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def _format_route(route: dict[str, Any]) -> str:
+    language = route.get("language") or "unknown"
+    psm = route.get("psm")
+    preprocess = route.get("preprocess_profile") or "unknown"
+    return f"{language} / PSM {psm} / {preprocess}"
+
+
+def _coerce_psm(psm: Any) -> int | str | None:
+    if psm is None:
+        return None
+    try:
+        return int(str(psm))
+    except ValueError:
+        return str(psm)
 
 
 def _select_region_profile(
