@@ -18,6 +18,7 @@
         status: document.getElementById("review-status"),
         pageList: document.getElementById("review-page-list"),
         regionList: document.getElementById("review-region-list"),
+        recognize: document.getElementById("review-recognize-page"),
         addRegion: document.getElementById("review-add-region"),
         image: document.getElementById("review-page-image"),
         overlay: document.getElementById("review-overlay"),
@@ -39,6 +40,12 @@
         effectiveBbox: document.getElementById("review-effective-bbox"),
         regionStatus: document.getElementById("review-region-status"),
         regionSource: document.getElementById("review-region-source"),
+        regionDetector: document.getElementById("review-region-detector"),
+        regionConfidence: document.getElementById("review-region-confidence"),
+        regionMixed: document.getElementById("review-region-mixed"),
+        regionNeedsReview: document.getElementById("review-region-needs-review"),
+        regionLayoutFusion: document.getElementById("review-region-layout-fusion"),
+        regionRole: document.getElementById("review-region-role"),
     };
 
     regionTypes.forEach((regionType) => {
@@ -50,6 +57,7 @@
 
     els.createProject.addEventListener("click", createOrLoadProject);
     els.loadProject.addEventListener("click", loadProjectById);
+    els.recognize.addEventListener("click", recognizePage);
     els.addRegion.addEventListener("click", addManualRegion);
     els.save.addEventListener("click", saveSelectedRegion);
     els.ignore.addEventListener("click", ignoreSelectedRegion);
@@ -124,6 +132,7 @@
         renderOverlay();
         renderSelectedRegion();
         els.addRegion.disabled = false;
+        els.recognize.disabled = false;
     }
 
     function syncOverlaySize() {
@@ -139,6 +148,7 @@
         els.image.removeAttribute("src");
         els.overlay.innerHTML = "";
         els.addRegion.disabled = true;
+        els.recognize.disabled = true;
     }
 
     function renderRegionList() {
@@ -243,6 +253,7 @@
             els.effectiveBbox.textContent = "-";
             els.regionStatus.textContent = "-";
             els.regionSource.textContent = "-";
+            renderRegionMetadata(null);
             return;
         }
         const bbox = region.reviewed_bbox || region.effective_bbox || [0, 0, 1, 1];
@@ -256,6 +267,17 @@
         els.effectiveBbox.textContent = region.effective_bbox ? JSON.stringify(region.effective_bbox) : "-";
         els.regionStatus.textContent = region.status || "-";
         els.regionSource.textContent = region.source || "-";
+        renderRegionMetadata(region);
+    }
+
+    function renderRegionMetadata(region) {
+        const metadata = region?.metadata || {};
+        els.regionDetector.textContent = metadata.detector || "-";
+        els.regionConfidence.textContent = formatValue(region?.confidence ?? metadata.confidence);
+        els.regionMixed.textContent = formatValue(metadata.mixed_region);
+        els.regionNeedsReview.textContent = formatValue(region?.needs_review ?? metadata.needs_review);
+        els.regionLayoutFusion.textContent = formatValue(metadata.layout_fusion_applied ?? metadata.paddle_layout_fusion);
+        els.regionRole.textContent = metadata.region_role || metadata.role || "-";
     }
 
     function updateSelectedFromPanel() {
@@ -293,6 +315,28 @@
         renderRegionList();
         renderOverlay();
         renderSelectedRegion();
+    }
+
+    async function recognizePage() {
+        if (!state.project || !state.page) return;
+        els.recognize.disabled = true;
+        setStatus("Running recognition for selected page...");
+        try {
+            const result = await requestJson(
+                `/api/review/projects/${encodeURIComponent(state.project.project_id)}/pages/${encodeURIComponent(state.page.page_id)}/recognize`,
+                { method: "POST" }
+            );
+            state.page = result.page;
+            state.selectedRegionId = null;
+            renderRegionList();
+            renderOverlay();
+            renderSelectedRegion();
+            setStatus(`Recognition imported ${result.detected_count || 0} region(s).`);
+        } catch (error) {
+            setStatus(error.message || "Recognition failed.");
+        } finally {
+            els.recognize.disabled = !state.page;
+        }
     }
 
     async function saveSelectedRegion() {
@@ -417,6 +461,12 @@
 
     function setStatus(message) {
         els.status.textContent = message;
+    }
+
+    function formatValue(value) {
+        if (value === null || value === undefined || value === "") return "-";
+        if (typeof value === "object") return JSON.stringify(value);
+        return String(value);
     }
 
     function escapeHtml(value) {

@@ -30,6 +30,7 @@ from martial_arts_ocr.db.context import DatabaseConfig, DatabaseContext
 from martial_arts_ocr.db.database import get_database_context, get_db_session, init_db
 from martial_arts_ocr.db.models import Document, Page, ProcessingResult
 from martial_arts_ocr.pipeline import PipelineRequest, WorkflowOrchestrator
+from martial_arts_ocr.pipeline.document_models import DocumentResult, PageResult
 from martial_arts_ocr.pipeline.extraction_service import ExtractionService, ExtractionServiceOptions
 from martial_arts_ocr.review import REGION_TYPES, ReviewWorkbenchStore
 
@@ -442,6 +443,84 @@ def _review_json_error(exc: Exception, status_code: int = 400):
     return jsonify({"error": str(exc)}), status_code
 
 
+def _detect_review_regions(
+    *,
+    image_path: Path,
+    page: dict,
+    output_dir: Path,
+) -> list[dict]:
+    """Run review-mode region detection without invoking OCR."""
+    injected_service = current_app.config.get("REVIEW_RECOGNITION_SERVICE")
+    service = injected_service or ExtractionService(
+        ExtractionServiceOptions(
+            enable_image_regions=True,
+            save_crops=False,
+            fail_on_extraction_error=False,
+            enable_paddle_layout_fusion=_config_bool(current_app.config.get("ENABLE_PADDLE_LAYOUT_FUSION", False)),
+            paddle_layout_model_dir=current_app.config.get("PADDLE_LAYOUT_MODEL_DIR"),
+        )
+    )
+    document = DocumentResult(
+        document_id=None,
+        source_path=image_path,
+        pages=[
+            PageResult(
+                page_number=1,
+                width=page.get("width"),
+                height=page.get("height"),
+                raw_text="",
+                metadata={
+                    "review_workbench_recognition": True,
+                    "ocr_executed": False,
+                },
+            )
+        ],
+        metadata={
+            "review_workbench_recognition": True,
+            "ocr_executed": False,
+        },
+    )
+    enriched = service.enrich_document_result(document, output_dir=output_dir)
+    if not enriched.pages:
+        return []
+    return [
+        _review_region_record_from_image_region(region)
+        for region in enriched.pages[0].image_regions
+        if region.bbox is not None
+    ]
+
+
+def _review_region_record_from_image_region(region) -> dict:
+    metadata = dict(region.metadata or {})
+    metadata.setdefault("detector", metadata.get("source") or "review_mode_extraction")
+    if region.reading_order is not None:
+        metadata.setdefault("reading_order", region.reading_order)
+    if region.image_path:
+        metadata.setdefault("image_path", str(region.image_path))
+    return {
+        "region_type": region.region_type,
+        "bbox": _bbox_as_xywh(region.bbox),
+        "confidence": region.confidence,
+        "metadata": metadata,
+    }
+
+
+def _bbox_as_xywh(bbox) -> list[int]:
+    if isinstance(bbox, dict):
+        return [
+            int(bbox.get("x") or 0),
+            int(bbox.get("y") or 0),
+            int(bbox.get("width") or 1),
+            int(bbox.get("height") or 1),
+        ]
+    return [
+        int(getattr(bbox, "x", 0)),
+        int(getattr(bbox, "y", 0)),
+        int(getattr(bbox, "width", 1)),
+        int(getattr(bbox, "height", 1)),
+    ]
+
+
 @app.get("/review")
 def review_workbench():
     """Local research workbench for page/region review."""
@@ -511,6 +590,35 @@ def api_review_page_image(project_id, page_id):
         return _review_json_error(exc, 403)
     except (FileNotFoundError, KeyError) as exc:
         return _review_json_error(exc, 404)
+
+
+@app.post("/api/review/projects/<project_id>/pages/<page_id>/recognize")
+def api_review_recognize_page(project_id, page_id):
+    store = _review_workbench_store()
+    try:
+        state = store.load_project(project_id)
+        page = store.get_page(state, page_id)
+        image_path = store.image_path(state, page_id)
+        output_dir = store.project_dir(project_id) / "recognition" / page_id
+        detected_regions = _detect_review_regions(
+            image_path=image_path,
+            page=page,
+            output_dir=output_dir,
+        )
+        updated_page = store.import_detected_regions(state, page_id, detected_regions)
+        return jsonify(
+            {
+                "page": updated_page,
+                "detected_count": len(detected_regions),
+                "rerun_behavior": "replaced_unreviewed_machine_detection_regions",
+            }
+        ), 200
+    except PermissionError as exc:
+        return _review_json_error(exc, 403)
+    except (FileNotFoundError, KeyError) as exc:
+        return _review_json_error(exc, 404)
+    except Exception as exc:
+        return _review_json_error(exc, 400)
 
 
 @app.post("/api/review/projects/<project_id>/pages/<page_id>/regions")

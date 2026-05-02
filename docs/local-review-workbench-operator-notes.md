@@ -53,7 +53,7 @@ data/runtime/review_projects/<project_id>/project_state.json
 
 ## Region Editing
 
-The first slice supports manual region review:
+The workbench supports manual region review:
 
 - select a page;
 - add a manual region;
@@ -77,6 +77,33 @@ effective_bbox
 ```
 
 Reviewer edits update reviewed/effective fields. They do not overwrite detected fields.
+
+## Run Recognition
+
+After selecting a page, click `Run Recognition` to import machine-detected regions for that page.
+
+This uses the existing review-mode region/image detection path as advisory input. It does not run OCR, translation, or Japanese analysis.
+
+Imported machine regions use:
+
+```text
+source=machine_detection
+status=detected
+detected_type
+detected_bbox
+effective_type
+effective_bbox
+metadata.detector
+```
+
+Rerun behavior is conservative:
+
+- unreviewed `source=machine_detection` regions are replaced;
+- manual regions are preserved;
+- reviewed regions are preserved;
+- ignored regions are preserved.
+
+Selected-region audit fields show detector metadata when available, including confidence, mixed-region flags, needs-review flags, layout fusion metadata, and region role.
 
 ## Region Types
 
@@ -118,9 +145,8 @@ Commit only source code, templates/static assets, tests, and docs.
 
 - No OCR button yet.
 - No translation button yet.
-- No automatic region recognition button yet.
 - No PDF/DOCX export.
 - No multi-user coordination.
 - No polished annotation UI.
 
-The next slice should wire existing review-mode region detection into detected regions, then keep reviewer edits as overrides.
+The next slice should add reviewed-region OCR controls without changing OCR defaults or mutating source text.

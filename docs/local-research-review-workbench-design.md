@@ -24,9 +24,18 @@ MVP slice 1 implemented:
 - `project_state.json` save/load behavior;
 - detected fields preserved separately from reviewer overrides.
 
-Not implemented in slice 1:
+MVP slice 2 implemented:
 
-- automatic region recognition button;
+- `Run Recognition` button for the selected page;
+- review API endpoint for importing machine-detected regions;
+- existing review-mode image/region detection used as advisory input;
+- machine detections stored as `source=machine_detection`;
+- unreviewed machine detections replaced on rerun;
+- manual, reviewed, and ignored regions preserved on rerun;
+- detector metadata surfaced in the selected-region audit panel.
+
+Not implemented yet:
+
 - OCR execution;
 - translation;
 - DOCX/PDF export;
@@ -167,7 +176,7 @@ Field meanings:
 - `reviewed_bbox`: reviewer-adjusted bbox, nullable.
 - `effective_bbox`: `reviewed_bbox` if present, otherwise `detected_bbox`.
 - `status`: `detected`, `reviewed`, `ignored`, `manual`, `ocr_ready`, `ocr_reviewed`.
-- `source`: `detector`, `reviewer_override`, `manual`, `imported`.
+- `source`: `machine_detection`, `reviewer_override`, `manual`, `imported`.
 - `notes`: free-form researcher note.
 
 Do not overwrite detected fields when reviewer fields change.
@@ -232,7 +241,8 @@ Region recognition flow:
 
 ```text
 source page
-  -> review-mode extraction
+  -> Run Recognition
+  -> review-mode extraction/image-region detection
   -> detected regions
   -> overlay boxes
   -> reviewer type/bbox/status edits
@@ -245,6 +255,9 @@ Rules:
 - Reviewer override is never hidden.
 - Ignoring a region should set status/ignored, not erase provenance.
 - Manual regions should have no `detected_bbox` and should set `source=manual`.
+- Rerunning recognition should replace only unreviewed `source=machine_detection` regions.
+- Rerunning recognition should preserve manual, reviewed, and ignored regions.
+- Recognition does not run OCR and does not classify Japanese text content in this slice.
 - All edits should update `updated_at` and optionally append an audit event.
 
 Recommended audit event shape:

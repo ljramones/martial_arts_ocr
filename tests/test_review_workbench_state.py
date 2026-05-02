@@ -121,6 +121,70 @@ def test_reloads_project_state_from_disk(tmp_path):
     assert loaded["pages"][0]["regions"][0]["effective_type"] == "english_text"
 
 
+def test_import_detected_regions_preserves_reviewer_work_and_replaces_unreviewed_machine_regions(tmp_path):
+    source = tmp_path / "scans"
+    source.mkdir()
+    _write_image(source / "page.png", size=(200, 160))
+    store = ReviewWorkbenchStore(tmp_path / "runtime" / "review_projects", allowed_roots=[tmp_path])
+    state = store.create_project(source, project_id="example")
+    page_id = state["pages"][0]["page_id"]
+
+    page = store.import_detected_regions(
+        state,
+        page_id,
+        [
+            {
+                "region_type": "image",
+                "bbox": [10, 12, 40, 50],
+                "confidence": 0.82,
+                "metadata": {"detector": "fake_detector"},
+            },
+            {
+                "region_type": "image",
+                "bbox": [70, 20, 30, 35],
+                "metadata": {"needs_review": True, "mixed_region": True},
+            },
+        ],
+    )
+
+    assert [region["region_id"] for region in page["regions"]] == ["det_001", "det_002"]
+    first = page["regions"][0]
+    assert first["detected_type"] == "image"
+    assert first["detected_bbox"] == [10, 12, 40, 50]
+    assert first["effective_bbox"] == [10, 12, 40, 50]
+    assert first["metadata"]["detector"] == "fake_detector"
+    assert first["source"] == "machine_detection"
+    assert page["regions"][1]["detected_type"] == "unknown_needs_review"
+
+    manual = store.add_region(state, page_id, {"reviewed_type": "caption_label", "bbox": [5, 5, 20, 20]})
+    reviewed = store.update_region(
+        state,
+        page_id,
+        "det_001",
+        {"reviewed_type": "diagram", "reviewed_bbox": [8, 10, 45, 55]},
+    )
+
+    rerun_page = store.import_detected_regions(
+        state,
+        page_id,
+        [
+            {
+                "region_type": "photo",
+                "bbox": [100, 70, 25, 30],
+                "metadata": {"detector": "second_run"},
+            }
+        ],
+    )
+
+    regions = {region["region_id"]: region for region in rerun_page["regions"]}
+    assert manual["region_id"] in regions
+    assert regions["det_001"]["reviewed_type"] == "diagram"
+    assert regions["det_001"]["detected_bbox"] == reviewed["detected_bbox"]
+    assert regions["det_002"]["detected_type"] == "photo"
+    assert regions["det_002"]["metadata"]["detector"] == "second_run"
+    assert rerun_page["recognition"]["rerun_behavior"] == "replaced_unreviewed_machine_detection_regions"
+
+
 def test_source_folder_must_be_under_allowed_root(tmp_path):
     allowed = tmp_path / "allowed"
     outside = tmp_path / "outside"

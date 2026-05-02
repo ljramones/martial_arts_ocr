@@ -181,6 +181,64 @@ class ReviewWorkbenchStore:
             raise KeyError(f"Region not found: {region_id}")
         self.save_project(state)
 
+    def import_detected_regions(
+        self,
+        state: dict[str, Any],
+        page_id: str,
+        detected_regions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Replace unreviewed machine detections while preserving reviewer work."""
+        page = self.get_page(state, page_id)
+        existing_regions = page.setdefault("regions", [])
+        preserved_regions = [
+            region for region in existing_regions
+            if not _is_replaceable_machine_region(region)
+        ]
+        imported_regions = []
+        for detected in detected_regions:
+            bbox = _coerce_bbox(detected.get("bbox"), page)
+            metadata = dict(detected.get("metadata") or {})
+            confidence = detected.get("confidence")
+            if confidence is not None:
+                metadata.setdefault("confidence", confidence)
+            detector = detected.get("detector") or metadata.get("detector") or "review_mode_extraction"
+            metadata.setdefault("detector", detector)
+
+            detected_type = _map_detected_region_type(
+                detected.get("detected_type") or detected.get("region_type") or detected.get("type"),
+                metadata,
+            )
+            region = _with_effective_fields(
+                {
+                    "region_id": _next_detected_region_id(preserved_regions + imported_regions),
+                    "detected_type": detected_type,
+                    "reviewed_type": None,
+                    "detected_bbox": bbox,
+                    "reviewed_bbox": None,
+                    "status": "detected",
+                    "source": "machine_detection",
+                    "notes": str(detected.get("notes") or ""),
+                    "ignored": False,
+                    "metadata": metadata,
+                }
+            )
+            if confidence is not None:
+                region["confidence"] = confidence
+            if metadata.get("needs_review") is not None:
+                region["needs_review"] = bool(metadata.get("needs_review"))
+            imported_regions.append(region)
+
+        page["regions"] = preserved_regions + imported_regions
+        page["status"] = "regions_detected"
+        page["recognition"] = {
+            "last_run_at": _now(),
+            "detected_count": len(imported_regions),
+            "preserved_region_count": len(preserved_regions),
+            "rerun_behavior": "replaced_unreviewed_machine_detection_regions",
+        }
+        self.save_project(state)
+        return page
+
     def image_path(self, state: dict[str, Any], page_id: str) -> Path:
         page = self.get_page(state, page_id)
         path = Path(page["source_path"]).expanduser().resolve()
@@ -275,6 +333,42 @@ def _next_region_id(regions: list[dict[str, Any]]) -> str:
         if match:
             max_index = max(max_index, int(match.group(1)))
     return f"r_{max_index + 1:03d}"
+
+
+def _next_detected_region_id(regions: list[dict[str, Any]]) -> str:
+    max_index = 0
+    for region in regions:
+        match = re.fullmatch(r"det_(\d+)", str(region.get("region_id", "")))
+        if match:
+            max_index = max(max_index, int(match.group(1)))
+    return f"det_{max_index + 1:03d}"
+
+
+def _is_replaceable_machine_region(region: dict[str, Any]) -> bool:
+    return (
+        region.get("source") == "machine_detection"
+        and region.get("status") == "detected"
+        and not region.get("reviewed_type")
+    )
+
+
+def _map_detected_region_type(raw_type: Any, metadata: dict[str, Any]) -> str:
+    if metadata.get("needs_review") or metadata.get("mixed_region"):
+        return "unknown_needs_review"
+    normalized = str(raw_type or "image").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "figure": "diagram",
+        "picture": "image",
+        "visual": "image",
+        "text": "unknown_needs_review",
+        "text_region": "unknown_needs_review",
+        "caption": "caption_label",
+        "label": "caption_label",
+        "caption_or_label": "caption_label",
+        "unknown": "unknown_needs_review",
+    }
+    mapped = aliases.get(normalized, normalized)
+    return mapped if mapped in REGION_TYPES else "image"
 
 
 def _safe_id(value: str) -> str:

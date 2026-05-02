@@ -48,7 +48,10 @@
 
         <section class="review-card">
             <h3>Regions</h3>
-            <button id="review-add-region" class="btn btn-secondary btn-sm" type="button" disabled>Add Manual Region</button>
+            <div class="review-button-row">
+                <button id="review-recognize-page" class="btn btn-primary btn-sm" type="button" disabled>Run Recognition</button>
+                <button id="review-add-region" class="btn btn-secondary btn-sm" type="button" disabled>Add Manual Region</button>
+            </div>
             <div id="review-region-list" class="review-list" role="list"></div>
         </section>
     </aside>
@@ -99,6 +102,12 @@
                 <dt>Effective bbox</dt><dd id="review-effective-bbox">-</dd>
                 <dt>Status</dt><dd id="review-region-status">-</dd>
                 <dt>Source</dt><dd id="review-region-source">-</dd>
+                <dt>Detector</dt><dd id="review-region-detector">-</dd>
+                <dt>Confidence</dt><dd id="review-region-confidence">-</dd>
+                <dt>Mixed</dt><dd id="review-region-mixed">-</dd>
+                <dt>Needs review</dt><dd id="review-region-needs-review">-</dd>
+                <dt>Layout fusion</dt><dd id="review-region-layout-fusion">-</dd>
+                <dt>Region role</dt><dd id="review-region-role">-</dd>
             </dl>
         </section>
     </aside>
