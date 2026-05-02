@@ -43,6 +43,9 @@
 - [Japanese Region OCR Routing Design](japanese-region-ocr-routing-design.md):
   evidence-based review-mode design for routing Japanese-bearing regions to
   language, PSM, and preprocessing profiles.
+- [Macron Normalization Candidate Design](macron-normalization-candidate-design.md):
+  review-only glossary-backed design for suggesting macronized romanization
+  candidates without mutating OCR text.
 - [OCR Text Quality Assessment](ocr-text-quality-assessment.md): assessment of
   OCR output, cleanup, Japanese handling, and canonical model gaps.
 - [OCR Text Normalization Notes](ocr-text-normalization-notes.md): word/line
