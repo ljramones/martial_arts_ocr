@@ -46,6 +46,9 @@
 - [Macron Normalization Candidate Design](macron-normalization-candidate-design.md):
   review-only glossary-backed design for suggesting macronized romanization
   candidates without mutating OCR text.
+- [Macron Candidate Review State](macron-candidate-review-state-2026-04-28.md):
+  current glossary-backed candidate behavior, review artifact results, and the
+  guardrail against blind automatic normalization.
 - [OCR Text Quality Assessment](ocr-text-quality-assessment.md): assessment of
   OCR output, cleanup, Japanese handling, and canonical model gaps.
 - [OCR Text Normalization Notes](ocr-text-normalization-notes.md): word/line
