@@ -36,6 +36,8 @@ def test_candidate_to_dict_uses_json_friendly_shape():
         "confidence": "candidate",
         "term_category": "style",
         "ambiguous": False,
+        "case_pattern": "titlecase",
+        "reviewed_value_suggestion": "Daitō-ryū",
         "notes": [],
     }
 
@@ -49,6 +51,28 @@ def test_case_insensitive_match_preserves_observed_form():
         ("KORYU", "koryū"),
         ("budo", "budō"),
     ]
+    assert [(c.case_pattern, c.reviewed_value_suggestion) for c in candidates] == [
+        ("uppercase", "KORYŪ"),
+        ("lowercase", "budō"),
+    ]
+
+
+def test_uppercase_observed_text_gets_uppercase_review_suggestion():
+    candidate = find_macron_normalization_candidates("1. BUJUTSU AND BUDO.")[0]
+
+    assert candidate.observed == "BUDO"
+    assert candidate.candidate == "budō"
+    assert candidate.case_pattern == "uppercase"
+    assert candidate.reviewed_value_suggestion == "BUDŌ"
+    assert candidate.requires_review is True
+
+
+def test_mixed_case_observed_text_keeps_canonical_review_suggestion():
+    candidate = find_macron_normalization_candidates("The OCR saw KoRyU.")[0]
+
+    assert candidate.observed == "KoRyU"
+    assert candidate.case_pattern == "mixed"
+    assert candidate.reviewed_value_suggestion == "koryū"
 
 
 def test_canonical_macron_text_does_not_create_replacement_candidate():

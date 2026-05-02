@@ -32,6 +32,8 @@ class MacronCandidate:
     confidence: str = "candidate"
     term_category: str | None = None
     ambiguous: bool = False
+    case_pattern: str = "as_glossary"
+    reviewed_value_suggestion: str | None = None
     notes: tuple[str, ...] = field(default_factory=tuple)
 
     def to_dict(self) -> dict[str, Any]:
@@ -46,6 +48,8 @@ class MacronCandidate:
             "confidence": self.confidence,
             "term_category": self.term_category,
             "ambiguous": self.ambiguous,
+            "case_pattern": self.case_pattern,
+            "reviewed_value_suggestion": self.reviewed_value_suggestion,
             "notes": list(self.notes),
         }
 
@@ -129,6 +133,8 @@ def find_macron_normalization_candidates(
                     context=_context(text, match.start(), match.end(), context_chars),
                     match_type=match_type,
                     term_category=term.category,
+                    case_pattern=_case_pattern(observed),
+                    reviewed_value_suggestion=_reviewed_value_suggestion(observed, term.canonical),
                     notes=term.notes,
                 )
                 matches.append(((match.start(), match.end()), candidate))
@@ -203,6 +209,8 @@ def _mark_ambiguity(candidates: list[MacronCandidate]) -> list[MacronCandidate]:
                 confidence=candidate.confidence,
                 term_category=candidate.term_category,
                 ambiguous=True,
+                case_pattern=candidate.case_pattern,
+                reviewed_value_suggestion=candidate.reviewed_value_suggestion,
                 notes=candidate.notes,
             )
         )
@@ -211,6 +219,28 @@ def _mark_ambiguity(candidates: list[MacronCandidate]) -> list[MacronCandidate]:
 
 def _normalized_hyphen_space(text: str) -> str:
     return re.sub(r"[-\s]+", "", text).casefold()
+
+
+def _case_pattern(observed: str) -> str:
+    letters = [char for char in observed if char.isalpha()]
+    if not letters:
+        return "as_glossary"
+    if all(char.isupper() for char in letters):
+        return "uppercase"
+    if all(char.islower() for char in letters):
+        return "lowercase"
+    if observed[:1].isupper() and observed[1:].islower():
+        return "titlecase"
+    return "mixed"
+
+
+def _reviewed_value_suggestion(observed: str, canonical: str) -> str:
+    case_pattern = _case_pattern(observed)
+    if case_pattern == "uppercase":
+        return canonical.upper()
+    if case_pattern == "titlecase":
+        return canonical[:1].upper() + canonical[1:]
+    return canonical
 
 
 def _strip_macrons(text: str) -> str:
