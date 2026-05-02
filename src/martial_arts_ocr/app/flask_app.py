@@ -31,6 +31,7 @@ from martial_arts_ocr.db.database import get_database_context, get_db_session, i
 from martial_arts_ocr.db.models import Document, Page, ProcessingResult
 from martial_arts_ocr.pipeline import PipelineRequest, WorkflowOrchestrator
 from martial_arts_ocr.pipeline.extraction_service import ExtractionService, ExtractionServiceOptions
+from martial_arts_ocr.review import REGION_TYPES, ReviewWorkbenchStore
 
 APP_EXTENSION_KEY = "martial_arts_ocr"
 
@@ -418,6 +419,143 @@ def enforce_allowed_hosts():
 @app.get("/healthz")
 def healthz():
     return {"ok": True}, 200
+
+
+# -------------------------
+# Local research review workbench
+# -------------------------
+def _review_workbench_store() -> ReviewWorkbenchStore:
+    runtime_dir = Path(current_app.config.get("RUNTIME_DIR") or Path(current_app.config["DATA_DIR"]) / "runtime")
+    project_root = Path(current_app.config.get("REVIEW_PROJECTS_DIR") or runtime_dir / "review_projects")
+    configured_roots = current_app.config.get("REVIEW_ALLOWED_ROOTS")
+    if configured_roots is None:
+        configured_roots = [current_app.config.get("DATA_DIR"), Path.cwd()]
+    allowed_roots = [
+        Path(root)
+        for root in configured_roots
+        if root
+    ]
+    return ReviewWorkbenchStore(project_root, allowed_roots=allowed_roots)
+
+
+def _review_json_error(exc: Exception, status_code: int = 400):
+    return jsonify({"error": str(exc)}), status_code
+
+
+@app.get("/review")
+def review_workbench():
+    """Local research workbench for page/region review."""
+    return render_template("review_workbench.html", region_types=REGION_TYPES)
+
+
+@app.post("/api/review/projects")
+def api_review_create_project():
+    data = request.get_json() or {}
+    store = _review_workbench_store()
+    try:
+        source_folder = data.get("source_folder")
+        project_id = data.get("project_id")
+        if source_folder:
+            state = store.create_project(Path(source_folder), project_id=project_id)
+        elif project_id:
+            state = store.load_project(str(project_id))
+        else:
+            return _review_json_error(ValueError("source_folder or project_id is required"))
+        return jsonify(state), 200
+    except PermissionError as exc:
+        return _review_json_error(exc, 403)
+    except FileNotFoundError as exc:
+        return _review_json_error(exc, 404)
+    except Exception as exc:
+        return _review_json_error(exc, 400)
+
+
+@app.get("/api/review/projects/<project_id>")
+def api_review_get_project(project_id):
+    store = _review_workbench_store()
+    try:
+        return jsonify(store.load_project(project_id)), 200
+    except FileNotFoundError as exc:
+        return _review_json_error(exc, 404)
+
+
+@app.get("/api/review/projects/<project_id>/pages")
+def api_review_list_pages(project_id):
+    store = _review_workbench_store()
+    try:
+        state = store.load_project(project_id)
+        return jsonify({"project_id": project_id, "pages": state.get("pages", [])}), 200
+    except FileNotFoundError as exc:
+        return _review_json_error(exc, 404)
+
+
+@app.get("/api/review/projects/<project_id>/pages/<page_id>")
+def api_review_get_page(project_id, page_id):
+    store = _review_workbench_store()
+    try:
+        state = store.load_project(project_id)
+        return jsonify(store.get_page(state, page_id)), 200
+    except FileNotFoundError as exc:
+        return _review_json_error(exc, 404)
+    except KeyError as exc:
+        return _review_json_error(exc, 404)
+
+
+@app.get("/api/review/projects/<project_id>/pages/<page_id>/image")
+def api_review_page_image(project_id, page_id):
+    store = _review_workbench_store()
+    try:
+        state = store.load_project(project_id)
+        return send_file(store.image_path(state, page_id))
+    except PermissionError as exc:
+        return _review_json_error(exc, 403)
+    except (FileNotFoundError, KeyError) as exc:
+        return _review_json_error(exc, 404)
+
+
+@app.post("/api/review/projects/<project_id>/pages/<page_id>/regions")
+def api_review_add_region(project_id, page_id):
+    data = request.get_json() or {}
+    store = _review_workbench_store()
+    try:
+        state = store.load_project(project_id)
+        region = store.add_region(state, page_id, data)
+        return jsonify({"region": region, "page": store.get_page(state, page_id)}), 201
+    except FileNotFoundError as exc:
+        return _review_json_error(exc, 404)
+    except KeyError as exc:
+        return _review_json_error(exc, 404)
+    except Exception as exc:
+        return _review_json_error(exc, 400)
+
+
+@app.patch("/api/review/projects/<project_id>/pages/<page_id>/regions/<region_id>")
+def api_review_update_region(project_id, page_id, region_id):
+    data = request.get_json() or {}
+    store = _review_workbench_store()
+    try:
+        state = store.load_project(project_id)
+        region = store.update_region(state, page_id, region_id, data)
+        return jsonify({"region": region, "page": store.get_page(state, page_id)}), 200
+    except FileNotFoundError as exc:
+        return _review_json_error(exc, 404)
+    except KeyError as exc:
+        return _review_json_error(exc, 404)
+    except Exception as exc:
+        return _review_json_error(exc, 400)
+
+
+@app.delete("/api/review/projects/<project_id>/pages/<page_id>/regions/<region_id>")
+def api_review_delete_region(project_id, page_id, region_id):
+    store = _review_workbench_store()
+    try:
+        state = store.load_project(project_id)
+        store.delete_region(state, page_id, region_id)
+        return jsonify({"page": store.get_page(state, page_id)}), 200
+    except FileNotFoundError as exc:
+        return _review_json_error(exc, 404)
+    except KeyError as exc:
+        return _review_json_error(exc, 404)
 
 # -------------------------
 # Background processing

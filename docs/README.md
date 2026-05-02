@@ -19,6 +19,9 @@
 - [Local Research Review Workbench Design](local-research-review-workbench-design.md):
   local-only research UI design for page viewing, editable region overlays,
   review state, OCR routing, translation review, and exports.
+- [Local Review Workbench Operator Notes](local-review-workbench-operator-notes.md):
+  how to run the first local page viewer and editable overlay prototype, where
+  `project_state.json` lives, and what not to commit.
 - [Extraction Quality Rubric](extraction-quality-rubric.md): criteria for
   judging image, text, and layout extraction quality.
 

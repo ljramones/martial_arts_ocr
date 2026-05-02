@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}Local Research Review Workbench{% endblock %}
+{% block body_class %}review-workbench-page{% endblock %}
+{% block container_class %}container-fluid{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/review_workbench.css') }}">
+{% endblock %}
+
+{% block extra_nav %}
+<li class="nav-item">
+    <a href="{{ url_for('review_workbench') }}"
+       class="nav-link {{ 'active' if request.endpoint == 'review_workbench' else '' }}"
+       {% if request.endpoint == 'review_workbench' %}aria-current="page"{% endif %}>
+        Review Workbench
+    </a>
+</li>
+{% endblock %}
+
+{% block page_title %}Local Research Review Workbench{% endblock %}
+{% block page_subtitle %}
+<p class="page-subtitle">Local-only research prototype. OCR and layout suggestions require human review.</p>
+{% endblock %}
+
+{% block content %}
+<section class="review-shell" data-region-types='{{ region_types | tojson }}'>
+    <aside class="review-panel review-left-panel" aria-label="Project and page controls">
+        <section class="review-card">
+            <h3>Project</h3>
+            <label for="review-source-folder">Local folder path</label>
+            <input id="review-source-folder" type="text" placeholder="/path/to/scanned/pages">
+
+            <label for="review-project-id">Project ID</label>
+            <input id="review-project-id" type="text" placeholder="optional_project_id">
+
+            <div class="review-button-row">
+                <button id="review-create-project" class="btn btn-primary btn-sm" type="button">Create / Load</button>
+                <button id="review-load-project" class="btn btn-secondary btn-sm" type="button">Load ID</button>
+            </div>
+            <p class="review-status" id="review-status">No project loaded.</p>
+        </section>
+
+        <section class="review-card">
+            <h3>Pages</h3>
+            <div id="review-page-list" class="review-list" role="list"></div>
+        </section>
+
+        <section class="review-card">
+            <h3>Regions</h3>
+            <button id="review-add-region" class="btn btn-secondary btn-sm" type="button" disabled>Add Manual Region</button>
+            <div id="review-region-list" class="review-list" role="list"></div>
+        </section>
+    </aside>
+
+    <section class="review-viewer-panel" aria-label="Page viewer">
+        <div class="review-caveat">
+            Machine regions are advisory. Preserve the detected box, adjust the reviewed box, and save before using downstream OCR.
+        </div>
+        <div id="review-page-stage" class="review-page-stage">
+            <div class="review-empty-state" id="review-empty-state">Create or load a project, then select a page.</div>
+            <img id="review-page-image" alt="Selected scanned page" hidden>
+            <svg id="review-overlay" class="review-overlay" hidden></svg>
+        </div>
+    </section>
+
+    <aside class="review-panel review-right-panel" aria-label="Selected region controls">
+        <section class="review-card">
+            <h3>Selected Region</h3>
+            <p id="review-selected-region-id" class="review-muted">No region selected.</p>
+
+            <label for="review-region-type">Reviewed type</label>
+            <select id="review-region-type" disabled></select>
+
+            <fieldset class="review-bbox-grid" id="review-bbox-fields" disabled>
+                <legend>Reviewed bbox</legend>
+                <label>X <input id="review-bbox-x" type="number" min="0" step="1"></label>
+                <label>Y <input id="review-bbox-y" type="number" min="0" step="1"></label>
+                <label>W <input id="review-bbox-w" type="number" min="1" step="1"></label>
+                <label>H <input id="review-bbox-h" type="number" min="1" step="1"></label>
+            </fieldset>
+
+            <label for="review-region-notes">Notes</label>
+            <textarea id="review-region-notes" rows="5" disabled></textarea>
+
+            <div class="review-button-row">
+                <button id="review-save-region" class="btn btn-primary btn-sm" type="button" disabled>Save Region</button>
+                <button id="review-ignore-region" class="btn btn-secondary btn-sm" type="button" disabled>Ignore</button>
+                <button id="review-delete-region" class="btn btn-danger btn-sm" type="button" disabled>Delete</button>
+            </div>
+        </section>
+
+        <section class="review-card">
+            <h3>Audit</h3>
+            <dl class="review-audit">
+                <dt>Detected type</dt><dd id="review-detected-type">-</dd>
+                <dt>Effective type</dt><dd id="review-effective-type">-</dd>
+                <dt>Detected bbox</dt><dd id="review-detected-bbox">-</dd>
+                <dt>Effective bbox</dt><dd id="review-effective-bbox">-</dd>
+                <dt>Status</dt><dd id="review-region-status">-</dd>
+                <dt>Source</dt><dd id="review-region-source">-</dd>
+            </dl>
+        </section>
+    </aside>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/review_workbench.js') }}"></script>
+{% endblock %}

@@ -8,6 +8,31 @@ The workbench should let a researcher load pages, inspect machine-proposed regio
 
 This is not a polished commercial product. It is a local research workbench for the user and trusted collaborators.
 
+## Implementation Status
+
+MVP slice 1 implemented:
+
+- local file-backed project state under `data/runtime/review_projects/`;
+- `/review` local workbench page;
+- local folder/page listing through server-side paths;
+- scanned page image viewer;
+- editable SVG region overlays;
+- manual region creation;
+- region type dropdown;
+- bbox drag/resize and numeric bbox editing;
+- delete/ignore region controls;
+- `project_state.json` save/load behavior;
+- detected fields preserved separately from reviewer overrides.
+
+Not implemented in slice 1:
+
+- automatic region recognition button;
+- OCR execution;
+- translation;
+- DOCX/PDF export;
+- canonical Japanese field promotion;
+- database-backed review projects.
+
 ## Research Prototype Assumptions
 
 - This is for local research use.
