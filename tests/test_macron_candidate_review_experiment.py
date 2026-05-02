@@ -11,6 +11,8 @@ def test_parser_exposes_review_inputs():
     assert "--summary-json" in help_text
     assert "--output-dir" in help_text
     assert "--no-fixtures" in help_text
+    assert "--decisions-file" in help_text
+    assert "--reviewed-export" in help_text
 
 
 def test_load_text_sources_from_summary_json_extracts_relevant_text(tmp_path):
@@ -52,6 +54,10 @@ def test_review_text_sources_emits_candidates_without_mutating_text():
         ("koryu", "koryū"),
     ]
     assert all(candidate["requires_review"] is True for candidate in reviewed[0]["candidates"])
+    assert all(candidate["candidate_id"].startswith("sha256:") for candidate in reviewed[0]["candidates"])
+    assert all(candidate["decision"] is None for candidate in reviewed[0]["candidates"])
+    assert all(candidate["reviewed_value"] is None for candidate in reviewed[0]["candidates"])
+    assert all(candidate["reviewer_notes"] == [] for candidate in reviewed[0]["candidates"])
 
 
 def test_canonical_fixture_text_does_not_emit_replacement_candidate():
@@ -93,3 +99,84 @@ def test_candidate_summary_groups_by_candidate_match_type_and_source_type():
         },
         "by_source_type": {"fixture": 1, "summary_json": 2},
     }
+
+
+def test_candidate_id_is_deterministic_and_source_sensitive():
+    candidate = {
+        "span": [10, 19],
+        "observed": "Daito-ryu",
+        "candidate": "Daitō-ryū",
+        "match_type": "variant_exact",
+    }
+
+    first = helper.candidate_id_for(
+        source_id="source-a",
+        source_path="summary.json",
+        field_path="$.readable_text",
+        candidate=candidate,
+    )
+    second = helper.candidate_id_for(
+        source_id="source-a",
+        source_path="summary.json",
+        field_path="$.readable_text",
+        candidate=candidate,
+    )
+    different = helper.candidate_id_for(
+        source_id="source-b",
+        source_path="summary.json",
+        field_path="$.readable_text",
+        candidate=candidate,
+    )
+
+    assert first == second
+    assert first.startswith("sha256:")
+    assert first != different
+
+
+def test_decisions_template_contains_review_placeholders():
+    source = helper.TextSource(source_id="sample", source_type="fixture", text="Daito-ryu")
+    reviewed_sources = [source for source in helper.review_text_sources([source]) if source["candidate_count"]]
+
+    template = helper.build_decisions_template(reviewed_sources)
+
+    assert template["schema_version"] == "macron_candidate_decisions.v1"
+    assert len(template["decisions"]) == 1
+    decision = template["decisions"][0]
+    assert decision["candidate_id"].startswith("sha256:")
+    assert decision["observed"] == "Daito-ryu"
+    assert decision["candidate"] == "Daitō-ryū"
+    assert decision["decision"] is None
+    assert decision["reviewed_value"] is None
+    assert decision["notes"] == []
+
+
+def test_write_decisions_template_preserves_existing_file_by_default(tmp_path):
+    path = tmp_path / "decisions.local.json"
+    path.write_text('{"existing": true}', encoding="utf-8")
+
+    wrote = helper.write_decisions_template(path, {"new": True})
+
+    assert wrote is False
+    assert path.read_text(encoding="utf-8") == '{"existing": true}'
+
+
+def test_reviewed_export_separates_pending_reviewed_and_stale_decisions():
+    source = helper.TextSource(source_id="sample", source_type="fixture", text="Daito-ryu koryu budo")
+    reviewed_sources = [source for source in helper.review_text_sources([source]) if source["candidate_count"]]
+    decisions_template = helper.build_decisions_template(reviewed_sources)
+    decisions = decisions_template["decisions"]
+    decisions[0]["decision"] = "accept"
+    decisions[0]["reviewed_value"] = decisions[0]["candidate"]
+    decisions[1]["decision"] = "reject"
+    decisions.append({"candidate_id": "sha256:stale", "decision": "accept"})
+
+    export = helper.build_reviewed_export(reviewed_sources, decisions_template)
+
+    assert export["source_text_mutated"] is False
+    assert export["counts"]["accept"] == 1
+    assert export["counts"]["reject"] == 1
+    assert export["counts"]["pending"] == 1
+    assert export["counts"]["stale"] == 1
+    assert len(export["reviewed_decisions"]) == 2
+    assert export["reviewed_decisions"][0]["review_decision"]["reviewed_value"] == "Daitō-ryū"
+    assert export["stale_decisions"] == [{"candidate_id": "sha256:stale", "decision": "accept"}]

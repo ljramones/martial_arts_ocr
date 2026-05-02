@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from collections import Counter
@@ -93,6 +94,24 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Do not include controlled fixture strings in the scan.",
     )
+    parser.add_argument(
+        "--decisions-file",
+        default=None,
+        help=(
+            "Local ignored decisions file. Defaults to decisions.local.json in the output directory. "
+            "The helper creates a template when the file is missing."
+        ),
+    )
+    parser.add_argument(
+        "--reviewed-export",
+        default=None,
+        help="Ignored reviewed-decision export path. Defaults to reviewed_decisions.json in the output directory.",
+    )
+    parser.add_argument(
+        "--overwrite-decisions-template",
+        action="store_true",
+        help="Overwrite an existing local decisions template. Existing files are preserved by default.",
+    )
     return parser
 
 
@@ -100,6 +119,10 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     output_dir = _resolve(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    decisions_path = _resolve(args.decisions_file) if args.decisions_file else output_dir / "decisions.local.json"
+    reviewed_export_path = (
+        _resolve(args.reviewed_export) if args.reviewed_export else output_dir / "reviewed_decisions.json"
+    )
 
     summary_paths = [_resolve(path) for path in args.summary_json] if args.summary_json else DEFAULT_SUMMARY_PATHS
     sources: list[TextSource] = []
@@ -127,6 +150,8 @@ def main(argv: list[str] | None = None) -> int:
         "input_summary_paths": [str(path) for path in summary_paths],
         "existing_summary_paths": existing_paths,
         "missing_summary_paths": missing_paths,
+        "decisions_file": str(decisions_path),
+        "reviewed_export": str(reviewed_export_path),
         "sources_scanned": len(reviewed_sources),
         "sources_with_candidates": len(candidate_sources),
         "candidate_count": len(candidates),
@@ -136,12 +161,26 @@ def main(argv: list[str] | None = None) -> int:
 
     summary_path = output_dir / "summary.json"
     summary_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    decisions_payload = build_decisions_template(candidate_sources)
+    decisions_template_written = write_decisions_template(
+        decisions_path,
+        decisions_payload,
+        overwrite=args.overwrite_decisions_template,
+    )
+    decisions_payload = load_decisions_file(decisions_path)
+    reviewed_export = build_reviewed_export(candidate_sources, decisions_payload)
+    reviewed_export_path.write_text(json.dumps(reviewed_export, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(
         f"Scanned {payload['sources_scanned']} text sources; "
         f"found {payload['candidate_count']} candidates in {payload['sources_with_candidates']} sources."
     )
     print(f"Summary: {summary_path}")
+    print(
+        f"Decisions template: {decisions_path}"
+        f"{' (created)' if decisions_template_written else ' (preserved existing)'}"
+    )
+    print(f"Reviewed export: {reviewed_export_path}")
     return 0
 
 
@@ -165,6 +204,23 @@ def review_text_sources(sources: list[TextSource]) -> list[dict[str, Any]]:
     reviewed = []
     for source in sources:
         candidates = find_macron_normalization_candidates(source.text)
+        candidate_dicts = []
+        for candidate in candidates:
+            candidate_dict = candidate.to_dict()
+            candidate_dict.update(
+                {
+                    "candidate_id": candidate_id_for(
+                        source_id=source.source_id,
+                        source_path=source.source_path,
+                        field_path=source.field_path,
+                        candidate=candidate_dict,
+                    ),
+                    "decision": None,
+                    "reviewed_value": None,
+                    "reviewer_notes": [],
+                }
+            )
+            candidate_dicts.append(candidate_dict)
         reviewed.append(
             {
                 "source_id": source.source_id,
@@ -174,10 +230,120 @@ def review_text_sources(sources: list[TextSource]) -> list[dict[str, Any]]:
                 "notes": source.notes,
                 "text_preview": _preview(source.text),
                 "candidate_count": len(candidates),
-                "candidates": [candidate.to_dict() for candidate in candidates],
+                "candidates": candidate_dicts,
             }
         )
     return reviewed
+
+
+def candidate_id_for(
+    *,
+    source_id: str,
+    source_path: str | None,
+    field_path: str | None,
+    candidate: dict[str, Any],
+) -> str:
+    identity = {
+        "source_id": source_id,
+        "source_path": source_path,
+        "field_path": field_path,
+        "span": candidate["span"],
+        "observed": candidate["observed"],
+        "candidate": candidate["candidate"],
+        "match_type": candidate["match_type"],
+    }
+    encoded = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def build_decisions_template(candidate_sources: list[dict[str, Any]]) -> dict[str, Any]:
+    decisions = []
+    for source in candidate_sources:
+        for candidate in source["candidates"]:
+            decisions.append(
+                {
+                    "candidate_id": candidate["candidate_id"],
+                    "source_id": source["source_id"],
+                    "source_path": source["source_path"],
+                    "field_path": source["field_path"],
+                    "observed": candidate["observed"],
+                    "candidate": candidate["candidate"],
+                    "span": candidate["span"],
+                    "context": candidate["context"],
+                    "match_type": candidate["match_type"],
+                    "decision": None,
+                    "reviewed_value": None,
+                    "reviewer": None,
+                    "reviewed_at": None,
+                    "notes": [],
+                }
+            )
+    return {
+        "schema_version": "macron_candidate_decisions.v1",
+        "instructions": [
+            "Fill decision with one of: accept, reject, defer, edit.",
+            "For edit, set reviewed_value to the reviewer-supplied correction.",
+            "Do not edit source OCR artifacts; this file records review decisions only.",
+            "Keep local decisions private unless source text/provenance is safe to share.",
+        ],
+        "decisions": decisions,
+    }
+
+
+def write_decisions_template(path: Path, payload: dict[str, Any], *, overwrite: bool = False) -> bool:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and not overwrite:
+        return False
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return True
+
+
+def load_decisions_file(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {"schema_version": "macron_candidate_decisions.v1", "decisions": []}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def build_reviewed_export(
+    candidate_sources: list[dict[str, Any]],
+    decisions_payload: dict[str, Any],
+) -> dict[str, Any]:
+    candidates_by_id = {
+        candidate["candidate_id"]: {**candidate, "source_id": source["source_id"], "source_path": source["source_path"]}
+        for source in candidate_sources
+        for candidate in source["candidates"]
+    }
+    decisions = decisions_payload.get("decisions", [])
+    reviewed = []
+    pending = 0
+    stale = []
+    counts = Counter({"accept": 0, "reject": 0, "defer": 0, "edit": 0, "pending": 0, "stale": 0})
+    for decision in decisions:
+        candidate_id = decision.get("candidate_id")
+        if candidate_id not in candidates_by_id:
+            stale.append(decision)
+            counts["stale"] += 1
+            continue
+        decision_value = decision.get("decision")
+        if decision_value in {None, ""}:
+            pending += 1
+            counts["pending"] += 1
+            continue
+        if decision_value not in {"accept", "reject", "defer", "edit"}:
+            pending += 1
+            counts["pending"] += 1
+            continue
+        counts[decision_value] += 1
+        reviewed.append({**candidates_by_id[candidate_id], "review_decision": decision})
+
+    return {
+        "schema_version": "macron_candidate_review_export.v1",
+        "source_text_mutated": False,
+        "counts": dict(counts),
+        "pending_decision_count": pending,
+        "reviewed_decisions": reviewed,
+        "stale_decisions": stale,
+    }
 
 
 def summarize_candidates(candidates: list[dict[str, Any]]) -> dict[str, Any]:
