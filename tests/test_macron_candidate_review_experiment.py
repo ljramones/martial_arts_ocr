@@ -256,6 +256,8 @@ def test_review_queue_markdown_and_csv_include_context(tmp_path):
             "field_path": "$.text",
             "observed": "BUDO",
             "candidate": "budō",
+            "reviewed_value_suggestion": "BUDŌ",
+            "case_pattern": "uppercase",
             "match_type": "variant_exact",
             "context": "BUJUTSU AND BUDO",
             "reviewed_value": None,
@@ -269,4 +271,6 @@ def test_review_queue_markdown_and_csv_include_context(tmp_path):
     helper.write_review_queue_csv(csv_path, rows)
 
     assert "BUJUTSU AND BUDO" in markdown_path.read_text(encoding="utf-8")
+    assert "BUDŌ" in markdown_path.read_text(encoding="utf-8")
+    assert "uppercase" in csv_path.read_text(encoding="utf-8")
     assert "needs image review" in csv_path.read_text(encoding="utf-8")

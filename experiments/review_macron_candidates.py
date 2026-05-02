@@ -415,10 +415,12 @@ def build_review_queue(
                 "source_path": source["source_path"],
                 "field_path": source["field_path"],
                 "observed": candidate["observed"],
-                "candidate": candidate["candidate"],
-                "match_type": candidate["match_type"],
-                "decision": _normalized_decision(decision.get("decision")),
-                "reviewed_value": decision.get("reviewed_value"),
+                    "candidate": candidate["candidate"],
+                    "case_pattern": candidate.get("case_pattern"),
+                    "reviewed_value_suggestion": candidate.get("reviewed_value_suggestion"),
+                    "match_type": candidate["match_type"],
+                    "decision": _normalized_decision(decision.get("decision")),
+                    "reviewed_value": decision.get("reviewed_value"),
                 "context": candidate["context"],
                 "notes": decision.get("notes", []),
             }
@@ -447,8 +449,11 @@ def write_review_queue_markdown(path: Path, rows: list[dict[str, Any]]) -> None:
         "",
         f"Candidate count: {len(rows)}",
         "",
-        "| Decision | Source Kind | Observed | Candidate | Match Type | Source ID | Context | Notes |",
-        "|---|---|---|---|---|---|---|---|",
+        (
+            "| Decision | Source Kind | Observed | Candidate | Reviewed Value Suggestion | "
+            "Case Pattern | Match Type | Source ID | Context | Notes |"
+        ),
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for row in rows:
         lines.append(
@@ -459,6 +464,8 @@ def write_review_queue_markdown(path: Path, rows: list[dict[str, Any]]) -> None:
                     _markdown_cell(row["source_kind"]),
                     _markdown_cell(row["observed"]),
                     _markdown_cell(row["candidate"]),
+                    _markdown_cell(row["reviewed_value_suggestion"]),
+                    _markdown_cell(row["case_pattern"]),
                     _markdown_cell(row["match_type"]),
                     _markdown_cell(row["source_id"]),
                     _markdown_cell(row["context"]),
@@ -481,6 +488,8 @@ def write_review_queue_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         "field_path",
         "observed",
         "candidate",
+        "reviewed_value_suggestion",
+        "case_pattern",
         "match_type",
         "context",
         "reviewed_value",
