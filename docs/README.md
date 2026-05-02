@@ -49,6 +49,9 @@
 - [Macron Candidate Review State](macron-candidate-review-state-2026-04-28.md):
   current glossary-backed candidate behavior, review artifact results, and the
   guardrail against blind automatic normalization.
+- [Macron Candidate Review Workflow Design](macron-candidate-review-workflow-design.md):
+  review/export workflow design for accepting, rejecting, or deferring macron
+  candidates without mutating original OCR text.
 - [OCR Text Quality Assessment](ocr-text-quality-assessment.md): assessment of
   OCR output, cleanup, Japanese handling, and canonical model gaps.
 - [OCR Text Normalization Notes](ocr-text-normalization-notes.md): word/line
