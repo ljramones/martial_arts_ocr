@@ -49,6 +49,9 @@
 - [Macron Candidate Review State](macron-candidate-review-state-2026-04-28.md):
   current glossary-backed candidate behavior, review artifact results, and the
   guardrail against blind automatic normalization.
+- [Macron Candidate Workflow State](macron-candidate-workflow-state-2026-04-28.md):
+  current end-to-end macron candidate review workflow, reviewed counts, case
+  suggestions, and recommended pause point.
 - [Macron Candidate Review Workflow Design](macron-candidate-review-workflow-design.md):
   review/export workflow design for accepting, rejecting, or deferring macron
   candidates without mutating original OCR text.
