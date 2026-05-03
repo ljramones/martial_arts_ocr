@@ -22,6 +22,9 @@
 - [Local Review Workbench Operator Notes](local-review-workbench-operator-notes.md):
   how to run the first local page viewer and editable overlay prototype, where
   `project_state.json` lives, and what not to commit.
+- [Orientation Subsystem Inventory](orientation-subsystem-inventory.md):
+  inventory of the existing NN-based 0/90/180/270 page-orientation training,
+  inference, checkpoint, and recommended workbench integration seam.
 - [Extraction Quality Rubric](extraction-quality-rubric.md): criteria for
   judging image, text, and layout extraction quality.
 
