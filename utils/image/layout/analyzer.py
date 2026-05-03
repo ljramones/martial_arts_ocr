@@ -167,6 +167,16 @@ class LayoutAnalyzer:
             else:
                 accepted.append(self._region_with_diagnostics(region, diagnostic))
 
+        if bool(self.cfg.get("enable_broad_rejected_child_visuals", False)):
+            child_regions = self.multi_figure_rows.propose_child_visuals(gray, rejected)
+            if child_regions:
+                accepted.extend(child_regions)
+            child_diagnostics = dict(getattr(self.multi_figure_rows, "last_child_diagnostics", {}) or {})
+            child_diagnostics.setdefault("detector", "broad_rejected_child_visuals")
+            child_diagnostics.setdefault("returned_count", len(child_regions))
+            child_diagnostics.setdefault("topk_suppressed", [])
+            self._last_detector_diagnostics.append(child_diagnostics)
+
         accepted, consolidation_events = consolidate_regions(accepted, self.region_options)
         accepted, refinement_events = self._refine_mixed_regions(gray, accepted, ocr_text_boxes=ocr_text_boxes)
 

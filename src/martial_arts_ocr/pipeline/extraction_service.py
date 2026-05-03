@@ -188,6 +188,7 @@ class ExtractionService:
                 "enabled_detectors": ["figure", "contours", "multi_figure_rows"],
                 "contours_always": True,
                 "filter_text_like": True,
+                "enable_broad_rejected_child_visuals": True,
             }
         )
 
