@@ -235,7 +235,56 @@ class ReviewWorkbenchStore:
             "detected_count": len(imported_regions),
             "preserved_region_count": len(preserved_regions),
             "rerun_behavior": "replaced_unreviewed_machine_detection_regions",
+            "orientation_degrees": _effective_orientation_degrees(page),
         }
+        self.save_project(state)
+        return page
+
+    def update_page_orientation(
+        self,
+        state: dict[str, Any],
+        page_id: str,
+        *,
+        detected_rotation_degrees: int | None = None,
+        detected_confidence: float | None = None,
+        reviewed_rotation_degrees: int | None = None,
+        source: str | None = None,
+        status: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Update page orientation metadata without rotating the source image."""
+        page = self.get_page(state, page_id)
+        previous_rotation = _effective_orientation_degrees(page)
+        orientation = dict(page.get("orientation") or _default_orientation())
+
+        if detected_rotation_degrees is not None:
+            orientation["detected_rotation_degrees"] = _coerce_rotation(detected_rotation_degrees)
+        if detected_confidence is not None:
+            orientation["detected_confidence"] = float(detected_confidence)
+        if reviewed_rotation_degrees is not None:
+            orientation["reviewed_rotation_degrees"] = _coerce_rotation(reviewed_rotation_degrees)
+        if source is not None:
+            orientation["source"] = str(source)
+        if status is not None:
+            orientation["status"] = str(status)
+        if metadata is not None:
+            existing_metadata = dict(orientation.get("metadata") or {})
+            existing_metadata.update(metadata)
+            orientation["metadata"] = existing_metadata
+
+        orientation["effective_rotation_degrees"] = (
+            orientation.get("reviewed_rotation_degrees")
+            if orientation.get("reviewed_rotation_degrees") is not None
+            else orientation.get("detected_rotation_degrees", 0)
+        )
+        orientation["updated_at"] = _now()
+        page["orientation"] = orientation
+        _update_effective_dimensions(page)
+
+        new_rotation = _effective_orientation_degrees(page)
+        if page.get("regions") and new_rotation != previous_rotation:
+            _mark_regions_stale_for_orientation_change(page, previous_rotation, new_rotation)
+
         self.save_project(state)
         return page
 
@@ -258,6 +307,9 @@ class ReviewWorkbenchStore:
                     "filename": path.name,
                     "width": width,
                     "height": height,
+                    "effective_width": width,
+                    "effective_height": height,
+                    "orientation": _default_orientation(),
                     "regions": [],
                     "status": "new",
                     "notes": "",
@@ -294,8 +346,8 @@ def _image_size(path: Path) -> tuple[int, int]:
 
 
 def _default_bbox(page: dict[str, Any]) -> list[int]:
-    width = int(page.get("width") or 200)
-    height = int(page.get("height") or 200)
+    width = int(page.get("effective_width") or page.get("width") or 200)
+    height = int(page.get("effective_height") or page.get("height") or 200)
     return [20, 20, max(1, min(160, width - 20)), max(1, min(100, height - 20))]
 
 
@@ -303,8 +355,8 @@ def _coerce_bbox(raw_bbox: Any, page: dict[str, Any]) -> list[int]:
     if not isinstance(raw_bbox, (list, tuple)) or len(raw_bbox) != 4:
         raise ValueError("bbox must be [x, y, width, height]")
     x, y, width, height = [int(round(float(value))) for value in raw_bbox]
-    page_width = max(1, int(page.get("width") or x + width or 1))
-    page_height = max(1, int(page.get("height") or y + height or 1))
+    page_width = max(1, int(page.get("effective_width") or page.get("width") or x + width or 1))
+    page_height = max(1, int(page.get("effective_height") or page.get("height") or y + height or 1))
     x = max(0, min(x, page_width - 1))
     y = max(0, min(y, page_height - 1))
     width = max(1, min(width, page_width - x))
@@ -369,6 +421,62 @@ def _map_detected_region_type(raw_type: Any, metadata: dict[str, Any]) -> str:
     }
     mapped = aliases.get(normalized, normalized)
     return mapped if mapped in REGION_TYPES else "image"
+
+
+def _default_orientation() -> dict[str, Any]:
+    return {
+        "detected_rotation_degrees": 0,
+        "detected_confidence": None,
+        "reviewed_rotation_degrees": None,
+        "effective_rotation_degrees": 0,
+        "status": "unreviewed",
+        "source": "default",
+        "metadata": {
+            "orientation_convention": "clockwise_rotation_to_apply_to_display_upright",
+        },
+    }
+
+
+def _coerce_rotation(value: Any) -> int:
+    rotation = int(value)
+    if rotation not in {0, 90, 180, 270}:
+        raise ValueError("rotation must be one of 0, 90, 180, 270")
+    return rotation
+
+
+def _effective_orientation_degrees(page: dict[str, Any]) -> int:
+    orientation = dict(page.get("orientation") or _default_orientation())
+    return _coerce_rotation(orientation.get("effective_rotation_degrees", 0))
+
+
+def _update_effective_dimensions(page: dict[str, Any]) -> None:
+    rotation = _effective_orientation_degrees(page)
+    width = int(page.get("width") or 1)
+    height = int(page.get("height") or 1)
+    if rotation in {90, 270}:
+        page["effective_width"] = height
+        page["effective_height"] = width
+    else:
+        page["effective_width"] = width
+        page["effective_height"] = height
+
+
+def _mark_regions_stale_for_orientation_change(
+    page: dict[str, Any],
+    previous_rotation: int,
+    new_rotation: int,
+) -> None:
+    timestamp = _now()
+    for region in page.get("regions", []):
+        region["stale"] = True
+        metadata = dict(region.get("metadata") or {})
+        metadata["stale_reason"] = "orientation_changed"
+        metadata["previous_orientation_degrees"] = previous_rotation
+        metadata["current_orientation_degrees"] = new_rotation
+        metadata["stale_at"] = timestamp
+        region["metadata"] = metadata
+    page["regions_stale"] = True
+    page["regions_stale_reason"] = "orientation_changed"
 
 
 def _safe_id(value: str) -> str:

@@ -19,6 +19,14 @@
         status: document.getElementById("review-status"),
         pageList: document.getElementById("review-page-list"),
         regionList: document.getElementById("review-region-list"),
+        detectOrientation: document.getElementById("review-detect-orientation"),
+        orientationDetected: document.getElementById("review-orientation-detected"),
+        orientationConfidence: document.getElementById("review-orientation-confidence"),
+        orientationEffective: document.getElementById("review-orientation-effective"),
+        orientationStatus: document.getElementById("review-orientation-status"),
+        orientationOverride: document.getElementById("review-orientation-override"),
+        saveOrientation: document.getElementById("review-save-orientation"),
+        orientationWarning: document.getElementById("review-orientation-warning"),
         recognize: document.getElementById("review-recognize-page"),
         addRegion: document.getElementById("review-add-region"),
         stage: document.getElementById("review-page-stage"),
@@ -59,6 +67,8 @@
 
     els.createProject.addEventListener("click", createOrLoadProject);
     els.loadProject.addEventListener("click", loadProjectById);
+    els.detectOrientation.addEventListener("click", detectOrientation);
+    els.saveOrientation.addEventListener("click", saveOrientationOverride);
     els.recognize.addEventListener("click", recognizePage);
     els.addRegion.addEventListener("click", addManualRegion);
     els.save.addEventListener("click", saveSelectedRegion);
@@ -106,6 +116,7 @@
         setStatus(`Loaded ${project.project_id}`);
         renderPageList();
         renderRegionList();
+        renderOrientation();
         renderSelectedRegion();
         clearViewer();
     }
@@ -138,10 +149,14 @@
         };
         syncOverlaySize();
         renderPageList();
+        renderOrientation();
         renderRegionList();
         renderOverlay();
         renderSelectedRegion();
         els.addRegion.disabled = false;
+        els.detectOrientation.disabled = false;
+        els.orientationOverride.disabled = false;
+        els.saveOrientation.disabled = false;
         els.recognize.disabled = false;
     }
 
@@ -149,8 +164,8 @@
         if (!state.page || !els.image.complete || !els.image.clientWidth || !els.image.clientHeight) return;
         state.imageLayout = computeImageLayout({
             imageElement: els.image,
-            imageWidth: state.page.width || els.image.naturalWidth || 1,
-            imageHeight: state.page.height || els.image.naturalHeight || 1,
+            imageWidth: state.page.effective_width || state.page.width || els.image.naturalWidth || 1,
+            imageHeight: state.page.effective_height || state.page.height || els.image.naturalHeight || 1,
         });
         els.overlay.style.left = `${state.imageLayout.offsetX}px`;
         els.overlay.style.top = `${state.imageLayout.offsetY}px`;
@@ -169,7 +184,85 @@
         els.overlay.innerHTML = "";
         state.imageLayout = null;
         els.addRegion.disabled = true;
+        els.detectOrientation.disabled = true;
+        els.orientationOverride.disabled = true;
+        els.saveOrientation.disabled = true;
         els.recognize.disabled = true;
+        renderOrientation();
+    }
+
+    function reloadPageImage() {
+        if (!state.project || !state.page) return;
+        els.image.src = `/api/review/projects/${encodeURIComponent(state.project.project_id)}/pages/${encodeURIComponent(state.page.page_id)}/image?ts=${Date.now()}`;
+        els.image.onload = () => {
+            syncOverlaySize();
+            renderOverlay();
+        };
+    }
+
+    function renderOrientation() {
+        const orientation = state.page?.orientation || {};
+        const detected = orientation.detected_rotation_degrees ?? 0;
+        const effective = orientation.effective_rotation_degrees ?? 0;
+        els.orientationDetected.textContent = `${detected}°`;
+        els.orientationConfidence.textContent = formatConfidence(orientation.detected_confidence);
+        els.orientationEffective.textContent = `${effective}°`;
+        els.orientationStatus.textContent = orientation.status || "-";
+        els.orientationOverride.value = String(orientation.reviewed_rotation_degrees ?? effective);
+        const stale = Boolean(state.page?.regions_stale);
+        els.orientationWarning.hidden = !stale;
+        els.orientationWarning.textContent = stale
+            ? "Orientation changed after regions were created. Rerun recognition or review all boxes."
+            : "";
+    }
+
+    async function detectOrientation() {
+        if (!state.project || !state.page) return;
+        els.detectOrientation.disabled = true;
+        setStatus("Running page orientation detection...");
+        try {
+            const result = await requestJson(
+                `/api/review/projects/${encodeURIComponent(state.project.project_id)}/pages/${encodeURIComponent(state.page.page_id)}/orientation/detect`,
+                { method: "POST" }
+            );
+            state.page = result.page;
+            state.selectedRegionId = null;
+            reloadPageImage();
+            renderOrientation();
+            renderRegionList();
+            renderOverlay();
+            renderSelectedRegion();
+            setStatus(`Orientation effective ${state.page.orientation?.effective_rotation_degrees ?? 0}° (${state.page.orientation?.status || "unknown"}).`);
+        } catch (error) {
+            setStatus(error.message || "Orientation detection failed.");
+        } finally {
+            els.detectOrientation.disabled = !state.page;
+        }
+    }
+
+    async function saveOrientationOverride() {
+        if (!state.project || !state.page) return;
+        setStatus("Saving reviewed orientation...");
+        const rotation = Number(els.orientationOverride.value);
+        try {
+            const result = await requestJson(
+                `/api/review/projects/${encodeURIComponent(state.project.project_id)}/pages/${encodeURIComponent(state.page.page_id)}/orientation`,
+                {
+                    method: "PATCH",
+                    body: JSON.stringify({ reviewed_rotation_degrees: rotation }),
+                }
+            );
+            state.page = result.page;
+            state.selectedRegionId = null;
+            reloadPageImage();
+            renderOrientation();
+            renderRegionList();
+            renderOverlay();
+            renderSelectedRegion();
+            setStatus(`Orientation override saved: ${rotation}°.`);
+        } catch (error) {
+            setStatus(error.message || "Orientation override failed.");
+        }
     }
 
     function renderRegionList() {
@@ -467,8 +560,8 @@
     }
 
     function coerceBBox([x, y, w, h]) {
-        const pageWidth = Number(state.page?.width || 1);
-        const pageHeight = Number(state.page?.height || 1);
+        const pageWidth = Number(state.page?.effective_width || state.page?.width || 1);
+        const pageHeight = Number(state.page?.effective_height || state.page?.height || 1);
         x = Math.max(0, Math.min(Math.round(x || 0), pageWidth - 1));
         y = Math.max(0, Math.min(Math.round(y || 0), pageHeight - 1));
         w = Math.max(1, Math.min(Math.round(w || 1), pageWidth - x));
@@ -537,6 +630,13 @@
         if (value === null || value === undefined || value === "") return "-";
         if (typeof value === "object") return JSON.stringify(value);
         return String(value);
+    }
+
+    function formatConfidence(value) {
+        if (value === null || value === undefined || value === "") return "-";
+        const number = Number(value);
+        if (!Number.isFinite(number)) return String(value);
+        return number.toFixed(3);
     }
 
     function escapeHtml(value) {

@@ -132,6 +132,57 @@ def test_recognition_reports_rejected_candidates_without_importing_them(tmp_path
     assert page["regions"] == []
 
 
+def test_recognition_runs_against_effective_oriented_page(tmp_path):
+    app, _data_dir, scans = _create_review_app(tmp_path)
+    _write_image(scans / "page.png", size=(180, 120))
+    calls = []
+
+    class FakeRecognitionService:
+        def enrich_document_result(self, document, *, output_dir):
+            with Image.open(document.source_path) as image:
+                calls.append(
+                    {
+                        "source_size": image.size,
+                        "page_size": (document.pages[0].width, document.pages[0].height),
+                        "orientation_degrees": document.metadata["orientation_degrees"],
+                    }
+                )
+            page = replace(
+                document.pages[0],
+                image_regions=[
+                    ImageRegion(
+                        region_id="oriented_001",
+                        region_type="image",
+                        bbox=BoundingBox(5, 6, 30, 40),
+                        metadata={"detector": "fake_oriented"},
+                    )
+                ],
+            )
+            return replace(document, pages=[page])
+
+    app.config["REVIEW_RECOGNITION_SERVICE"] = FakeRecognitionService()
+    client = app.test_client()
+    client.post("/api/review/projects", json={"source_folder": str(scans), "project_id": "oriented_recognition"})
+    client.patch(
+        "/api/review/projects/oriented_recognition/pages/page_001/orientation",
+        json={"reviewed_rotation_degrees": 90},
+    )
+
+    response = client.post("/api/review/projects/oriented_recognition/pages/page_001/recognize")
+
+    assert response.status_code == 200
+    assert calls == [
+        {
+            "source_size": (120, 180),
+            "page_size": (120, 180),
+            "orientation_degrees": 90,
+        }
+    ]
+    page = response.get_json()["page"]
+    assert page["regions"][0]["detected_bbox"] == [5, 6, 30, 40]
+    assert page["recognition"]["orientation_degrees"] == 90
+
+
 def test_recognition_rerun_preserves_manual_and_reviewed_regions(tmp_path):
     app, _data_dir, scans = _create_review_app(tmp_path)
     _write_image(scans / "page.png", size=(180, 120))

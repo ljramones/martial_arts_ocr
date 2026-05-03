@@ -47,6 +47,30 @@
         </section>
 
         <section class="review-card">
+            <h3>Orientation</h3>
+            <dl class="review-audit review-orientation-summary">
+                <dt>Detected</dt><dd id="review-orientation-detected">-</dd>
+                <dt>Confidence</dt><dd id="review-orientation-confidence">-</dd>
+                <dt>Effective</dt><dd id="review-orientation-effective">-</dd>
+                <dt>Status</dt><dd id="review-orientation-status">-</dd>
+            </dl>
+            <div class="review-button-row">
+                <button id="review-detect-orientation" class="btn btn-primary btn-sm" type="button" disabled>Run Orient</button>
+            </div>
+            <label for="review-orientation-override">Reviewed orientation</label>
+            <select id="review-orientation-override" disabled>
+                <option value="0">0°</option>
+                <option value="90">90°</option>
+                <option value="180">180°</option>
+                <option value="270">270°</option>
+            </select>
+            <div class="review-button-row">
+                <button id="review-save-orientation" class="btn btn-secondary btn-sm" type="button" disabled>Apply Override</button>
+            </div>
+            <p id="review-orientation-warning" class="review-warning" hidden></p>
+        </section>
+
+        <section class="review-card">
             <h3>Regions</h3>
             <div class="review-button-row">
                 <button id="review-recognize-page" class="btn btn-primary btn-sm" type="button" disabled>Run Recognition</button>

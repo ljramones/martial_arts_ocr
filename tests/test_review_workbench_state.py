@@ -26,11 +26,56 @@ def test_create_project_lists_pages_and_writes_project_state(tmp_path):
     assert [page["filename"] for page in state["pages"]] == ["page_a.png", "page_b.jpg"]
     assert state["pages"][0]["width"] == 120
     assert state["pages"][0]["height"] == 80
+    assert state["pages"][0]["effective_width"] == 120
+    assert state["pages"][0]["effective_height"] == 80
+    assert state["pages"][0]["orientation"]["effective_rotation_degrees"] == 0
     assert store.project_path("example").exists()
 
     saved = json.loads(store.project_path("example").read_text(encoding="utf-8"))
     assert saved["metadata"]["schema_version"] == 1
     assert saved["metadata"]["local_only"] is True
+
+
+def test_update_page_orientation_marks_existing_regions_stale(tmp_path):
+    source = tmp_path / "scans"
+    source.mkdir()
+    _write_image(source / "page.png", size=(200, 120))
+    store = ReviewWorkbenchStore(tmp_path / "runtime" / "review_projects", allowed_roots=[tmp_path])
+    state = store.create_project(source, project_id="orientation")
+    page_id = state["pages"][0]["page_id"]
+    store.add_region(state, page_id, {"reviewed_type": "caption_label", "bbox": [10, 10, 40, 30]})
+
+    page = store.update_page_orientation(
+        state,
+        page_id,
+        detected_rotation_degrees=90,
+        detected_confidence=0.94,
+        source="orientation_cnn",
+        status="detected",
+        metadata={"model_used": "convnext"},
+    )
+
+    assert page["orientation"]["detected_rotation_degrees"] == 90
+    assert page["orientation"]["effective_rotation_degrees"] == 90
+    assert page["orientation"]["detected_confidence"] == 0.94
+    assert page["effective_width"] == 120
+    assert page["effective_height"] == 200
+    assert page["regions_stale"] is True
+    assert page["regions"][0]["stale"] is True
+    assert page["regions"][0]["metadata"]["stale_reason"] == "orientation_changed"
+
+    reviewed = store.update_page_orientation(
+        state,
+        page_id,
+        reviewed_rotation_degrees=180,
+        source="reviewer_override",
+        status="reviewed",
+    )
+
+    assert reviewed["orientation"]["reviewed_rotation_degrees"] == 180
+    assert reviewed["orientation"]["effective_rotation_degrees"] == 180
+    assert reviewed["effective_width"] == 200
+    assert reviewed["effective_height"] == 120
 
 
 def test_add_update_ignore_delete_region_preserves_detected_fields(tmp_path):

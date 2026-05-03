@@ -4,6 +4,7 @@ Handles file uploads, OCR processing, and web interface.
 """
 import os
 import json
+from io import BytesIO
 from pathlib import Path
 from threading import Thread
 
@@ -17,7 +18,7 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from jinja2 import TemplateNotFound
 import logging
 from datetime import datetime
-from PIL import Image
+from PIL import Image, ImageOps
 
 from martial_arts_ocr.config import (
     allowed_file,
@@ -32,7 +33,7 @@ from martial_arts_ocr.db.models import Document, Page, ProcessingResult
 from martial_arts_ocr.pipeline import PipelineRequest, WorkflowOrchestrator
 from martial_arts_ocr.pipeline.document_models import DocumentResult, PageResult
 from martial_arts_ocr.pipeline.extraction_service import ExtractionService, ExtractionServiceOptions
-from martial_arts_ocr.review import REGION_TYPES, ReviewWorkbenchStore
+from martial_arts_ocr.review import OrientationService, REGION_TYPES, ReviewWorkbenchStore
 
 APP_EXTENSION_KEY = "martial_arts_ocr"
 
@@ -439,8 +440,64 @@ def _review_workbench_store() -> ReviewWorkbenchStore:
     return ReviewWorkbenchStore(project_root, allowed_roots=allowed_roots)
 
 
+def _review_orientation_service() -> OrientationService:
+    injected_service = current_app.config.get("REVIEW_ORIENTATION_SERVICE")
+    if injected_service is not None:
+        return injected_service
+    return OrientationService(
+        model_path=current_app.config.get(
+            "REVIEW_ORIENTATION_MODEL_PATH",
+            "experiments/orientation_model/checkpoints/orient_convnext_tiny.pth",
+        ),
+        ensemble_model_path=current_app.config.get(
+            "REVIEW_ORIENTATION_ENSEMBLE_MODEL_PATH",
+            "experiments/orientation_model/checkpoints/orient_effnetv2s.pth",
+        ),
+    )
+
+
 def _review_json_error(exc: Exception, status_code: int = 400):
     return jsonify({"error": str(exc)}), status_code
+
+
+def _effective_orientation_degrees(page: dict) -> int:
+    orientation = page.get("orientation") or {}
+    return int(orientation.get("effective_rotation_degrees") or 0)
+
+
+def _effective_page_image_path(store: ReviewWorkbenchStore, state: dict, page_id: str) -> Path:
+    """Return an oriented runtime copy when page orientation is non-zero."""
+    page = store.get_page(state, page_id)
+    image_path = store.image_path(state, page_id)
+    rotation = _effective_orientation_degrees(page)
+    if rotation == 0:
+        return image_path
+
+    output_dir = store.project_dir(state["project_id"]) / "oriented_pages"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"{page_id}_rot{rotation}.png"
+    source_mtime = image_path.stat().st_mtime
+    if output_path.exists() and output_path.stat().st_mtime >= source_mtime:
+        return output_path
+
+    with Image.open(image_path) as image:
+        oriented = ImageOps.exif_transpose(image).convert("RGB").rotate(-rotation, expand=True)
+        oriented.save(output_path)
+    return output_path
+
+
+def _send_effective_page_image(store: ReviewWorkbenchStore, state: dict, page_id: str):
+    page = store.get_page(state, page_id)
+    image_path = store.image_path(state, page_id)
+    rotation = _effective_orientation_degrees(page)
+    if rotation == 0:
+        return send_file(image_path)
+    with Image.open(image_path) as image:
+        oriented = ImageOps.exif_transpose(image).convert("RGB").rotate(-rotation, expand=True)
+        output = BytesIO()
+        oriented.save(output, format="PNG")
+        output.seek(0)
+        return send_file(output, mimetype="image/png")
 
 
 def _detect_review_regions(
@@ -466,18 +523,20 @@ def _detect_review_regions(
         pages=[
             PageResult(
                 page_number=1,
-                width=page.get("width"),
-                height=page.get("height"),
+                width=page.get("effective_width") or page.get("width"),
+                height=page.get("effective_height") or page.get("height"),
                 raw_text="",
                 metadata={
                     "review_workbench_recognition": True,
                     "ocr_executed": False,
+                    "orientation_degrees": _effective_orientation_degrees(page),
                 },
             )
         ],
         metadata={
             "review_workbench_recognition": True,
             "ocr_executed": False,
+            "orientation_degrees": _effective_orientation_degrees(page),
         },
     )
     enriched = service.enrich_document_result(document, output_dir=output_dir)
@@ -589,11 +648,62 @@ def api_review_page_image(project_id, page_id):
     store = _review_workbench_store()
     try:
         state = store.load_project(project_id)
-        return send_file(store.image_path(state, page_id))
+        return _send_effective_page_image(store, state, page_id)
     except PermissionError as exc:
         return _review_json_error(exc, 403)
     except (FileNotFoundError, KeyError) as exc:
         return _review_json_error(exc, 404)
+
+
+@app.post("/api/review/projects/<project_id>/pages/<page_id>/orientation/detect")
+def api_review_detect_orientation(project_id, page_id):
+    store = _review_workbench_store()
+    try:
+        state = store.load_project(project_id)
+        image_path = store.image_path(state, page_id)
+        result = _review_orientation_service().predict(image_path)
+        updated_page = store.update_page_orientation(
+            state,
+            page_id,
+            detected_rotation_degrees=result.rotation_degrees,
+            detected_confidence=result.confidence,
+            source=result.source,
+            status="detected" if result.status == "ok" else result.status,
+            metadata=result.metadata,
+        )
+        return jsonify({"page": updated_page, "orientation": updated_page.get("orientation")}), 200
+    except PermissionError as exc:
+        return _review_json_error(exc, 403)
+    except (FileNotFoundError, KeyError) as exc:
+        return _review_json_error(exc, 404)
+    except Exception as exc:
+        return _review_json_error(exc, 400)
+
+
+@app.patch("/api/review/projects/<project_id>/pages/<page_id>/orientation")
+def api_review_update_orientation(project_id, page_id):
+    data = request.get_json() or {}
+    store = _review_workbench_store()
+    try:
+        state = store.load_project(project_id)
+        if "reviewed_rotation_degrees" not in data and "rotation_degrees" not in data:
+            return _review_json_error(ValueError("reviewed_rotation_degrees is required"))
+        rotation = data.get("reviewed_rotation_degrees", data.get("rotation_degrees"))
+        updated_page = store.update_page_orientation(
+            state,
+            page_id,
+            reviewed_rotation_degrees=rotation,
+            source="reviewer_override",
+            status="reviewed",
+            metadata={"reviewer_override": True},
+        )
+        return jsonify({"page": updated_page, "orientation": updated_page.get("orientation")}), 200
+    except PermissionError as exc:
+        return _review_json_error(exc, 403)
+    except (FileNotFoundError, KeyError) as exc:
+        return _review_json_error(exc, 404)
+    except Exception as exc:
+        return _review_json_error(exc, 400)
 
 
 @app.post("/api/review/projects/<project_id>/pages/<page_id>/recognize")
@@ -602,7 +712,7 @@ def api_review_recognize_page(project_id, page_id):
     try:
         state = store.load_project(project_id)
         page = store.get_page(state, page_id)
-        image_path = store.image_path(state, page_id)
+        image_path = _effective_page_image_path(store, state, page_id)
         output_dir = store.project_dir(project_id) / "recognition" / page_id
         recognition_result = _detect_review_regions(
             image_path=image_path,

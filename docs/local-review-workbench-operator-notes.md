@@ -95,9 +95,32 @@ If overlays appear misaligned:
 - check whether the browser is applying EXIF orientation differently from the backend;
 - do not save reviewed bboxes until the overlay alignment is correct.
 
+## Run Orientation
+
+After selecting a page, click `Run Orient` before running recognition.
+
+The workbench uses the existing neural-network orientation subsystem through the review-layer orientation service. It does not replace the NN detector with heuristics, and it does not modify the original source image.
+
+Page orientation state is saved in `project_state.json`:
+
+```text
+detected_rotation_degrees
+detected_confidence
+reviewed_rotation_degrees
+effective_rotation_degrees
+status
+source
+```
+
+Use the reviewed orientation dropdown to override the detected orientation when needed. The effective-oriented image is then used for display and for `Run Recognition`.
+
+If orientation changes after regions already exist, the workbench marks regions stale. Rerun recognition or manually review all boxes before using downstream OCR.
+
 ## Run Recognition
 
 After selecting a page, click `Run Recognition` to import machine-detected regions for that page.
+
+Run orientation first. Recognition uses the effective-oriented page, not the raw sideways/upside-down source image.
 
 This uses the existing review-mode region/image detection path as advisory input. It does not run OCR, translation, or Japanese analysis.
 

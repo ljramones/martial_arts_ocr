@@ -35,6 +35,16 @@ MVP slice 2 implemented:
 - manual, reviewed, and ignored regions preserved on rerun;
 - detector metadata surfaced in the selected-region audit panel.
 
+MVP slice 3 implemented:
+
+- review-layer orientation service wrapped around the existing NN orientation subsystem;
+- page-level `orientation` state in `project_state.json`;
+- `Run Orient` control for the selected page;
+- manual orientation override for `0/90/180/270`;
+- effective-oriented page image served to the workbench without mutating the source image;
+- `Run Recognition` uses the effective-oriented page;
+- existing regions are marked stale when effective orientation changes.
+
 Not implemented yet:
 
 - OCR execution;
@@ -61,17 +71,20 @@ Not implemented yet:
 1. Researcher opens a local folder or single page.
 2. Backend creates or opens a local review project.
 3. UI lists pages and displays the selected scanned page.
-4. Researcher runs region recognition for the page.
-5. Detected regions appear as overlay boxes on the page.
-6. Researcher selects a region.
-7. Researcher changes region type, moves/resizes bbox, adds notes, or marks the region ignored.
-8. Researcher adds missing manual regions or deletes/ignores bad detections.
-9. Workbench saves `project_state.json` and page-level review state.
-10. Researcher runs OCR for selected reviewed regions.
-11. OCR uses effective region type and effective bbox, not raw detector output.
-12. Researcher reviews OCR attempts, selects best output, edits notes, or marks output as needing review.
-13. Researcher optionally requests translation for selected Japanese regions.
-14. Researcher exports current state at any stage.
+4. Researcher runs orientation detection.
+5. Researcher confirms or overrides orientation.
+6. Workbench displays the effective-oriented page without modifying the original source file.
+7. Researcher runs region recognition for the page.
+8. Detected regions appear as overlay boxes on the effective-oriented page.
+9. Researcher selects a region.
+10. Researcher changes region type, moves/resizes bbox, adds notes, or marks the region ignored.
+11. Researcher adds missing manual regions or deletes/ignores bad detections.
+12. Workbench saves `project_state.json` and page-level review state.
+13. Researcher runs OCR for selected reviewed regions.
+14. OCR uses effective region type and effective bbox, not raw detector output.
+15. Researcher reviews OCR attempts, selects best output, edits notes, or marks output as needing review.
+16. Researcher optionally requests translation for selected Japanese regions.
+17. Researcher exports current state at any stage.
 
 ## User Stories
 
@@ -136,6 +149,16 @@ Each page state should include:
   "source_image": "/local/path/to/pages/page001.jpg",
   "width": 1240,
   "height": 1754,
+  "effective_width": 1240,
+  "effective_height": 1754,
+  "orientation": {
+    "detected_rotation_degrees": 90,
+    "detected_confidence": 0.94,
+    "reviewed_rotation_degrees": null,
+    "effective_rotation_degrees": 90,
+    "status": "detected",
+    "source": "orientation_cnn"
+  },
   "regions": [],
   "ocr_attempts": [],
   "translation_attempts": [],
@@ -241,10 +264,24 @@ The workbench assumes the browser-displayed image orientation matches the image 
 
 ## Recognition and Override Flow
 
-Region recognition flow:
+Orientation should happen before region recognition.
 
 ```text
 source page
+  -> Run Orient
+  -> reviewer confirms or overrides orientation
+  -> effective-oriented page view
+  -> Run Recognition
+```
+
+The original source image is never modified. The workbench stores orientation as page-level metadata and serves an effective-oriented image for display, recognition, and later OCR crops.
+
+If orientation changes after regions exist, the current implementation marks existing regions stale instead of trying to transform boxes silently. The reviewer should rerun recognition or review all boxes.
+
+Region recognition flow:
+
+```text
+effective-oriented page
   -> Run Recognition
   -> review-mode extraction/image-region detection
   -> detected regions
@@ -261,6 +298,7 @@ Rules:
 - Manual regions should have no `detected_bbox` and should set `source=manual`.
 - Rerunning recognition should replace only unreviewed `source=machine_detection` regions.
 - Rerunning recognition should preserve manual, reviewed, and ignored regions.
+- Recognition runs on the effective-oriented page.
 - Recognition does not run OCR and does not classify Japanese text content in this slice.
 - All edits should update `updated_at` and optionally append an audit event.
 

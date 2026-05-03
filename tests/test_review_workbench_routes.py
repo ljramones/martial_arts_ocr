@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
 from pathlib import Path
 
 from PIL import Image
+
+from martial_arts_ocr.review.orientation_service import OrientationResult
 
 
 def _write_image(path: Path, size=(90, 70)):
@@ -73,6 +76,59 @@ def test_review_project_routes_create_list_image_and_reload(tmp_path):
     image_response = client.get("/api/review/projects/route_test/pages/page_001/image")
     assert image_response.status_code == 200
     assert image_response.data.startswith(b"\x89PNG")
+
+
+def test_review_orientation_routes_detect_override_and_serve_oriented_image(tmp_path):
+    app, data_dir, scans = _create_review_app(tmp_path)
+    _write_image(scans / "page.png", size=(120, 80))
+
+    class FakeOrientationService:
+        def predict(self, image_path):
+            return OrientationResult(
+                rotation_degrees=90,
+                confidence=0.93,
+                source="orientation_cnn",
+                status="ok",
+                metadata={"model_used": "fake_convnext"},
+            )
+
+    app.config["REVIEW_ORIENTATION_SERVICE"] = FakeOrientationService()
+    client = app.test_client()
+    client.post("/api/review/projects", json={"source_folder": str(scans), "project_id": "orientation"})
+
+    detect_response = client.post("/api/review/projects/orientation/pages/page_001/orientation/detect")
+
+    assert detect_response.status_code == 200
+    page = detect_response.get_json()["page"]
+    assert page["orientation"]["detected_rotation_degrees"] == 90
+    assert page["orientation"]["effective_rotation_degrees"] == 90
+    assert page["orientation"]["detected_confidence"] == 0.93
+    assert page["orientation"]["metadata"]["model_used"] == "fake_convnext"
+    assert page["effective_width"] == 80
+    assert page["effective_height"] == 120
+
+    image_response = client.get("/api/review/projects/orientation/pages/page_001/image")
+    assert image_response.status_code == 200
+    with Image.open(BytesIO(image_response.data)) as image:
+        assert image.size == (80, 120)
+
+    override_response = client.patch(
+        "/api/review/projects/orientation/pages/page_001/orientation",
+        json={"reviewed_rotation_degrees": 180},
+    )
+
+    assert override_response.status_code == 200
+    page = override_response.get_json()["page"]
+    assert page["orientation"]["reviewed_rotation_degrees"] == 180
+    assert page["orientation"]["effective_rotation_degrees"] == 180
+    assert page["orientation"]["source"] == "reviewer_override"
+    assert page["effective_width"] == 120
+    assert page["effective_height"] == 80
+
+    saved = json.loads(
+        (data_dir / "runtime" / "review_projects" / "orientation" / "project_state.json").read_text(encoding="utf-8")
+    )
+    assert saved["pages"][0]["orientation"]["effective_rotation_degrees"] == 180
 
 
 def test_review_region_routes_add_update_ignore_delete_and_preserve_detected_fields(tmp_path):
