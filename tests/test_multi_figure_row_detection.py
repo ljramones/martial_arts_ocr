@@ -59,6 +59,16 @@ def _broad_text_parent_with_child_figures() -> np.ndarray:
     return page
 
 
+def _connected_text_block() -> np.ndarray:
+    page = np.full((300, 500), 255, dtype=np.uint8)
+    for index in range(8):
+        y = 50 + index * 18
+        cv2.line(page, (50, y), (420, y), 0, 2)
+        for x in range(60, 400, 50):
+            cv2.rectangle(page, (x, y - 4), (x + 15, y + 4), 0, -1)
+    return page
+
+
 def _detector(**overrides) -> MultiFigureRowDetector:
     cfg = {
         "multi_figure_row_min_area": 5_000,
@@ -177,6 +187,37 @@ def test_dense_paragraph_text_does_not_produce_child_visuals():
     regions = detector.propose_child_visuals(_paragraph_text(), rejected)
 
     assert regions == []
+
+
+def test_child_text_false_positive_is_recorded_as_child_text_like():
+    detector = _detector(
+        broad_rejected_child_min_area=1_000,
+        broad_rejected_child_min_width=55,
+        broad_rejected_child_min_height=55,
+    )
+    rejected = [
+        {
+            "region": {
+                "x": 30,
+                "y": 30,
+                "width": 440,
+                "height": 180,
+                "region_type": "diagram",
+                "metadata": {},
+            },
+            "rejection_reason": "text_like_components",
+        }
+    ]
+
+    regions = detector.propose_child_visuals(_connected_text_block(), rejected)
+    reasons = {
+        child.get("reason")
+        for parent in detector.last_child_diagnostics["parents"]
+        for child in parent["rejected"]
+    }
+
+    assert regions == []
+    assert "child_text_like" in reasons
 
 
 def test_layout_analyzer_imports_multi_figure_rows_without_duplicate_central_panel():

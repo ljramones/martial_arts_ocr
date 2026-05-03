@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 
 from utils.image.regions.core_image import ImageRegion
+from utils.image.layout.filters.text_filter import TextRegionFilter
 from . import BaseDetector
 
 
@@ -45,6 +46,11 @@ class MultiFigureRowDetector(BaseDetector):
         self.child_min_width = int(cfg.get("broad_rejected_child_min_width", max(45, self.min_width // 2)))
         self.child_min_height = int(cfg.get("broad_rejected_child_min_height", max(55, self.min_height // 2)))
         self.child_max_candidates = int(cfg.get("broad_rejected_child_topk", 8))
+        self.child_text_reject_threshold = float(cfg.get("broad_rejected_child_text_reject_threshold", 0.55))
+        self.child_min_large_component_ratio = float(cfg.get("broad_rejected_child_min_large_component_ratio", 0.025))
+        self.child_min_figure_score = float(cfg.get("broad_rejected_child_min_figure_score", 0.55))
+        self.child_min_photo_score = float(cfg.get("broad_rejected_child_min_photo_score", 0.50))
+        self.text_filter = TextRegionFilter(cfg)
         self.last_diagnostics: Dict[str, Any] = {
             "detector": "multi_figure_rows",
             "raw_count": 0,
@@ -133,7 +139,11 @@ class MultiFigureRowDetector(BaseDetector):
                 continue
             x, y, width, height = parent_region.x, parent_region.y, parent_region.width, parent_region.height
             roi = gray[y : y + height, x : x + width]
-            raw, rejected = self._child_component_candidates(roi, offset=(x, y), parent_area=parent_region.area)
+            raw, rejected = self._child_component_candidates(
+                roi,
+                offset=(x, y),
+                parent_area=parent_region.area,
+            )
             diagnostics.append(
                 {
                     "parent_bbox": [x, y, width, height],
@@ -269,6 +279,16 @@ class MultiFigureRowDetector(BaseDetector):
             if _looks_like_caption_strip(width, height, edge_density=edge_density, dark_fraction=dark_fraction):
                 rejected.append({**base, "reason": "caption_strip_like"})
                 continue
+            child_text = self._child_text_diagnostics(roi, local_x, local_y, width, height)
+            child_reason = self._child_rejection_reason(child_text)
+            if child_reason:
+                rejected.append({
+                    **base,
+                    "reason": child_reason,
+                    "scores": child_text.get("scores", {}),
+                    "features": _compact_child_features(child_text.get("features", {})),
+                })
+                continue
             candidates.append(
                 {
                     "bbox": (int(x), int(y), int(width), int(height)),
@@ -277,15 +297,17 @@ class MultiFigureRowDetector(BaseDetector):
                     "dark_fraction": dark_fraction,
                     "center_y": y + height / 2.0,
                     "child_visual_score": round(min(1.0, edge_density * 3.0 + dark_fraction), 4),
+                    "scores": child_text.get("scores", {}),
+                    "features": _compact_child_features(child_text.get("features", {})),
                 }
             )
-        candidates.extend(
-            self._child_contour_candidates(
-                roi,
-                offset=offset,
-                existing=candidates,
-            )
+        contour_candidates, contour_rejected = self._child_contour_candidates(
+            roi,
+            offset=offset,
+            existing=candidates,
         )
+        candidates.extend(contour_candidates)
+        rejected.extend(contour_rejected)
         return (
             sorted(candidates, key=lambda item: item["area"], reverse=True),
             sorted(rejected, key=lambda item: (item["bbox"][1], item["bbox"][0])),
@@ -297,7 +319,7 @@ class MultiFigureRowDetector(BaseDetector):
         *,
         offset: tuple[int, int],
         existing: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         from .contours import ContourDetector
 
         detector = ContourDetector(
@@ -313,19 +335,39 @@ class MultiFigureRowDetector(BaseDetector):
         )
         offset_x, offset_y = offset
         output: list[dict[str, Any]] = []
+        rejected: list[dict[str, Any]] = []
         for region in detector.detect(roi):
             bbox = (offset_x + region.x, offset_y + region.y, region.width, region.height)
+            base = {
+                "bbox": [int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])],
+                "area": int(region.area),
+                "proposal_source": "child_contour",
+            }
             if region.width < self.child_min_width or region.height < self.child_min_height:
+                rejected.append({**base, "reason": "dimension_too_small"})
                 continue
             aspect = region.width / float(region.height or 1)
             if not (self.min_aspect <= aspect <= self.max_aspect):
+                rejected.append({**base, "reason": "aspect_invalid", "value": round(float(aspect), 4)})
                 continue
             if _duplicates_existing(bbox, existing + output):
+                rejected.append({**base, "reason": "duplicate"})
                 continue
             metadata = dict(getattr(region, "metadata", {}) or {})
             edge_density = float(metadata.get("edge_density") or 0.0)
             dark_fraction = float(np.mean(roi[region.y : region.y + region.height, region.x : region.x + region.width] < 190))
             if _looks_like_caption_strip(region.width, region.height, edge_density=edge_density, dark_fraction=dark_fraction):
+                rejected.append({**base, "reason": "caption_strip_like"})
+                continue
+            child_text = self._child_text_diagnostics(roi, region.x, region.y, region.width, region.height)
+            child_reason = self._child_rejection_reason(child_text)
+            if child_reason:
+                rejected.append({
+                    **base,
+                    "reason": child_reason,
+                    "scores": child_text.get("scores", {}),
+                    "features": _compact_child_features(child_text.get("features", {})),
+                })
                 continue
             output.append(
                 {
@@ -336,9 +378,11 @@ class MultiFigureRowDetector(BaseDetector):
                     "center_y": bbox[1] + bbox[3] / 2.0,
                     "child_visual_score": round(min(1.0, edge_density * 3.0 + dark_fraction), 4),
                     "proposal_source": "child_contour",
+                    "scores": child_text.get("scores", {}),
+                    "features": _compact_child_features(child_text.get("features", {})),
                 }
             )
-        return output
+        return output, rejected
 
     def _keep_row_siblings(self, candidates: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         rows: list[list[dict[str, Any]]] = []
@@ -426,6 +470,8 @@ class MultiFigureRowDetector(BaseDetector):
             "edge_density": round(float(candidate.get("edge_density", 0.0)), 4),
             "dark_fraction": round(float(candidate.get("dark_fraction", 0.0)), 4),
             "proposal_source": candidate.get("proposal_source", "child_component"),
+            "scores": candidate.get("scores", {}),
+            "diagnostic_features": candidate.get("features", {}),
             "reason": "visual_child_from_rejected_parent",
             "region_role": "image_candidate",
             "needs_review": True,
@@ -454,7 +500,58 @@ class MultiFigureRowDetector(BaseDetector):
             "min_dark_fraction": self.min_dark_fraction,
             "max_dark_fraction": self.max_dark_fraction,
             "min_band_members": self.min_band_members,
+            "child_text_reject_threshold": self.child_text_reject_threshold,
+            "child_min_large_component_ratio": self.child_min_large_component_ratio,
+            "child_min_figure_score": self.child_min_figure_score,
+            "child_min_photo_score": self.child_min_photo_score,
         }
+
+    def _child_text_diagnostics(
+        self,
+        roi: np.ndarray,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+    ) -> dict[str, Any]:
+        region = ImageRegion(
+            x=int(x),
+            y=int(y),
+            width=int(width),
+            height=int(height),
+            region_type="diagram",
+        )
+        return self.text_filter.candidate_diagnostics(roi, region)
+
+    def _child_rejection_reason(self, diagnostic: dict[str, Any]) -> str | None:
+        scores = diagnostic.get("scores", {})
+        features = diagnostic.get("features", {})
+        text_like = float(scores.get("text_like_score") or 0.0)
+        figure_like = float(scores.get("figure_like_score") or 0.0)
+        photo_like = float(scores.get("photo_like_score") or 0.0)
+        regular_projection = bool(features.get("regular_text_projection"))
+        large_count = float(features.get("large_dark_component_count") or 0.0)
+        large_ratio = float(features.get("max_dark_component_area_ratio") or 0.0)
+        if (
+            text_like >= self.child_text_reject_threshold
+            and regular_projection
+            and photo_like < self.child_min_photo_score
+            and large_ratio < 0.08
+        ):
+            return "child_text_like"
+        has_visual_mass = (
+            (large_count > 0 and not regular_projection)
+            or large_ratio >= self.child_min_large_component_ratio
+            or (figure_like >= self.child_min_figure_score and not regular_projection)
+            or photo_like >= self.child_min_photo_score
+        )
+        if text_like >= self.child_text_reject_threshold and regular_projection and not has_visual_mass:
+            return "child_text_like"
+        if diagnostic.get("rejection_reason") and not has_visual_mass:
+            return "child_text_like"
+        if not has_visual_mass:
+            return "child_visual_mass_low"
+        return None
 
 
 def _union_xywh(boxes: list[tuple[int, int, int, int]]) -> tuple[int, int, int, int]:
@@ -507,6 +604,33 @@ def _looks_like_caption_strip(
         and dark_fraction < 0.22
         and edge_density < 0.18
     )
+
+
+def _compact_child_features(features: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "regular_text_projection",
+        "component_count",
+        "median_component_area",
+        "small_component_fraction",
+        "row_occupancy",
+        "col_occupancy",
+        "edge_density",
+        "hough_line_count",
+        "max_dark_component_area_ratio",
+        "large_dark_component_count",
+        "horizontal_peak_count",
+        "horizontal_peak_spacing_std",
+        "vertical_peak_count",
+        "vertical_peak_spacing_std",
+    )
+    compact: dict[str, Any] = {}
+    for key in keys:
+        value = features.get(key)
+        if isinstance(value, float):
+            compact[key] = round(value, 4)
+        else:
+            compact[key] = value
+    return compact
 
 
 def _duplicates_existing(
