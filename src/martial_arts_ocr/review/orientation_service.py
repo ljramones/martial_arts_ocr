@@ -18,6 +18,7 @@ from PIL import Image, ImageOps
 
 VALID_ROTATIONS = {0, 90, 180, 270}
 ORIENTATION_CONVENTION = "clockwise_rotation_to_apply_to_display_upright"
+MODEL_OUTPUT_CONVENTION = "current_orientation_degrees"
 DEFAULT_MODEL_PATH = Path("experiments/orientation_model/checkpoints/orient_convnext_tiny.pth")
 DEFAULT_ENSEMBLE_MODEL_PATH = Path("experiments/orientation_model/checkpoints/orient_effnetv2s.pth")
 
@@ -60,15 +61,15 @@ class OrientationService:
     def predict(self, image_path: str | Path) -> OrientationResult:
         """Predict page orientation for a local image path.
 
-        `rotation_degrees` uses the review-layer convention:
+        `rotation_degrees` uses the review-layer correction convention:
 
         ```text
         clockwise rotation to apply to the original image to display/process it upright
         ```
 
-        The existing NN output is currently passed through as the candidate
-        rotation. The future workbench UI should keep this result reviewable and
-        should not destructively rotate source files.
+        The existing NN output is treated as the input image's current
+        orientation class. The service converts it to the inverse correction
+        rotation and keeps the raw model output in metadata.
         """
 
         model_path = self._expand(self.model_path)
@@ -101,22 +102,25 @@ class OrientationService:
                 use_ensemble_if_low_margin=self.use_ensemble_if_low_margin,
                 margin=self.margin,
             )
-            rotation_degrees, scores_by_degree, confidence, model_used = _normalize_backend_result(raw_result)
-            if rotation_degrees not in VALID_ROTATIONS:
+            detected_orientation, scores_by_degree, confidence, model_used = _normalize_backend_result(raw_result)
+            if detected_orientation not in VALID_ROTATIONS:
                 return self._error_result(
                     model_path,
-                    error=f"invalid orientation rotation: {rotation_degrees}",
+                    error=f"invalid orientation rotation: {detected_orientation}",
                     metadata={
-                        "invalid_rotation_degrees": rotation_degrees,
+                        "invalid_rotation_degrees": detected_orientation,
                         "scores_by_degree": scores_by_degree,
                     },
                 )
+            correction_rotation = correction_rotation_for_orientation(detected_orientation)
             return OrientationResult(
-                rotation_degrees=rotation_degrees,
+                rotation_degrees=correction_rotation,
                 confidence=confidence,
                 source="orientation_cnn",
                 status="ok",
                 metadata={
+                    "detected_orientation_degrees": detected_orientation,
+                    "correction_rotation_degrees": correction_rotation,
                     "model_path": str(model_path),
                     "ensemble_model_path": (
                         str(self._available_ensemble_path())
@@ -126,6 +130,8 @@ class OrientationService:
                     "model_used": model_used,
                     "scores_by_degree": scores_by_degree,
                     "orientation_convention": ORIENTATION_CONVENTION,
+                    "rotation_convention": ORIENTATION_CONVENTION,
+                    "model_output_convention": MODEL_OUTPUT_CONVENTION,
                     "detector_family": "nn_orientation_cnn",
                     "heuristic_fallback_used": False,
                 },
@@ -161,6 +167,8 @@ class OrientationService:
                 "model_available": False,
                 "reason": reason,
                 "orientation_convention": ORIENTATION_CONVENTION,
+                "rotation_convention": ORIENTATION_CONVENTION,
+                "model_output_convention": MODEL_OUTPUT_CONVENTION,
                 "heuristic_fallback_used": False,
             },
         )
@@ -175,6 +183,8 @@ class OrientationService:
             "model_path": str(model_path),
             "error": error,
             "orientation_convention": ORIENTATION_CONVENTION,
+            "rotation_convention": ORIENTATION_CONVENTION,
+            "model_output_convention": MODEL_OUTPUT_CONVENTION,
             "heuristic_fallback_used": False,
         }
         details.update(metadata or {})
@@ -213,3 +223,11 @@ def _normalize_backend_result(raw_result: Any) -> tuple[int, dict[int, float], f
         for degree, score in dict(scores_by_degree or {}).items()
     }
     return int(rotation_degrees), scores, None if confidence is None else float(confidence), str(model_used)
+
+
+def correction_rotation_for_orientation(detected_orientation_degrees: int) -> int:
+    """Convert current orientation class to clockwise correction rotation."""
+    rotation = int(detected_orientation_degrees)
+    if rotation not in VALID_ROTATIONS:
+        raise ValueError("detected orientation must be one of 0, 90, 180, 270")
+    return (360 - rotation) % 360

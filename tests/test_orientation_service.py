@@ -5,6 +5,7 @@ from pathlib import Path
 from PIL import Image
 
 from martial_arts_ocr.review.orientation_service import (
+    MODEL_OUTPUT_CONVENTION,
     ORIENTATION_CONVENTION,
     OrientationService,
 )
@@ -12,7 +13,7 @@ from martial_arts_ocr.review.orientation_service import (
 
 class FakeOrientationBackend:
     def __init__(self, result=None, error: Exception | None = None) -> None:
-        self.result = result or (90, {0: 0.02, 90: 0.91, 180: 0.04, 270: 0.03}, 0.91, "convnext")
+        self.result = result or (270, {0: 0.02, 90: 0.03, 180: 0.04, 270: 0.91}, 0.91, "convnext")
         self.error = error
         self.init_calls = []
         self.predict_calls = []
@@ -52,7 +53,7 @@ def test_missing_model_returns_manual_required(tmp_path):
     assert result.metadata["heuristic_fallback_used"] is False
 
 
-def test_fake_predictor_result_maps_to_orientation_result(tmp_path):
+def test_fake_predictor_current_orientation_270_maps_to_correction_90(tmp_path):
     model_path = tmp_path / "orient_convnext_tiny.pth"
     model_path.write_bytes(b"fake checkpoint")
     image_path = tmp_path / "page.png"
@@ -71,8 +72,11 @@ def test_fake_predictor_result_maps_to_orientation_result(tmp_path):
     assert result.source == "orientation_cnn"
     assert result.status == "ok"
     assert result.metadata["model_used"] == "convnext"
-    assert result.metadata["scores_by_degree"][90] == 0.91
+    assert result.metadata["detected_orientation_degrees"] == 270
+    assert result.metadata["correction_rotation_degrees"] == 90
+    assert result.metadata["scores_by_degree"][270] == 0.91
     assert result.metadata["orientation_convention"] == ORIENTATION_CONVENTION
+    assert result.metadata["model_output_convention"] == MODEL_OUTPUT_CONVENTION
     assert result.metadata["heuristic_fallback_used"] is False
     assert backend.init_calls == [(str(model_path), None)]
     assert backend.predict_calls[0]["shape"] == (24, 32, 3)
@@ -90,6 +94,33 @@ def test_confidence_is_derived_from_two_value_backend_result(tmp_path):
     assert result.rotation_degrees == 180
     assert result.confidence == 0.6
     assert result.metadata["model_used"] == "unknown"
+
+
+def test_current_orientation_mapping_to_correction_rotation(tmp_path):
+    model_path = tmp_path / "orient_convnext_tiny.pth"
+    model_path.write_bytes(b"fake checkpoint")
+    image_path = tmp_path / "page.png"
+    _write_image(image_path)
+
+    cases = [
+        (0, 0),
+        (90, 270),
+        (180, 180),
+        (270, 90),
+    ]
+    for detected_orientation, expected_correction in cases:
+        backend = FakeOrientationBackend(
+            result=(detected_orientation, {detected_orientation: 0.99}, 0.99, "convnext")
+        )
+        result = OrientationService(
+            model_path=model_path,
+            ensemble_model_path=None,
+            predictor_backend=backend,
+        ).predict(image_path)
+
+        assert result.rotation_degrees == expected_correction
+        assert result.metadata["detected_orientation_degrees"] == detected_orientation
+        assert result.metadata["correction_rotation_degrees"] == expected_correction
 
 
 def test_invalid_rotation_output_returns_error(tmp_path):

@@ -112,7 +112,18 @@ status
 source
 ```
 
-Use the reviewed orientation dropdown to override the detected orientation when needed. The effective-oriented image is then used for display and for `Run Recognition`.
+`detected_rotation_degrees` is the NN's current-orientation class for the source image. `effective_rotation_degrees` is the clockwise correction applied to display/process the page upright.
+
+The mapping is:
+
+```text
+detected current 0   -> apply correction 0
+detected current 90  -> apply correction 270
+detected current 180 -> apply correction 180
+detected current 270 -> apply correction 90
+```
+
+Use the reviewed correction dropdown to override the correction applied when needed. The effective-oriented image is then used for display and for `Run Recognition`.
 
 If orientation changes after regions already exist, the workbench marks regions stale. Rerun recognition or manually review all boxes before using downstream OCR.
 

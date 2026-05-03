@@ -89,7 +89,12 @@ def test_review_orientation_routes_detect_override_and_serve_oriented_image(tmp_
                 confidence=0.93,
                 source="orientation_cnn",
                 status="ok",
-                metadata={"model_used": "fake_convnext"},
+                metadata={
+                    "model_used": "fake_convnext",
+                    "detected_orientation_degrees": 270,
+                    "correction_rotation_degrees": 90,
+                    "model_output_convention": "current_orientation_degrees",
+                },
             )
 
     app.config["REVIEW_ORIENTATION_SERVICE"] = FakeOrientationService()
@@ -100,7 +105,7 @@ def test_review_orientation_routes_detect_override_and_serve_oriented_image(tmp_
 
     assert detect_response.status_code == 200
     page = detect_response.get_json()["page"]
-    assert page["orientation"]["detected_rotation_degrees"] == 90
+    assert page["orientation"]["detected_rotation_degrees"] == 270
     assert page["orientation"]["effective_rotation_degrees"] == 90
     assert page["orientation"]["detected_confidence"] == 0.93
     assert page["orientation"]["metadata"]["model_used"] == "fake_convnext"
@@ -129,6 +134,27 @@ def test_review_orientation_routes_detect_override_and_serve_oriented_image(tmp_
         (data_dir / "runtime" / "review_projects" / "orientation" / "project_state.json").read_text(encoding="utf-8")
     )
     assert saved["pages"][0]["orientation"]["effective_rotation_degrees"] == 180
+
+
+def test_oriented_image_endpoint_applies_clockwise_correction(tmp_path):
+    app, _data_dir, scans = _create_review_app(tmp_path)
+    path = scans / "marker.png"
+    image = Image.new("RGB", (3, 2), "white")
+    image.putpixel((0, 0), (255, 0, 0))
+    image.save(path)
+    client = app.test_client()
+    client.post("/api/review/projects", json={"source_folder": str(scans), "project_id": "marker"})
+    client.patch(
+        "/api/review/projects/marker/pages/page_001/orientation",
+        json={"reviewed_rotation_degrees": 90},
+    )
+
+    response = client.get("/api/review/projects/marker/pages/page_001/image")
+
+    assert response.status_code == 200
+    with Image.open(BytesIO(response.data)) as rotated:
+        assert rotated.size == (2, 3)
+        assert rotated.getpixel((1, 0))[:3] == (255, 0, 0)
 
 
 def test_review_region_routes_add_update_ignore_delete_and_preserve_detected_fields(tmp_path):

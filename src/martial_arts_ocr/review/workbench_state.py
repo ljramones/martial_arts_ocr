@@ -432,7 +432,8 @@ def _default_orientation() -> dict[str, Any]:
         "status": "unreviewed",
         "source": "default",
         "metadata": {
-            "orientation_convention": "clockwise_rotation_to_apply_to_display_upright",
+            "rotation_convention": "clockwise_correction_to_apply",
+            "model_output_convention": "current_orientation_degrees",
         },
     }
 

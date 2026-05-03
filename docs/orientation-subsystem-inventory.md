@@ -233,10 +233,14 @@ idx 2 -> 180
 idx 3 -> 270
 ```
 
-The deploy handoff describes the predicted degree as the page rotation class. It should be treated as the rotation/orientation detected for the input image. A future workbench wrapper must make the correction convention explicit before applying any rotation:
+The deploy handoff describes the predicted degree as the page rotation class. It is now treated as the current orientation detected for the input image, not as the correction rotation to apply:
 
 ```text
-detected rotation class vs. rotation needed to upright
+model output:
+  current_orientation_degrees
+
+workbench correction:
+  correction_rotation_degrees = (360 - current_orientation_degrees) % 360
 ```
 
 Runtime-facing wrapper:
@@ -362,7 +366,7 @@ class OrientationResult:
     metadata: dict[str, Any]
 ```
 
-The wrapper must document whether `rotation_degrees` means detected page orientation or corrective rotation to apply.
+For review-layer callers, `OrientationResult.rotation_degrees` means the clockwise correction rotation to apply. The raw NN output is preserved in metadata as `detected_orientation_degrees`.
 
 ## Dependencies
 
@@ -507,10 +511,12 @@ class OrientationService:
 Implemented service convention:
 
 ```text
-rotation_degrees = clockwise rotation to apply to the original image to display/process it upright
+model_output_convention = current_orientation_degrees
+rotation_degrees = correction_rotation_degrees
+correction_rotation_degrees = clockwise rotation to apply to the original image to display/process it upright
 ```
 
-The service currently passes through the NN orientation result as the candidate rotation. Because the older experiment docs describe the model output as the predicted page rotation class, the first workbench UI integration must keep the result reviewable and should verify correction direction on known rotated pages before automatically applying any transform.
+The service inverts the NN output before passing it to the workbench. For example, when the NN reports current orientation `270`, the workbench correction is `90`. The original NN output remains visible in metadata and should stay reviewable.
 
 Suggested workbench behavior:
 

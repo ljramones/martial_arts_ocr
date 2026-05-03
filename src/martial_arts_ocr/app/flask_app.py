@@ -662,14 +662,17 @@ def api_review_detect_orientation(project_id, page_id):
         state = store.load_project(project_id)
         image_path = store.image_path(state, page_id)
         result = _review_orientation_service().predict(image_path)
+        metadata = dict(result.metadata or {})
+        detected_orientation = metadata.get("detected_orientation_degrees", result.rotation_degrees)
         updated_page = store.update_page_orientation(
             state,
             page_id,
-            detected_rotation_degrees=result.rotation_degrees,
+            detected_rotation_degrees=detected_orientation,
             detected_confidence=result.confidence,
+            reviewed_rotation_degrees=result.rotation_degrees,
             source=result.source,
             status="detected" if result.status == "ok" else result.status,
-            metadata=result.metadata,
+            metadata=metadata,
         )
         return jsonify({"page": updated_page, "orientation": updated_page.get("orientation")}), 200
     except PermissionError as exc:

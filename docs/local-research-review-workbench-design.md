@@ -152,12 +152,16 @@ Each page state should include:
   "effective_width": 1240,
   "effective_height": 1754,
   "orientation": {
-    "detected_rotation_degrees": 90,
+    "detected_rotation_degrees": 270,
     "detected_confidence": 0.94,
-    "reviewed_rotation_degrees": null,
+    "reviewed_rotation_degrees": 90,
     "effective_rotation_degrees": 90,
     "status": "detected",
-    "source": "orientation_cnn"
+    "source": "orientation_cnn",
+    "metadata": {
+      "model_output_convention": "current_orientation_degrees",
+      "rotation_convention": "clockwise_correction_to_apply"
+    }
   },
   "regions": [],
   "ocr_attempts": [],
@@ -275,6 +279,14 @@ source page
 ```
 
 The original source image is never modified. The workbench stores orientation as page-level metadata and serves an effective-oriented image for display, recognition, and later OCR crops.
+
+The existing NN model reports the current orientation of the source image. The workbench applies the inverse correction:
+
+```text
+correction_rotation_degrees = (360 - detected_orientation_degrees) % 360
+```
+
+So if the NN reports that the source page is currently `270°`, the workbench applies a `90°` clockwise correction.
 
 If orientation changes after regions exist, the current implementation marks existing regions stale instead of trying to transform boxes silently. The reviewer should rerun recognition or review all boxes.
 
