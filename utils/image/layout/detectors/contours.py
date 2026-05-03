@@ -67,6 +67,12 @@ class ContourDetector(BaseDetector):
         # New: optional relaxed line mode and halo requirement
         self.require_halo: bool = bool(cfg.get('contours_require_halo', False))
         self.line_mode: bool = bool(cfg.get('contours_line_mode', True))
+        self.last_diagnostics: Dict[str, Any] = {
+            "detector": "contours",
+            "raw_count": 0,
+            "returned_count": 0,
+            "topk_suppressed": [],
+        }
 
     @staticmethod
     def _to_gray_u8(img: np.ndarray) -> np.ndarray:
@@ -88,6 +94,13 @@ class ContourDetector(BaseDetector):
             gray = self._to_gray_u8(gray_in)
             h, w = gray.shape[:2]
             regions: List[ImageRegion] = []
+            self.last_diagnostics = {
+                "detector": "contours",
+                "raw_count": 0,
+                "returned_count": 0,
+                "topk": self.topk,
+                "topk_suppressed": [],
+            }
 
             # 1) Edge → Dilate
             edges = cv2.Canny(gray, self.canny_lo, self.canny_hi)
@@ -204,11 +217,26 @@ class ContourDetector(BaseDetector):
                 ))
 
             # Keep only top-K largest to avoid clutter
+            raw_regions = list(regions)
             if self.topk > 0 and len(regions) > self.topk:
-                regions = sorted(regions, key=lambda r: r.area, reverse=True)[:self.topk]
+                sorted_regions = sorted(regions, key=lambda r: r.area, reverse=True)
+                regions = sorted_regions[:self.topk]
+                self.last_diagnostics["topk_suppressed"] = [
+                    r.to_dict() for r in sorted_regions[self.topk:]
+                ]
+            self.last_diagnostics["raw_count"] = len(raw_regions)
+            self.last_diagnostics["returned_count"] = len(regions)
 
             return regions
 
         except Exception as e:
             logger.error("Contour detection failed: %s", e)
+            self.last_diagnostics = {
+                "detector": "contours",
+                "status": "failed",
+                "error": str(e),
+                "raw_count": 0,
+                "returned_count": 0,
+                "topk_suppressed": [],
+            }
             return []

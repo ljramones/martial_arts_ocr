@@ -68,7 +68,101 @@ def test_recognition_endpoint_imports_detected_regions_without_ocr(tmp_path):
                     ),
                 ],
             )
-            return replace(document, pages=[page])
+            return replace(
+                document,
+                pages=[page],
+                metadata={
+                    **document.metadata,
+                    "image_extraction": {
+                        "accepted_count": 2,
+                        "raw_candidate_count": 4,
+                        "raw_candidates": [
+                            {
+                                "bbox": (10, 12, 50, 62),
+                                "x": 10,
+                                "y": 12,
+                                "width": 40,
+                                "height": 50,
+                                "region_type": "image",
+                                "confidence": 0.91,
+                                "metadata": {"detector": "fake_layout"},
+                            },
+                            {
+                                "bbox": (70, 20, 100, 55),
+                                "x": 70,
+                                "y": 20,
+                                "width": 30,
+                                "height": 35,
+                                "region_type": "image",
+                                "confidence": 0.45,
+                                "metadata": {"detector": "fake_layout"},
+                            },
+                        ],
+                        "accepted": [
+                            {
+                                "bbox": (10, 12, 50, 62),
+                                "x": 10,
+                                "y": 12,
+                                "width": 40,
+                                "height": 50,
+                                "region_type": "image",
+                                "confidence": 0.91,
+                                "metadata": {"detector": "fake_layout"},
+                            }
+                        ],
+                        "rejected": [
+                            {
+                                "region": {
+                                    "bbox": (120, 25, 170, 70),
+                                    "x": 120,
+                                    "y": 25,
+                                    "width": 50,
+                                    "height": 45,
+                                    "region_type": "diagram",
+                                },
+                                "rejection_reason": "text_like_components",
+                            }
+                        ],
+                        "consolidation": [
+                            {
+                                "reason": "contained_suppression",
+                                "suppressed": {
+                                    "bbox": (130, 30, 145, 45),
+                                    "x": 130,
+                                    "y": 30,
+                                    "width": 15,
+                                    "height": 15,
+                                    "region_type": "diagram",
+                                },
+                                "kept": {
+                                    "bbox": (120, 25, 170, 70),
+                                    "x": 120,
+                                    "y": 25,
+                                    "width": 50,
+                                    "height": 45,
+                                    "region_type": "diagram",
+                                },
+                            }
+                        ],
+                        "detector_diagnostics": [
+                            {
+                                "detector": "contours",
+                                "topk": 6,
+                                "topk_suppressed": [
+                                    {
+                                        "bbox": (150, 80, 190, 115),
+                                        "x": 150,
+                                        "y": 80,
+                                        "width": 40,
+                                        "height": 35,
+                                        "region_type": "diagram",
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                },
+            )
 
     app.config["REVIEW_RECOGNITION_SERVICE"] = FakeRecognitionService()
     client = app.test_client()
@@ -79,9 +173,20 @@ def test_recognition_endpoint_imports_detected_regions_without_ocr(tmp_path):
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["detected_count"] == 2
+    assert payload["recognition_diagnostics"]["raw_candidate_count"] == 4
+    assert payload["recognition_diagnostics"]["accepted_count"] == 2
+    assert payload["recognition_diagnostics"]["rejected_count"] == 1
+    assert payload["recognition_diagnostics"]["suppressed_count"] == 2
+    assert payload["recognition_diagnostics"]["imported_count"] == 2
+    candidate = payload["recognition_diagnostics"]["candidates"][0]
+    assert candidate["candidate_id"] == "cand_001"
+    assert candidate["stage"] == "raw"
+    assert candidate["reason"] == "detected"
+    assert candidate["bbox"] == [10, 12, 40, 50]
     assert len(calls) == 1
     assert calls[0]["document"].metadata["ocr_executed"] is False
     page = payload["page"]
+    assert page["orientation"]["effective_rotation_degrees"] == 0
     assert page["regions"][0]["region_id"] == "det_001"
     assert page["regions"][0]["detected_type"] == "image"
     assert page["regions"][0]["detected_bbox"] == [10, 12, 40, 50]
@@ -96,6 +201,7 @@ def test_recognition_endpoint_imports_detected_regions_without_ocr(tmp_path):
         (data_dir / "runtime" / "review_projects" / "recognize" / "project_state.json").read_text(encoding="utf-8")
     )
     assert saved["pages"][0]["regions"][0]["source"] == "machine_detection"
+    assert saved["pages"][0]["recognition_diagnostics"]["imported_count"] == 2
 
 
 def test_recognition_reports_rejected_candidates_without_importing_them(tmp_path):

@@ -541,15 +541,21 @@ def _detect_review_regions(
     )
     enriched = service.enrich_document_result(document, output_dir=output_dir)
     if not enriched.pages:
-        return {"regions": [], "rejected_count": 0}
+        return {"regions": [], "rejected_count": 0, "diagnostics": _empty_recognition_diagnostics(page)}
     region_records = [
         _review_region_record_from_image_region(region)
         for region in enriched.pages[0].image_regions
         if region.bbox is not None
     ]
+    extraction_metadata = dict((enriched.metadata.get("image_extraction") or {}))
+    diagnostics = _recognition_diagnostics_from_extraction(
+        extraction_metadata,
+        orientation_degrees=_effective_orientation_degrees(page),
+    )
     return {
         "regions": region_records,
         "rejected_count": len((enriched.metadata.get("image_extraction") or {}).get("rejected", [])),
+        "diagnostics": diagnostics,
     }
 
 
@@ -582,6 +588,188 @@ def _bbox_as_xywh(bbox) -> list[int]:
         int(getattr(bbox, "width", 1)),
         int(getattr(bbox, "height", 1)),
     ]
+
+
+def _empty_recognition_diagnostics(page: dict) -> dict:
+    return {
+        "detector": "review_mode_extraction",
+        "orientation_degrees": _effective_orientation_degrees(page),
+        "raw_candidate_count": 0,
+        "accepted_count": 0,
+        "rejected_count": 0,
+        "suppressed_count": 0,
+        "merged_count": 0,
+        "imported_count": 0,
+        "candidates": [],
+    }
+
+
+def _recognition_diagnostics_from_extraction(metadata: dict, *, orientation_degrees: int) -> dict:
+    candidates = []
+
+    for raw in metadata.get("raw_candidates", []) or []:
+        candidates.append(_candidate_record(raw, stage="raw", reason="detected"))
+
+    for detector in metadata.get("detector_diagnostics", []) or []:
+        for suppressed in detector.get("topk_suppressed", []) or []:
+            candidates.append(
+                _candidate_record(
+                    suppressed,
+                    stage="suppressed",
+                    reason=f"{detector.get('detector', 'detector')}_topk_suppressed",
+                    metadata={"detector": detector.get("detector"), "topk": detector.get("topk")},
+                )
+            )
+
+    for rejected in metadata.get("rejected", []) or []:
+        candidates.append(
+            _candidate_record(
+                rejected.get("region", {}),
+                stage="rejected",
+                reason=rejected.get("rejection_reason") or "rejected",
+                metadata={
+                    "region_role": rejected.get("region_role"),
+                    "scores": rejected.get("scores", {}),
+                    "features": rejected.get("features", {}),
+                },
+            )
+        )
+
+    for event in metadata.get("consolidation", []) or []:
+        if event.get("suppressed"):
+            candidates.append(
+                _candidate_record(
+                    event["suppressed"],
+                    stage="suppressed",
+                    reason=event.get("reason") or "consolidation_suppressed",
+                    metadata={"kept": event.get("kept")},
+                )
+            )
+        if event.get("merged"):
+            candidates.append(
+                _candidate_record(
+                    event["merged"],
+                    stage="merged",
+                    reason=event.get("reason") or "consolidation_merged",
+                    metadata={"from": event.get("from", [])},
+                )
+            )
+
+    for event in metadata.get("refinement", []) or []:
+        candidates.append(
+            _candidate_record(
+                event.get("result_region") or event.get("original_region") or {},
+                stage="merged" if event.get("refinement_applied") else "accepted",
+                reason=event.get("refinement_strategy") or "refinement",
+                metadata={
+                    "region_role": event.get("region_role"),
+                    "needs_review": event.get("needs_review"),
+                    "mixed_reason": event.get("mixed_reason"),
+                    "refinement_applied": event.get("refinement_applied"),
+                },
+            )
+        )
+
+    for accepted in metadata.get("accepted", []) or []:
+        candidates.append(_candidate_record(accepted, stage="accepted", reason="accepted"))
+
+    diagnostics = {
+        "detector": "review_mode_extraction",
+        "orientation_degrees": orientation_degrees,
+        "raw_candidate_count": int(metadata.get("raw_candidate_count") or len(metadata.get("raw_candidates", []) or [])),
+        "accepted_count": int(metadata.get("accepted_count") or len(metadata.get("accepted", []) or [])),
+        "rejected_count": len(metadata.get("rejected", []) or []),
+        "suppressed_count": sum(1 for candidate in candidates if candidate["stage"] == "suppressed"),
+        "merged_count": sum(1 for candidate in candidates if candidate["stage"] == "merged"),
+        "imported_count": 0,
+        "detector_diagnostics": _json_safe(metadata.get("detector_diagnostics", [])),
+        "candidates": _with_candidate_ids(candidates),
+    }
+    return _json_safe(diagnostics)
+
+
+def _recognition_diagnostics_with_imports(diagnostics: dict, page: dict) -> dict:
+    diagnostics = dict(diagnostics or {})
+    candidates = list(diagnostics.get("candidates") or [])
+    imported_regions = [
+        region for region in page.get("regions", [])
+        if region.get("source") == "machine_detection" and region.get("status") == "detected"
+    ]
+    for region in imported_regions:
+        candidates.append(
+            _candidate_record(
+                {
+                    "bbox": region.get("detected_bbox") or region.get("effective_bbox"),
+                    "bbox_format": "xywh",
+                    "region_type": region.get("detected_type") or region.get("effective_type"),
+                    "confidence": region.get("confidence"),
+                    "metadata": region.get("metadata", {}),
+                },
+                stage="imported",
+                reason="imported_to_project_state",
+                metadata={"region_id": region.get("region_id")},
+            )
+        )
+    diagnostics["imported_count"] = len(imported_regions)
+    diagnostics["candidates"] = _with_candidate_ids(candidates)
+    return _json_safe(diagnostics)
+
+
+def _candidate_record(raw: dict, *, stage: str, reason: str, metadata: dict | None = None) -> dict:
+    raw = raw or {}
+    raw_metadata = dict(raw.get("metadata") or {})
+    if metadata:
+        raw_metadata.update(metadata)
+    return {
+        "candidate_id": "",
+        "bbox": _candidate_bbox(raw),
+        "stage": stage,
+        "region_type": raw.get("region_type") or raw.get("type") or "unknown",
+        "confidence": raw.get("confidence", raw.get("score")),
+        "reason": reason,
+        "metadata": raw_metadata,
+    }
+
+
+def _candidate_bbox(raw: dict) -> list[int]:
+    if raw.get("x") is not None and raw.get("width") is not None:
+        return [
+            int(raw.get("x") or 0),
+            int(raw.get("y") or 0),
+            int(raw.get("width") or 1),
+            int(raw.get("height") or 1),
+        ]
+    bbox = raw.get("bbox")
+    if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+        x1, y1, x2_or_width, y2_or_height = [int(round(float(value))) for value in bbox]
+        if raw.get("bbox_format") == "xywh" or x2_or_width <= x1 or y2_or_height <= y1:
+            return [x1, y1, max(1, x2_or_width), max(1, y2_or_height)]
+        return [x1, y1, max(1, x2_or_width - x1), max(1, y2_or_height - y1)]
+    return [
+        int(raw.get("x") or 0),
+        int(raw.get("y") or 0),
+        int(raw.get("width") or 1),
+        int(raw.get("height") or 1),
+    ]
+
+
+def _with_candidate_ids(candidates: list[dict]) -> list[dict]:
+    return [
+        {**candidate, "candidate_id": f"cand_{index:03d}"}
+        for index, candidate in enumerate(candidates, start=1)
+    ]
+
+
+def _json_safe(value):
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    if hasattr(value, "item"):
+        return value.item()
+    return value
 
 
 @app.get("/review")
@@ -724,11 +912,17 @@ def api_review_recognize_page(project_id, page_id):
         )
         detected_regions = recognition_result["regions"]
         updated_page = store.import_detected_regions(state, page_id, detected_regions)
+        updated_page["recognition_diagnostics"] = _recognition_diagnostics_with_imports(
+            recognition_result.get("diagnostics", {}),
+            updated_page,
+        )
+        store.save_project(state)
         return jsonify(
             {
                 "page": updated_page,
                 "detected_count": len(detected_regions),
                 "rejected_count": recognition_result.get("rejected_count", 0),
+                "recognition_diagnostics": updated_page["recognition_diagnostics"],
                 "rerun_behavior": "replaced_unreviewed_machine_detection_regions",
             }
         ), 200

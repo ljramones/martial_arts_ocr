@@ -222,6 +222,57 @@
     font-size: 0.84rem;
 }
 
+.review-diagnostics-summary {
+    font-size: 0.84rem;
+}
+
+.review-diagnostics-details {
+    margin-top: 0.75rem;
+}
+
+.review-diagnostics-details summary {
+    cursor: pointer;
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
+.review-diagnostics-list {
+    display: grid;
+    gap: 0.35rem;
+    margin-top: 0.55rem;
+    max-height: 26vh;
+    overflow: auto;
+}
+
+.review-diagnostic-row {
+    border: 1px solid #d8e0e7;
+    border-left: 4px solid #7a8794;
+    border-radius: 4px;
+    display: grid;
+    gap: 0.25rem;
+    padding: 0.45rem;
+    font-size: 0.78rem;
+}
+
+.review-diagnostic-row.stage-imported,
+.review-diagnostic-row.stage-accepted {
+    border-left-color: #2474a6;
+}
+
+.review-diagnostic-row.stage-rejected {
+    border-left-color: #9f3434;
+}
+
+.review-diagnostic-row.stage-suppressed,
+.review-diagnostic-row.stage-merged {
+    border-left-color: #78716c;
+}
+
+.review-diagnostic-row code {
+    color: #465665;
+    font-size: 0.75rem;
+}
+
 @media (max-width: 980px) {
     .review-shell {
         grid-template-columns: 1fr;

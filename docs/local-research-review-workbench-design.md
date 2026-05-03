@@ -33,7 +33,8 @@ MVP slice 2 implemented:
 - machine detections stored as `source=machine_detection`;
 - unreviewed machine detections replaced on rerun;
 - manual, reviewed, and ignored regions preserved on rerun;
-- detector metadata surfaced in the selected-region audit panel.
+- detector metadata surfaced in the selected-region audit panel;
+- compact recognition diagnostics stored on page state and shown in the workbench.
 
 MVP slice 3 implemented:
 
@@ -305,6 +306,7 @@ effective-oriented page
 Rules:
 
 - Detector output is advisory.
+- Recognition diagnostics are stored for review/debugging; they do not change detector decisions.
 - Reviewer override is never hidden.
 - Ignoring a region should set status/ignored, not erase provenance.
 - Manual regions should have no `detected_bbox` and should set `source=manual`.

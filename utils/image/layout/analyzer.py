@@ -134,6 +134,7 @@ class LayoutAnalyzer:
             gray = apply_nontext_mask(gray, nontext_mask)
 
         candidates = self._detect_image_region_candidates(gray)
+        raw_candidates = [region.to_dict() for region in candidates]
         accepted: List[ImageRegion] = []
         rejected: List[Dict[str, Any]] = []
         ocr_text_mask = (
@@ -173,6 +174,9 @@ class LayoutAnalyzer:
             "rejected": rejected,
             "consolidation": consolidation_events,
             "refinement": refinement_events,
+            "raw_candidates": raw_candidates,
+            "raw_candidate_count": len(raw_candidates),
+            "detector_diagnostics": list(getattr(self, "_last_detector_diagnostics", [])),
         }
 
     def _filter_candidates_with_diagnostics(
@@ -222,26 +226,31 @@ class LayoutAnalyzer:
 
     def _detect_image_region_candidates(self, gray: np.ndarray) -> List[ImageRegion]:
         regions: List[ImageRegion] = []
+        self._last_detector_diagnostics: List[Dict[str, Any]] = []
 
         # Order matters: fast/well-isolated first
         if "figure" in self.enabled_detectors:
             figs = self.figure.detect(gray)
             regions += figs
+            self._record_detector_diagnostics("figure", self.figure, len(figs))
             logger.debug("FigureDetector found %d regions", len(figs))
 
         if "contours" in self.enabled_detectors and (not regions or self.cfg.get("contours_always", False)):
             cons = self.contours.detect(gray)
             regions += cons
+            self._record_detector_diagnostics("contours", self.contours, len(cons))
             logger.debug("ContourDetector found %d regions", len(cons))
 
         if "variance" in self.enabled_detectors:
             vars_ = self.variance.detect(gray)
             regions += vars_
+            self._record_detector_diagnostics("variance", self.variance, len(vars_))
             logger.debug("VarianceDetector found %d regions", len(vars_))
 
         if "uniform" in self.enabled_detectors:
             unif = self.uniform.detect(gray)
             regions += unif
+            self._record_detector_diagnostics("uniform", self.uniform, len(unif))
             logger.debug("UniformDetector found %d regions", len(unif))
 
         # Merge adjacent/overlapping diagram boxes first (cleaner outputs)
@@ -255,6 +264,13 @@ class LayoutAnalyzer:
         regions = others + diagrams
 
         return regions
+
+    def _record_detector_diagnostics(self, detector_name: str, detector: Any, returned_count: int) -> None:
+        diagnostics = dict(getattr(detector, "last_diagnostics", {}) or {})
+        diagnostics.setdefault("detector", detector_name)
+        diagnostics.setdefault("returned_count", returned_count)
+        diagnostics.setdefault("topk_suppressed", [])
+        self._last_detector_diagnostics.append(diagnostics)
 
     def _refine_mixed_regions(
         self,

@@ -156,6 +156,34 @@ Rerun behavior is conservative:
 
 Selected-region audit fields show detector metadata when available, including confidence, mixed-region flags, needs-review flags, layout fusion metadata, and region role.
 
+## Recognition Diagnostics
+
+After `Run Recognition`, the page state includes compact recognition diagnostics under:
+
+```text
+pages[].recognition_diagnostics
+```
+
+The diagnostics summarize the candidate lifecycle:
+
+```text
+raw candidates
+accepted candidates
+rejected candidates
+suppressed / merged candidates
+imported workbench regions
+```
+
+Use the `Recognition Diagnostics` panel to inspect whether a missing figure was:
+
+- never proposed as a raw candidate;
+- rejected as text-like;
+- suppressed by top-k or consolidation;
+- merged into another region;
+- accepted but not imported.
+
+This panel is diagnostic only. It does not change detector thresholds or imported-region behavior.
+
 ## Region Types
 
 Current region type options:

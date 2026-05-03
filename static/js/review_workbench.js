@@ -56,6 +56,13 @@
         regionNeedsReview: document.getElementById("review-region-needs-review"),
         regionLayoutFusion: document.getElementById("review-region-layout-fusion"),
         regionRole: document.getElementById("review-region-role"),
+        diagRaw: document.getElementById("review-diag-raw"),
+        diagAccepted: document.getElementById("review-diag-accepted"),
+        diagRejected: document.getElementById("review-diag-rejected"),
+        diagSuppressed: document.getElementById("review-diag-suppressed"),
+        diagMerged: document.getElementById("review-diag-merged"),
+        diagImported: document.getElementById("review-diag-imported"),
+        diagnosticsList: document.getElementById("review-diagnostics-list"),
     };
 
     regionTypes.forEach((regionType) => {
@@ -117,6 +124,7 @@
         renderPageList();
         renderRegionList();
         renderOrientation();
+        renderRecognitionDiagnostics();
         renderSelectedRegion();
         clearViewer();
     }
@@ -151,6 +159,7 @@
         renderPageList();
         renderOrientation();
         renderRegionList();
+        renderRecognitionDiagnostics();
         renderOverlay();
         renderSelectedRegion();
         els.addRegion.disabled = false;
@@ -189,6 +198,7 @@
         els.saveOrientation.disabled = true;
         els.recognize.disabled = true;
         renderOrientation();
+        renderRecognitionDiagnostics();
     }
 
     function reloadPageImage() {
@@ -230,6 +240,7 @@
             reloadPageImage();
             renderOrientation();
             renderRegionList();
+            renderRecognitionDiagnostics();
             renderOverlay();
             renderSelectedRegion();
             setStatus(`Orientation effective ${state.page.orientation?.effective_rotation_degrees ?? 0}° (${state.page.orientation?.status || "unknown"}).`);
@@ -257,6 +268,7 @@
             reloadPageImage();
             renderOrientation();
             renderRegionList();
+            renderRecognitionDiagnostics();
             renderOverlay();
             renderSelectedRegion();
             setStatus(`Orientation override saved: ${rotation}°.`);
@@ -275,6 +287,43 @@
             button.addEventListener("click", () => selectRegion(region.region_id));
             els.regionList.appendChild(button);
         });
+    }
+
+    function renderRecognitionDiagnostics() {
+        const diagnostics = state.page?.recognition_diagnostics || {};
+        els.diagRaw.textContent = formatValue(diagnostics.raw_candidate_count);
+        els.diagAccepted.textContent = formatValue(diagnostics.accepted_count);
+        els.diagRejected.textContent = formatValue(diagnostics.rejected_count);
+        els.diagSuppressed.textContent = formatValue(diagnostics.suppressed_count);
+        els.diagMerged.textContent = formatValue(diagnostics.merged_count);
+        els.diagImported.textContent = formatValue(diagnostics.imported_count);
+        els.diagnosticsList.innerHTML = "";
+
+        const candidates = diagnostics.candidates || [];
+        if (!candidates.length) {
+            els.diagnosticsList.textContent = "No recognition diagnostics yet.";
+            return;
+        }
+
+        for (const candidate of candidates.slice(0, 80)) {
+            const row = document.createElement("div");
+            row.className = `review-diagnostic-row stage-${escapeCssClass(candidate.stage || "unknown")}`;
+            row.innerHTML = [
+                `<strong>${escapeHtml(candidate.candidate_id || "")}</strong>`,
+                `<span>${escapeHtml(candidate.stage || "-")}</span>`,
+                `<span>${escapeHtml(candidate.reason || "-")}</span>`,
+                `<span>${escapeHtml(candidate.region_type || "-")}</span>`,
+                `<code>${escapeHtml(JSON.stringify(candidate.bbox || []))}</code>`,
+            ].join("");
+            els.diagnosticsList.appendChild(row);
+        }
+
+        if (candidates.length > 80) {
+            const more = document.createElement("p");
+            more.className = "review-muted";
+            more.textContent = `Showing first 80 of ${candidates.length} diagnostic candidates.`;
+            els.diagnosticsList.appendChild(more);
+        }
     }
 
     function renderOverlay() {
@@ -430,6 +479,7 @@
         state.page = region.page;
         state.selectedRegionId = region.region.region_id;
         renderRegionList();
+        renderRecognitionDiagnostics();
         renderOverlay();
         renderSelectedRegion();
     }
@@ -446,6 +496,7 @@
             state.page = result.page;
             state.selectedRegionId = null;
             renderRegionList();
+            renderRecognitionDiagnostics();
             renderOverlay();
             renderSelectedRegion();
             const rejected = result.rejected_count || 0;
@@ -478,6 +529,7 @@
         state.page = result.page;
         setStatus(`Saved ${region.region_id}`);
         renderRegionList();
+        renderRecognitionDiagnostics();
         renderOverlay();
         renderSelectedRegion();
     }
@@ -500,6 +552,7 @@
         state.page = result.page;
         state.selectedRegionId = null;
         renderRegionList();
+        renderRecognitionDiagnostics();
         renderOverlay();
         renderSelectedRegion();
         setStatus(`Deleted ${region.region_id}`);
@@ -647,5 +700,9 @@
             '"': "&quot;",
             "'": "&#39;",
         }[char]));
+    }
+
+    function escapeCssClass(value) {
+        return String(value || "").replace(/[^A-Za-z0-9_-]/g, "_");
     }
 }());

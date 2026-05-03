@@ -113,6 +113,8 @@ class ExtractionService:
             "rejected_count": len(diagnostics.get("rejected", [])),
             "consolidation_count": len(diagnostics.get("consolidation", [])),
             "refinement_count": len(diagnostics.get("refinement", [])),
+            "raw_candidate_count": len(diagnostics.get("raw_candidates", [])),
+            "detector_diagnostics": diagnostics.get("detector_diagnostics", []),
         }
         if paddle_fusion is not None:
             page_metadata["image_extraction"]["paddle_layout_fusion"] = paddle_fusion
@@ -128,9 +130,12 @@ class ExtractionService:
             "enabled": True,
             "status": "completed",
             "accepted_count": len(image_regions),
+            "accepted": diagnostics.get("accepted", []),
             "rejected": diagnostics.get("rejected", []),
             "consolidation": diagnostics.get("consolidation", []),
             "refinement": diagnostics.get("refinement", []),
+            "raw_candidates": diagnostics.get("raw_candidates", []),
+            "detector_diagnostics": diagnostics.get("detector_diagnostics", []),
             "crop_dir": str(crop_dir) if self.options.save_crops else None,
             "ocr_text_boxes_used": bool(ocr_text_boxes),
         }
