@@ -307,6 +307,7 @@ Rules:
 
 - Detector output is advisory.
 - Recognition diagnostics are stored for review/debugging; they do not change detector decisions.
+- Review-mode recognition may include conservative multi-figure row proposals so repeated figure/photo/diagram panels are easier to review.
 - Reviewer override is never hidden.
 - Ignoring a region should set status/ignored, not erase provenance.
 - Manual regions should have no `detected_bbox` and should set `source=manual`.

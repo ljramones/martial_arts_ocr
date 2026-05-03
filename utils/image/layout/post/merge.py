@@ -84,7 +84,11 @@ def merge_overlapping(regions: List[ImageRegion],
             width=int(x1 - x0),
             height=int(y1 - y0),
             region_type=ref.region_type,
-            confidence=ref.confidence
+            confidence=ref.confidence,
+            id=getattr(ref, "id", None),
+            page_index=getattr(ref, "page_index", None),
+            points=getattr(ref, "points", None),
+            metadata=getattr(ref, "metadata", None),
         ))
 
     return merged_regions

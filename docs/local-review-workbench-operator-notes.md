@@ -135,6 +135,8 @@ Run orientation first. Recognition uses the effective-oriented page, not the raw
 
 This uses the existing review-mode region/image detection path as advisory input. It does not run OCR, translation, or Japanese analysis.
 
+Review-mode recognition also includes a conservative multi-figure row proposal pass. It is intended to suggest sibling figure/photo/diagram panels that may otherwise be missed in rows of related figures. These proposals are still advisory: keep, resize, retype, ignore, or delete them during review.
+
 Imported machine regions use:
 
 ```text
@@ -181,6 +183,8 @@ Use the `Recognition Diagnostics` panel to inspect whether a missing figure was:
 - suppressed by top-k or consolidation;
 - merged into another region;
 - accepted but not imported.
+
+The diagnostics include per-detector summaries, including the multi-figure row proposal pass when enabled.
 
 This panel is diagnostic only. It does not change detector thresholds or imported-region behavior.
 

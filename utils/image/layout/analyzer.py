@@ -11,6 +11,7 @@ from .detectors.figure import FigureDetector
 from .detectors.contours import ContourDetector
 from .detectors.variance import VarianceDetector
 from .detectors.uniform import UniformDetector
+from .detectors.multi_figure_rows import MultiFigureRowDetector
 from .filters.text_filter import TextRegionFilter
 from .utils.halo import halo_ok
 from .utils.masks import apply_nontext_mask
@@ -65,6 +66,7 @@ class LayoutAnalyzer:
             self.figure = FigureDetector(self.cfg, halo_check=self._halo)
 
         self.contours = ContourDetector(self.cfg, halo_check=self._halo)
+        self.multi_figure_rows = MultiFigureRowDetector(self.cfg, halo_check=self._halo)
         self.variance = VarianceDetector(self.cfg)
         self.uniform = UniformDetector(self.cfg)
 
@@ -240,6 +242,12 @@ class LayoutAnalyzer:
             regions += cons
             self._record_detector_diagnostics("contours", self.contours, len(cons))
             logger.debug("ContourDetector found %d regions", len(cons))
+
+        if "multi_figure_rows" in self.enabled_detectors:
+            row_regions = self.multi_figure_rows.detect(gray)
+            regions += row_regions
+            self._record_detector_diagnostics("multi_figure_rows", self.multi_figure_rows, len(row_regions))
+            logger.debug("MultiFigureRowDetector found %d regions", len(row_regions))
 
         if "variance" in self.enabled_detectors:
             vars_ = self.variance.detect(gray)

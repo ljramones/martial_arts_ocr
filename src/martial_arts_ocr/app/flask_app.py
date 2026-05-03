@@ -685,6 +685,14 @@ def _recognition_diagnostics_from_extraction(metadata: dict, *, orientation_degr
         "detector_diagnostics": _json_safe(metadata.get("detector_diagnostics", [])),
         "candidates": _with_candidate_ids(candidates),
     }
+    diagnostics["detectors"] = [
+        {
+            "detector": detector.get("detector"),
+            "raw_count": detector.get("raw_count"),
+            "returned_count": detector.get("returned_count"),
+        }
+        for detector in diagnostics["detector_diagnostics"]
+    ]
     return _json_safe(diagnostics)
 
 

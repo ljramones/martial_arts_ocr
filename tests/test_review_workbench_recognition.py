@@ -4,6 +4,8 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+import cv2
+import numpy as np
 from PIL import Image
 
 from martial_arts_ocr.pipeline.document_models import BoundingBox, ImageRegion
@@ -11,6 +13,16 @@ from martial_arts_ocr.pipeline.document_models import BoundingBox, ImageRegion
 
 def _write_image(path: Path, size=(180, 120)):
     Image.new("RGB", size, "white").save(path)
+
+
+def _write_three_panel_row(path: Path) -> None:
+    page = np.full((360, 760), 255, dtype=np.uint8)
+    for x in (55, 305, 555):
+        cv2.rectangle(page, (x + 8, 103), (x + 131, 236), 0, 4)
+        cv2.circle(page, (x + 70, 170), 30, 0, 4)
+        cv2.line(page, (x + 25, 220), (x + 115, 122), 0, 4)
+        cv2.arrowedLine(page, (x + 105, 210), (x + 70, 170), 0, 3, tipLength=0.16)
+    cv2.imwrite(str(path), page)
 
 
 def _create_review_app(tmp_path):
@@ -287,6 +299,27 @@ def test_recognition_runs_against_effective_oriented_page(tmp_path):
     page = response.get_json()["page"]
     assert page["regions"][0]["detected_bbox"] == [5, 6, 30, 40]
     assert page["recognition"]["orientation_degrees"] == 90
+
+
+def test_recognition_imports_multi_figure_row_proposals(tmp_path):
+    app, _data_dir, scans = _create_review_app(tmp_path)
+    _write_three_panel_row(scans / "three_panels.png")
+    client = app.test_client()
+    client.post("/api/review/projects", json={"source_folder": str(scans), "project_id": "multirow"})
+
+    response = client.post("/api/review/projects/multirow/pages/page_001/recognize")
+
+    assert response.status_code == 200
+    page = response.get_json()["page"]
+    assert len(page["regions"]) == 3
+    assert response.get_json()["detected_count"] == len(page["regions"])
+    diagnostics = response.get_json()["recognition_diagnostics"]
+    row_detector = [
+        detector for detector in diagnostics["detector_diagnostics"]
+        if detector["detector"] == "multi_figure_rows"
+    ][0]
+    assert row_detector["returned_count"] == 3
+    assert diagnostics["imported_count"] == len(page["regions"])
 
 
 def test_recognition_rerun_preserves_manual_and_reviewed_regions(tmp_path):

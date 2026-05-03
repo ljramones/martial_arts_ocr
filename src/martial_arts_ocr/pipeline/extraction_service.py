@@ -185,7 +185,7 @@ class ExtractionService:
         return LayoutAnalyzer(
             {
                 "use_yolo_figure": False,
-                "enabled_detectors": ["figure", "contours"],
+                "enabled_detectors": ["figure", "contours", "multi_figure_rows"],
                 "contours_always": True,
                 "filter_text_like": True,
             }
