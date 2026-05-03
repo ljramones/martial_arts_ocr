@@ -23,6 +23,7 @@ MVP slice 1 implemented:
 - delete/ignore region controls;
 - `project_state.json` save/load behavior;
 - detected fields preserved separately from reviewer overrides.
+- bboxes stored in natural image coordinates and mapped to rendered overlay coordinates in the browser.
 
 MVP slice 2 implemented:
 
@@ -232,8 +233,11 @@ The first implementation does not need pixel-perfect drawing tools. It does need
 Coordinate system:
 
 - store bboxes in original image pixel coordinates;
-- draw overlays by scaling image coordinates into viewport coordinates;
+- draw overlays by scaling image coordinates into rendered-image coordinates;
+- position the overlay relative to the rendered image, not the surrounding viewer container;
 - never store viewport/screen coordinates as canonical bbox values.
+
+The workbench assumes the browser-displayed image orientation matches the image coordinate orientation read by the backend. If overlays appear rotated or mirrored rather than merely offset/scaled, check EXIF orientation handling before saving reviewed bboxes.
 
 ## Recognition and Override Flow
 

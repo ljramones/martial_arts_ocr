@@ -78,6 +78,23 @@ effective_bbox
 
 Reviewer edits update reviewed/effective fields. They do not overwrite detected fields.
 
+## Overlay Alignment
+
+Workbench bboxes are stored in natural image coordinates:
+
+```text
+[x, y, width, height]
+```
+
+The browser maps those coordinates to the rendered image using the image's displayed size and offset inside the viewer. The overlay should align to the scanned page image, not to the dark viewer container.
+
+If overlays appear misaligned:
+
+- reload the page after server changes;
+- check whether the image is still loading;
+- check whether the browser is applying EXIF orientation differently from the backend;
+- do not save reviewed bboxes until the overlay alignment is correct.
+
 ## Run Recognition
 
 After selecting a page, click `Run Recognition` to import machine-detected regions for that page.

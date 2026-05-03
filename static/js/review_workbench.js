@@ -8,6 +8,7 @@
         page: null,
         selectedRegionId: null,
         drag: null,
+        imageLayout: null,
     };
 
     const els = {
@@ -20,6 +21,7 @@
         regionList: document.getElementById("review-region-list"),
         recognize: document.getElementById("review-recognize-page"),
         addRegion: document.getElementById("review-add-region"),
+        stage: document.getElementById("review-page-stage"),
         image: document.getElementById("review-page-image"),
         overlay: document.getElementById("review-overlay"),
         emptyState: document.getElementById("review-empty-state"),
@@ -69,6 +71,10 @@
     window.addEventListener("mousemove", onDragMove);
     window.addEventListener("mouseup", () => {
         state.drag = null;
+    });
+    window.addEventListener("resize", () => {
+        syncOverlaySize();
+        renderOverlay();
     });
 
     async function createOrLoadProject() {
@@ -121,11 +127,15 @@
         const page = await requestJson(`/api/review/projects/${encodeURIComponent(state.project.project_id)}/pages/${encodeURIComponent(pageId)}`);
         state.page = page;
         state.selectedRegionId = null;
+        els.stage.classList.remove("is-empty");
+        els.emptyState.hidden = true;
         els.image.hidden = false;
         els.overlay.hidden = false;
-        els.emptyState.hidden = true;
         els.image.src = `/api/review/projects/${encodeURIComponent(state.project.project_id)}/pages/${encodeURIComponent(pageId)}/image?ts=${Date.now()}`;
-        els.image.onload = () => syncOverlaySize();
+        els.image.onload = () => {
+            syncOverlaySize();
+            renderOverlay();
+        };
         syncOverlaySize();
         renderPageList();
         renderRegionList();
@@ -136,17 +146,28 @@
     }
 
     function syncOverlaySize() {
-        if (!state.page) return;
-        els.overlay.setAttribute("viewBox", `0 0 ${state.page.width || 1} ${state.page.height || 1}`);
-        els.overlay.setAttribute("preserveAspectRatio", "xMinYMin meet");
+        if (!state.page || !els.image.complete || !els.image.clientWidth || !els.image.clientHeight) return;
+        state.imageLayout = computeImageLayout({
+            imageElement: els.image,
+            imageWidth: state.page.width || els.image.naturalWidth || 1,
+            imageHeight: state.page.height || els.image.naturalHeight || 1,
+        });
+        els.overlay.style.left = `${state.imageLayout.offsetX}px`;
+        els.overlay.style.top = `${state.imageLayout.offsetY}px`;
+        els.overlay.style.width = `${state.imageLayout.renderedWidth}px`;
+        els.overlay.style.height = `${state.imageLayout.renderedHeight}px`;
+        els.overlay.setAttribute("viewBox", `0 0 ${state.imageLayout.renderedWidth || 1} ${state.imageLayout.renderedHeight || 1}`);
+        els.overlay.setAttribute("preserveAspectRatio", "none");
     }
 
     function clearViewer() {
+        els.stage.classList.add("is-empty");
         els.image.hidden = true;
         els.overlay.hidden = true;
         els.emptyState.hidden = false;
         els.image.removeAttribute("src");
         els.overlay.innerHTML = "";
+        state.imageLayout = null;
         els.addRegion.disabled = true;
         els.recognize.disabled = true;
     }
@@ -166,15 +187,18 @@
     function renderOverlay() {
         els.overlay.innerHTML = "";
         if (!state.page) return;
+        syncOverlaySize();
+        const layout = state.imageLayout;
+        if (!layout) return;
         for (const region of state.page.regions || []) {
             const detected = region.detected_bbox;
             const bbox = region.effective_bbox;
             if (detected && JSON.stringify(detected) !== JSON.stringify(bbox)) {
-                els.overlay.appendChild(svgRect(detected, "review-detected-rect"));
+                els.overlay.appendChild(svgRect(imageBBoxToScreenBBox(layout, detected), "review-detected-rect"));
             }
             if (!bbox) continue;
             const rect = svgRect(
-                bbox,
+                imageBBoxToScreenBBox(layout, bbox),
                 [
                     "review-region-rect",
                     region.region_id === state.selectedRegionId ? "selected" : "",
@@ -189,7 +213,7 @@
             });
             els.overlay.appendChild(rect);
             if (region.region_id === state.selectedRegionId) {
-                for (const handle of handlesForBBox(bbox)) {
+                for (const handle of handlesForBBox(imageBBoxToScreenBBox(layout, bbox))) {
                     const circle = svgHandle(handle.x, handle.y, handle.name);
                     circle.addEventListener("mousedown", (event) => beginDrag(event, region.region_id, handle.name));
                     els.overlay.appendChild(circle);
@@ -331,7 +355,9 @@
             renderRegionList();
             renderOverlay();
             renderSelectedRegion();
-            setStatus(`Recognition imported ${result.detected_count || 0} region(s).`);
+            const rejected = result.rejected_count || 0;
+            const suffix = rejected ? ` ${rejected} text-like candidate(s) rejected.` : "";
+            setStatus(`Recognition imported ${result.detected_count || 0} region(s).${suffix}`);
         } catch (error) {
             setStatus(error.message || "Recognition failed.");
         } finally {
@@ -392,21 +418,24 @@
         selectRegion(regionId);
         const region = selectedRegion();
         const point = svgPoint(event);
+        const layout = state.imageLayout;
+        if (!layout) return;
         state.drag = {
             mode,
             start: point,
-            bbox: [...(region.reviewed_bbox || region.effective_bbox)],
+            screenBBox: imageBBoxToScreenBBox(layout, region.reviewed_bbox || region.effective_bbox),
         };
     }
 
     function onDragMove(event) {
         if (!state.drag) return;
         const region = selectedRegion();
-        if (!region) return;
+        const layout = state.imageLayout;
+        if (!region || !layout) return;
         const point = svgPoint(event);
         const dx = point.x - state.drag.start.x;
         const dy = point.y - state.drag.start.y;
-        let [x, y, w, h] = state.drag.bbox;
+        let [x, y, w, h] = state.drag.screenBBox;
         if (state.drag.mode === "move") {
             x += dx;
             y += dy;
@@ -422,7 +451,7 @@
             }
             if (state.drag.mode.includes("e")) w += dx;
         }
-        region.reviewed_bbox = coerceBBox([x, y, w, h]);
+        region.reviewed_bbox = screenBBoxToImageBBox(layout, [x, y, w, h]);
         region.effective_bbox = region.reviewed_bbox;
         region.status = region.status === "manual" ? "manual" : "reviewed";
         [els.bboxX.value, els.bboxY.value, els.bboxW.value, els.bboxH.value] = region.reviewed_bbox;
@@ -444,6 +473,47 @@
         y = Math.max(0, Math.min(Math.round(y || 0), pageHeight - 1));
         w = Math.max(1, Math.min(Math.round(w || 1), pageWidth - x));
         h = Math.max(1, Math.min(Math.round(h || 1), pageHeight - y));
+        return [x, y, w, h];
+    }
+
+    function computeImageLayout({ imageElement, imageWidth, imageHeight }) {
+        const renderedWidth = imageElement.clientWidth || 1;
+        const renderedHeight = imageElement.clientHeight || 1;
+        return {
+            imageWidth: Math.max(1, Number(imageWidth || 1)),
+            imageHeight: Math.max(1, Number(imageHeight || 1)),
+            renderedWidth,
+            renderedHeight,
+            offsetX: imageElement.offsetLeft || 0,
+            offsetY: imageElement.offsetTop || 0,
+            scaleX: renderedWidth / Math.max(1, Number(imageWidth || 1)),
+            scaleY: renderedHeight / Math.max(1, Number(imageHeight || 1)),
+        };
+    }
+
+    function imageBBoxToScreenBBox(layout, bbox) {
+        return [
+            bbox[0] * layout.scaleX,
+            bbox[1] * layout.scaleY,
+            bbox[2] * layout.scaleX,
+            bbox[3] * layout.scaleY,
+        ];
+    }
+
+    function screenBBoxToImageBBox(layout, bbox) {
+        return clampImageBBox(layout, [
+            bbox[0] / layout.scaleX,
+            bbox[1] / layout.scaleY,
+            bbox[2] / layout.scaleX,
+            bbox[3] / layout.scaleY,
+        ]);
+    }
+
+    function clampImageBBox(layout, [x, y, w, h]) {
+        x = Math.max(0, Math.min(Math.round(x || 0), layout.imageWidth - 1));
+        y = Math.max(0, Math.min(Math.round(y || 0), layout.imageHeight - 1));
+        w = Math.max(1, Math.min(Math.round(w || 1), layout.imageWidth - x));
+        h = Math.max(1, Math.min(Math.round(h || 1), layout.imageHeight - y));
         return [x, y, w, h];
     }
 

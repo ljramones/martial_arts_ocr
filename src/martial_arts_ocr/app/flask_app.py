@@ -448,7 +448,7 @@ def _detect_review_regions(
     image_path: Path,
     page: dict,
     output_dir: Path,
-) -> list[dict]:
+) -> dict:
     """Run review-mode region detection without invoking OCR."""
     injected_service = current_app.config.get("REVIEW_RECOGNITION_SERVICE")
     service = injected_service or ExtractionService(
@@ -482,12 +482,16 @@ def _detect_review_regions(
     )
     enriched = service.enrich_document_result(document, output_dir=output_dir)
     if not enriched.pages:
-        return []
-    return [
+        return {"regions": [], "rejected_count": 0}
+    region_records = [
         _review_region_record_from_image_region(region)
         for region in enriched.pages[0].image_regions
         if region.bbox is not None
     ]
+    return {
+        "regions": region_records,
+        "rejected_count": len((enriched.metadata.get("image_extraction") or {}).get("rejected", [])),
+    }
 
 
 def _review_region_record_from_image_region(region) -> dict:
@@ -600,16 +604,18 @@ def api_review_recognize_page(project_id, page_id):
         page = store.get_page(state, page_id)
         image_path = store.image_path(state, page_id)
         output_dir = store.project_dir(project_id) / "recognition" / page_id
-        detected_regions = _detect_review_regions(
+        recognition_result = _detect_review_regions(
             image_path=image_path,
             page=page,
             output_dir=output_dir,
         )
+        detected_regions = recognition_result["regions"]
         updated_page = store.import_detected_regions(state, page_id, detected_regions)
         return jsonify(
             {
                 "page": updated_page,
                 "detected_count": len(detected_regions),
+                "rejected_count": recognition_result.get("rejected_count", 0),
                 "rerun_behavior": "replaced_unreviewed_machine_detection_regions",
             }
         ), 200

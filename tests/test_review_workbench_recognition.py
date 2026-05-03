@@ -98,6 +98,40 @@ def test_recognition_endpoint_imports_detected_regions_without_ocr(tmp_path):
     assert saved["pages"][0]["regions"][0]["source"] == "machine_detection"
 
 
+def test_recognition_reports_rejected_candidates_without_importing_them(tmp_path):
+    app, _data_dir, scans = _create_review_app(tmp_path)
+    _write_image(scans / "page.png", size=(180, 120))
+
+    class EmptyRecognitionService:
+        def enrich_document_result(self, document, *, output_dir):
+            return replace(
+                document,
+                metadata={
+                    **document.metadata,
+                    "image_extraction": {
+                        "rejected": [
+                            {
+                                "region": {"bbox": [20, 25, 70, 65]},
+                                "rejection_reason": "text_like_components",
+                            }
+                        ]
+                    },
+                },
+            )
+
+    app.config["REVIEW_RECOGNITION_SERVICE"] = EmptyRecognitionService()
+    client = app.test_client()
+    client.post("/api/review/projects", json={"source_folder": str(scans), "project_id": "diagnostic"})
+
+    response = client.post("/api/review/projects/diagnostic/pages/page_001/recognize")
+
+    assert response.status_code == 200
+    page = response.get_json()["page"]
+    assert response.get_json()["detected_count"] == 0
+    assert response.get_json()["rejected_count"] == 1
+    assert page["regions"] == []
+
+
 def test_recognition_rerun_preserves_manual_and_reviewed_regions(tmp_path):
     app, _data_dir, scans = _create_review_app(tmp_path)
     _write_image(scans / "page.png", size=(180, 120))
