@@ -10,6 +10,8 @@ The repository already contains a neural-network-based page-orientation subsyste
 
 This work should be preserved. The best documented deployment path is ConvNeXt-Tiny with optional EfficientNetV2-S fallback/ensemble. No workbench integration was implemented in this inventory pass.
 
+This inventory now also records the technology behind the NN model so future workbench integration can wrap the existing subsystem without flattening it into a vague "orientation detector."
+
 ## Existing Files Found
 
 | Path | Purpose |
@@ -44,6 +46,123 @@ Local generated/training artifacts were also found:
 | `experiments/orientation_model/checkpoints/orient_effnetv2s.pth` | Local ignored checkpoint, about 82 MB. Optional ensemble partner. |
 | `experiments/orientation_model/checkpoints/orient_twohead_mnv3s.pth` | Local ignored checkpoint, older two-head model. |
 | `experiments/orientation_model/checkpoints/orient_twohead_mnv3s.last.pth` | Local ignored checkpoint, last two-head checkpoint. |
+
+## Technology / Model Architecture
+
+The orientation subsystem is a PyTorch/TorchVision image-classification stack, not a rule-only orientation heuristic.
+
+Core task:
+
+```text
+input scanned page image
+  -> four-class CNN classifier
+  -> predicted rotation class: 0, 90, 180, or 270
+```
+
+The current recommended model is:
+
+```text
+ConvNeXt-Tiny
+  file: experiments/orientation_model/src/train_convnext_tiny.py
+  checkpoint: experiments/orientation_model/checkpoints/orient_convnext_tiny.pth
+  documented test accuracy: 95.83%
+```
+
+ConvNeXt-Tiny is implemented with `torchvision.models.convnext_tiny`. The pretrained ImageNet classifier head is replaced with a four-class linear head:
+
+```text
+idx 0 -> 0 degrees
+idx 1 -> 90 degrees
+idx 2 -> 180 degrees
+idx 3 -> 270 degrees
+```
+
+The checkpoint stores at least:
+
+```text
+model state_dict
+img_size
+idx_to_deg
+arch
+```
+
+The arch-aware inference loader in `experiments/orientation_model/src/predict_model.py` uses the checkpoint `arch` field to rebuild the correct backbone. Supported checkpoint architectures are:
+
+| Architecture | Purpose | Status |
+| --- | --- | --- |
+| `convnext_tiny` | Best documented single model. | Recommended default. |
+| `effnetv2_s` / `efficientnet_v2_s` | EfficientNetV2-S ensemble partner. | Optional fallback/ensemble model. |
+| `mobilenet_v3_small` | Older single-head baseline. | Preserved for comparison. |
+| `twohead` via `model_twohead.py` | MobileNetV3-Small split into family and polarity heads. | Experimental/legacy path. |
+
+The default input transform for inference is:
+
+```text
+PIL/RGB image
+  -> ToTensor
+  -> Resize(img_size, antialias=True)
+  -> CenterCrop(img_size)
+  -> ensure 3 channels
+  -> Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+```
+
+The current model was trained at `img_size=384` by default. Training uses label-safe, orientation-safe augmentation:
+
+```text
+color jitter
+light Gaussian blur
+small shear with zero rotation
+white padding
+random resized crop with near-square aspect ratio
+mixup
+label smoothing
+```
+
+These augmentations are intentionally constrained so they improve scan robustness without changing the orientation label. Training uses a head-only warmup and then full fine-tuning with AdamW and cosine learning-rate scheduling.
+
+Inference is not just a single center crop. `predict_model.py` can use center-plus-band voting:
+
+```text
+center view
+left strip
+right strip
+top strip
+bottom strip
+  -> average logits
+  -> softmax probabilities for 0/90/180/270
+```
+
+The side/top/bottom bands help because scanned pages often have orientation clues in margins, headers, footers, sidebars, and page-edge layout. The output is a predicted degree plus a score map:
+
+```python
+deg = 90
+scores = {0: 0.01, 90: 0.94, 180: 0.03, 270: 0.02}
+```
+
+The optional ensemble path averages logits from ConvNeXt-Tiny and EfficientNetV2-S. The deployment note recommends using ConvNeXt-Tiny first, then invoking the ensemble only when ConvNeXt top-1 probability is below about `0.55`.
+
+The older two-head MobileNet path decomposes orientation into:
+
+```text
+family:
+  portrait: 0 / 180
+  landscape: 90 / 270
+
+polarity:
+  up: 0 / 90
+  down: 180 / 270
+```
+
+That work is useful historical evidence because it captures a real modeling insight: some errors are family errors, while others are polarity errors. Even if ConvNeXt-Tiny is the recommended deployment model, the two-head work should remain available for future analysis.
+
+This NN subsystem is separate from:
+
+```text
+utils/image/preprocessing/orientation.py
+utils/image/preprocessing/ocr_osd.py
+```
+
+Those files provide heuristic/Tesseract-OSD orientation support. They can remain useful as diagnostics or fallbacks, but they are not replacements for the trained CNN orientation system.
 
 ## Training Pipeline
 
