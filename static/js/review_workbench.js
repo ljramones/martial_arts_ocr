@@ -44,6 +44,15 @@
         save: document.getElementById("review-save-region"),
         ignore: document.getElementById("review-ignore-region"),
         delete: document.getElementById("review-delete-region"),
+        duplicate: document.getElementById("review-duplicate-region"),
+        duplicateLeft: document.getElementById("review-duplicate-left"),
+        duplicateRight: document.getElementById("review-duplicate-right"),
+        duplicateUp: document.getElementById("review-duplicate-up"),
+        duplicateDown: document.getElementById("review-duplicate-down"),
+        nudgeLeft: document.getElementById("review-nudge-left"),
+        nudgeRight: document.getElementById("review-nudge-right"),
+        nudgeUp: document.getElementById("review-nudge-up"),
+        nudgeDown: document.getElementById("review-nudge-down"),
         detectedType: document.getElementById("review-detected-type"),
         effectiveType: document.getElementById("review-effective-type"),
         detectedBbox: document.getElementById("review-detected-bbox"),
@@ -81,9 +90,19 @@
     els.save.addEventListener("click", saveSelectedRegion);
     els.ignore.addEventListener("click", ignoreSelectedRegion);
     els.delete.addEventListener("click", deleteSelectedRegion);
+    els.duplicate.addEventListener("click", () => duplicateSelectedRegion("same"));
+    els.duplicateLeft.addEventListener("click", () => duplicateSelectedRegion("left"));
+    els.duplicateRight.addEventListener("click", () => duplicateSelectedRegion("right"));
+    els.duplicateUp.addEventListener("click", () => duplicateSelectedRegion("up"));
+    els.duplicateDown.addEventListener("click", () => duplicateSelectedRegion("down"));
+    els.nudgeLeft.addEventListener("click", () => nudgeSelectedRegion(-10, 0));
+    els.nudgeRight.addEventListener("click", () => nudgeSelectedRegion(10, 0));
+    els.nudgeUp.addEventListener("click", () => nudgeSelectedRegion(0, -10));
+    els.nudgeDown.addEventListener("click", () => nudgeSelectedRegion(0, 10));
     [els.type, els.bboxX, els.bboxY, els.bboxW, els.bboxH, els.notes].forEach((element) => {
         element.addEventListener("input", updateSelectedFromPanel);
     });
+    window.addEventListener("keydown", onKeyDown);
 
     window.addEventListener("mousemove", onDragMove);
     window.addEventListener("mouseup", () => {
@@ -407,7 +426,26 @@
     function renderSelectedRegion() {
         const region = selectedRegion();
         const enabled = Boolean(region);
-        [els.type, els.bboxX, els.bboxY, els.bboxW, els.bboxH, els.notes, els.save, els.ignore, els.delete].forEach((element) => {
+        [
+            els.type,
+            els.bboxX,
+            els.bboxY,
+            els.bboxW,
+            els.bboxH,
+            els.notes,
+            els.save,
+            els.ignore,
+            els.delete,
+            els.duplicate,
+            els.duplicateLeft,
+            els.duplicateRight,
+            els.duplicateUp,
+            els.duplicateDown,
+            els.nudgeLeft,
+            els.nudgeRight,
+            els.nudgeUp,
+            els.nudgeDown,
+        ].forEach((element) => {
             element.disabled = !enabled;
         });
         els.bboxFields.disabled = !enabled;
@@ -558,6 +596,41 @@
         setStatus(`Deleted ${region.region_id}`);
     }
 
+    async function duplicateSelectedRegion(direction) {
+        const region = selectedRegion();
+        if (!state.project || !state.page || !region) return;
+        const result = await requestJson(
+            `/api/review/projects/${encodeURIComponent(state.project.project_id)}/pages/${encodeURIComponent(state.page.page_id)}/regions/${encodeURIComponent(region.region_id)}/duplicate`,
+            {
+                method: "POST",
+                body: JSON.stringify({ direction }),
+            }
+        );
+        state.page = result.page;
+        state.selectedRegionId = result.region.region_id;
+        renderRegionList();
+        renderRecognitionDiagnostics();
+        renderOverlay();
+        renderSelectedRegion();
+        setStatus(`Duplicated ${region.region_id} ${direction}.`);
+    }
+
+    function nudgeSelectedRegion(dx, dy) {
+        const region = selectedRegion();
+        if (!region) return;
+        const bbox = region.reviewed_bbox || region.effective_bbox || [0, 0, 1, 1];
+        region.reviewed_bbox = coerceBBox([bbox[0] + dx, bbox[1] + dy, bbox[2], bbox[3]]);
+        region.effective_bbox = region.reviewed_bbox;
+        region.reviewed_type = region.reviewed_type || region.effective_type || "unknown_needs_review";
+        region.effective_type = region.reviewed_type;
+        region.status = region.reviewed_type === "ignore" ? "ignored" : "reviewed";
+        region.ignored = region.reviewed_type === "ignore";
+        [els.bboxX.value, els.bboxY.value, els.bboxW.value, els.bboxH.value] = region.reviewed_bbox;
+        renderRegionList();
+        renderOverlay();
+        renderSelectedRegion();
+    }
+
     function beginDrag(event, regionId, mode) {
         event.preventDefault();
         event.stopPropagation();
@@ -603,6 +676,25 @@
         [els.bboxX.value, els.bboxY.value, els.bboxW.value, els.bboxH.value] = region.reviewed_bbox;
         renderOverlay();
         renderSelectedRegion();
+    }
+
+    function onKeyDown(event) {
+        if (!selectedRegion()) return;
+        if (["INPUT", "TEXTAREA", "SELECT"].includes(event.target?.tagName)) return;
+        const step = event.shiftKey ? 10 : 1;
+        if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            nudgeSelectedRegion(-step, 0);
+        } else if (event.key === "ArrowRight") {
+            event.preventDefault();
+            nudgeSelectedRegion(step, 0);
+        } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            nudgeSelectedRegion(0, -step);
+        } else if (event.key === "ArrowDown") {
+            event.preventDefault();
+            nudgeSelectedRegion(0, step);
+        }
     }
 
     function svgPoint(event) {

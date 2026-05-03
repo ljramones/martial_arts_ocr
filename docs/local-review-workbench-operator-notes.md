@@ -158,6 +158,28 @@ Rerun behavior is conservative:
 
 Selected-region audit fields show detector metadata when available, including confidence, mixed-region flags, needs-review flags, layout fusion metadata, and region role.
 
+## Duplicate and Nudge Regions
+
+If recognition finds one region in a repeated row but misses nearby siblings, use the selected-region controls:
+
+- `Duplicate` creates a same-position manual copy.
+- `Duplicate Left` / `Duplicate Right` creates same-sized sibling boxes offset by one region width.
+- `Duplicate Up` / `Duplicate Down` creates same-sized sibling boxes offset by one region height.
+- Nudge buttons move the selected region by 10 pixels.
+- Arrow keys move the selected region by 1 pixel when focus is not inside an input.
+- Shift + arrow moves by 10 pixels.
+
+Duplicated regions are reviewer-created, not machine detections:
+
+```text
+source=reviewer_manual_duplicate
+status=reviewed
+detected_bbox=null
+metadata.duplicated_from_region_id=<source region>
+```
+
+Save the duplicated region after final bbox/type adjustment.
+
 ## Recognition Diagnostics
 
 After `Run Recognition`, the page state includes compact recognition diagnostics under:

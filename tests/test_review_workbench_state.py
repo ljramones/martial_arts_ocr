@@ -166,6 +166,70 @@ def test_reloads_project_state_from_disk(tmp_path):
     assert loaded["pages"][0]["regions"][0]["effective_type"] == "english_text"
 
 
+def test_duplicate_region_creates_reviewed_manual_copy_and_preserves_original(tmp_path):
+    source = tmp_path / "scans"
+    source.mkdir()
+    _write_image(source / "page.png", size=(220, 140))
+    store = ReviewWorkbenchStore(tmp_path / "runtime" / "review_projects", allowed_roots=[tmp_path])
+    state = store.create_project(source, project_id="duplicate")
+    page_id = state["pages"][0]["page_id"]
+    page = store.import_detected_regions(
+        state,
+        page_id,
+        [
+            {
+                "region_type": "diagram",
+                "bbox": [80, 20, 50, 60],
+                "metadata": {"detector": "fake_detector"},
+            }
+        ],
+    )
+    original = dict(page["regions"][0])
+
+    duplicate = store.duplicate_region(state, page_id, "det_001", direction="right")
+
+    assert duplicate["region_id"] == "r_001"
+    assert duplicate["source"] == "reviewer_manual_duplicate"
+    assert duplicate["status"] == "reviewed"
+    assert duplicate["detected_bbox"] is None
+    assert duplicate["reviewed_bbox"] == [130, 20, 50, 60]
+    assert duplicate["effective_bbox"] == [130, 20, 50, 60]
+    assert duplicate["reviewed_type"] == "diagram"
+    assert duplicate["effective_type"] == "diagram"
+    assert duplicate["metadata"]["duplicated_from_region_id"] == "det_001"
+    assert duplicate["metadata"]["duplicated_from_detector"] == "fake_detector"
+    assert store.get_region(store.get_page(state, page_id), "det_001") == original
+
+    loaded = store.load_project("duplicate")
+    loaded_duplicate = store.get_region(store.get_page(loaded, page_id), "r_001")
+    assert loaded_duplicate["source"] == "reviewer_manual_duplicate"
+
+    updated_duplicate = store.update_region(
+        loaded,
+        page_id,
+        "r_001",
+        {"reviewed_bbox": [135, 25, 45, 55]},
+    )
+    assert updated_duplicate["source"] == "reviewer_manual_duplicate"
+    assert updated_duplicate["reviewed_bbox"] == [135, 25, 45, 55]
+
+
+def test_duplicate_region_left_right_clamps_to_page_bounds(tmp_path):
+    source = tmp_path / "scans"
+    source.mkdir()
+    _write_image(source / "page.png", size=(120, 90))
+    store = ReviewWorkbenchStore(tmp_path / "runtime" / "review_projects", allowed_roots=[tmp_path])
+    state = store.create_project(source, project_id="duplicate_clamp")
+    page_id = state["pages"][0]["page_id"]
+    store.add_region(state, page_id, {"reviewed_type": "image", "bbox": [5, 10, 40, 50]})
+
+    left = store.duplicate_region(state, page_id, "r_001", direction="left")
+    right = store.duplicate_region(state, page_id, "r_001", direction="right")
+
+    assert left["reviewed_bbox"] == [0, 10, 40, 50]
+    assert right["reviewed_bbox"] == [45, 10, 40, 50]
+
+
 def test_import_detected_regions_preserves_reviewer_work_and_replaces_unreviewed_machine_regions(tmp_path):
     source = tmp_path / "scans"
     source.mkdir()

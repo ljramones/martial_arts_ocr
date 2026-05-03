@@ -215,6 +215,38 @@ def test_review_region_routes_add_update_ignore_delete_and_preserve_detected_fie
     assert saved["pages"][0]["regions"] == []
 
 
+def test_review_region_duplicate_route_creates_manual_sibling(tmp_path):
+    app, data_dir, scans = _create_review_app(tmp_path)
+    _write_image(scans / "page.png", size=(220, 140))
+    client = app.test_client()
+    client.post("/api/review/projects", json={"source_folder": str(scans), "project_id": "duplicate_route"})
+    add_response = client.post(
+        "/api/review/projects/duplicate_route/pages/page_001/regions",
+        json={"reviewed_type": "diagram", "reviewed_bbox": [70, 20, 50, 60]},
+    )
+    assert add_response.status_code == 201
+
+    duplicate_response = client.post(
+        "/api/review/projects/duplicate_route/pages/page_001/regions/r_001/duplicate",
+        json={"direction": "right"},
+    )
+
+    assert duplicate_response.status_code == 201
+    payload = duplicate_response.get_json()
+    duplicate = payload["region"]
+    assert duplicate["region_id"] == "r_002"
+    assert duplicate["source"] == "reviewer_manual_duplicate"
+    assert duplicate["reviewed_bbox"] == [120, 20, 50, 60]
+    assert duplicate["reviewed_type"] == "diagram"
+    assert duplicate["metadata"]["duplicated_from_region_id"] == "r_001"
+    assert len(payload["page"]["regions"]) == 2
+
+    saved = json.loads(
+        (data_dir / "runtime" / "review_projects" / "duplicate_route" / "project_state.json").read_text(encoding="utf-8")
+    )
+    assert saved["pages"][0]["regions"][1]["source"] == "reviewer_manual_duplicate"
+
+
 def test_review_project_rejects_disallowed_source_folder(tmp_path):
     app, _data_dir, _scans = _create_review_app(tmp_path)
     outside = tmp_path.parent / "outside_review_source"

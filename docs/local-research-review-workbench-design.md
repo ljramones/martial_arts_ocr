@@ -311,6 +311,7 @@ Rules:
 - Reviewer override is never hidden.
 - Ignoring a region should set status/ignored, not erase provenance.
 - Manual regions should have no `detected_bbox` and should set `source=manual`.
+- Duplicated regions should be reviewer-created siblings with `source=reviewer_manual_duplicate`, no `detected_bbox`, and metadata pointing to the source region.
 - Rerunning recognition should replace only unreviewed `source=machine_detection` regions.
 - Rerunning recognition should preserve manual, reviewed, and ignored regions.
 - Recognition runs on the effective-oriented page.

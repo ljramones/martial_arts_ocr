@@ -165,8 +165,50 @@ class ReviewWorkbenchStore:
         if region.get("reviewed_type") == "ignore" or region.get("status") == "ignored":
             region["ignored"] = True
             region["status"] = "ignored"
-        region["source"] = "reviewer_override" if region.get("source") != "manual" else "manual"
+        if region.get("source") not in {"manual", "reviewer_manual_duplicate"}:
+            region["source"] = "reviewer_override"
         region.update(_effective_fields(region))
+        self.save_project(state)
+        return region
+
+    def duplicate_region(
+        self,
+        state: dict[str, Any],
+        page_id: str,
+        region_id: str,
+        direction: str = "same",
+    ) -> dict[str, Any]:
+        page = self.get_page(state, page_id)
+        regions = page.setdefault("regions", [])
+        source_region = self.get_region(page, region_id)
+        bbox = list(source_region.get("effective_bbox") or source_region.get("reviewed_bbox") or source_region.get("detected_bbox") or _default_bbox(page))
+        new_bbox = _offset_bbox_for_duplicate(bbox, page, direction)
+        effective_type = source_region.get("effective_type") or source_region.get("reviewed_type") or source_region.get("detected_type") or "unknown_needs_review"
+        if effective_type not in REGION_TYPES:
+            effective_type = "unknown_needs_review"
+        metadata = dict(source_region.get("metadata") or {})
+        duplicate_metadata = {
+            "duplicated_from_region_id": region_id,
+            "duplicated_from_source": source_region.get("source"),
+            "duplicate_direction": direction,
+        }
+        if metadata.get("detector"):
+            duplicate_metadata["duplicated_from_detector"] = metadata.get("detector")
+        region = _with_effective_fields(
+            {
+                "region_id": _next_region_id(regions),
+                "detected_type": None,
+                "reviewed_type": effective_type,
+                "detected_bbox": None,
+                "reviewed_bbox": new_bbox,
+                "status": "reviewed",
+                "source": "reviewer_manual_duplicate",
+                "notes": f"Duplicated from {region_id}",
+                "ignored": effective_type == "ignore",
+                "metadata": duplicate_metadata,
+            }
+        )
+        regions.append(region)
         self.save_project(state)
         return region
 
@@ -362,6 +404,24 @@ def _coerce_bbox(raw_bbox: Any, page: dict[str, Any]) -> list[int]:
     width = max(1, min(width, page_width - x))
     height = max(1, min(height, page_height - y))
     return [x, y, width, height]
+
+
+def _offset_bbox_for_duplicate(
+    bbox: list[int],
+    page: dict[str, Any],
+    direction: str,
+) -> list[int]:
+    x, y, width, height = [int(value) for value in bbox]
+    direction = str(direction or "same").strip().lower()
+    if direction == "left":
+        x -= width
+    elif direction == "right":
+        x += width
+    elif direction == "up":
+        y -= height
+    elif direction == "down":
+        y += height
+    return _coerce_bbox([x, y, width, height], page)
 
 
 def _with_effective_fields(region: dict[str, Any]) -> dict[str, Any]:
