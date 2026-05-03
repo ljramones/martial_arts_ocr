@@ -465,7 +465,7 @@ No new tests were run for this docs-only inventory.
 
 Add a small wrapper around the existing NN predictor rather than rewriting it.
 
-Recommended future file:
+Review-layer wrapper:
 
 ```text
 src/martial_arts_ocr/review/orientation_service.py
@@ -477,6 +477,15 @@ Reason:
 - the service can remain review/workbench-scoped before any pipeline default changes;
 - it can call `utils.image.preprocessing.orientation_cnn` and preserve the existing experiment model code;
 - it can normalize path configuration, checkpoint availability, EXIF assumptions, confidence metadata, and correction-direction naming.
+
+Current wrapper behavior:
+
+- lazy-loads the existing `utils.image.preprocessing.orientation_cnn` backend;
+- expects the ConvNeXt-Tiny checkpoint path, with optional EffNetV2-S ensemble path;
+- returns `manual_required` instead of failing when checkpoints are unavailable;
+- returns `error` metadata instead of crashing callers when prediction fails;
+- does not use heuristic/OSD fallback as a replacement;
+- does not rotate source images.
 
 Suggested future interface:
 
@@ -494,6 +503,14 @@ class OrientationService:
     def predict_page_orientation(self, image_path: Path) -> OrientationResult:
         ...
 ```
+
+Implemented service convention:
+
+```text
+rotation_degrees = clockwise rotation to apply to the original image to display/process it upright
+```
+
+The service currently passes through the NN orientation result as the candidate rotation. Because the older experiment docs describe the model output as the predicted page rotation class, the first workbench UI integration must keep the result reviewable and should verify correction direction on known rotated pages before automatically applying any transform.
 
 Suggested workbench behavior:
 
