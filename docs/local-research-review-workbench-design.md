@@ -54,9 +54,18 @@ MVP slice 4 implemented:
 - duplicate/nudge controls moved into an advanced section;
 - review feedback labels recorded for accepted, resized, rejected, manually added, and ignored regions.
 
+MVP slice 5 implemented:
+
+- selected-region OCR button in the review panel;
+- OCR runs only for the selected region;
+- OCR crops from the effective-oriented page using the selected region's `effective_bbox`;
+- OCR route is chosen from the selected region's `effective_type`;
+- OCR attempts are stored in `project_state.json` under page-level `ocr_attempts`;
+- selected region keeps `ocr_attempt_ids` and `last_ocr_attempt_id`;
+- OCR output is shown for review without mutating source text or canonical fields.
+
 Not implemented yet:
 
-- OCR execution;
 - translation;
 - DOCX/PDF export;
 - canonical Japanese field promotion;
@@ -328,6 +337,29 @@ Rules:
 - Review-mode recognition may include conservative multi-figure row proposals so repeated figure/photo/diagram panels are easier to review.
 - Reviewer override is never hidden.
 - Ignoring a region should set status/ignored, not erase provenance.
+
+Selected-region OCR flow:
+
+```text
+selected reviewed region
+  -> Run OCR
+  -> crop effective-oriented page by effective_bbox
+  -> route OCR from effective_type
+  -> store OCR attempt
+  -> show OCR output for review
+```
+
+Initial selected-region OCR routing:
+
+- `english_text` -> Tesseract `eng`, PSM 6.
+- `romanized_japanese_text` -> Tesseract `eng`, PSM 6.
+- `caption_label` -> Tesseract `eng`, PSM 7.
+- `modern_japanese_horizontal` -> Tesseract `jpn`, PSM 6, `upscale_2x`.
+- `modern_japanese_vertical` -> Tesseract `jpn_vert`, PSM 5, `upscale_2x`.
+- `mixed_english_japanese` -> Tesseract `eng+jpn`, PSM 6.
+- `image`, `diagram`, `photo`, `ignore`, and unknown types are skipped in this slice.
+
+OCR attempts are review artifacts, not canonical text. They should remain inspectable and replaceable.
 - Manual regions should have no `detected_bbox` and should set `source=manual`.
 - Duplicated regions should be reviewer-created siblings with `source=reviewer_manual_duplicate`, no `detected_bbox`, and metadata pointing to the source region.
 - Rerunning recognition should replace only unreviewed `source=machine_detection` regions.

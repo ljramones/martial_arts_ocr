@@ -7,6 +7,7 @@ from pathlib import Path
 from PIL import Image
 
 from martial_arts_ocr.review.orientation_service import OrientationResult
+from martial_arts_ocr.review.region_ocr_service import RegionOCRResult, RegionOCRRoute
 
 
 def _write_image(path: Path, size=(90, 70)):
@@ -252,6 +253,72 @@ def test_review_region_duplicate_route_creates_manual_sibling(tmp_path):
         (data_dir / "runtime" / "review_projects" / "duplicate_route" / "project_state.json").read_text(encoding="utf-8")
     )
     assert saved["pages"][0]["regions"][1]["source"] == "reviewer_manual_duplicate"
+
+
+def test_review_region_ocr_route_stores_attempt_without_running_full_pipeline(tmp_path):
+    app, data_dir, scans = _create_review_app(tmp_path)
+    _write_image(scans / "page.png", size=(220, 140))
+
+    class FakeRegionOCRService:
+        def __init__(self):
+            self.calls = []
+
+        def run(self, *, image_path, bbox, region_type, region_id):
+            self.calls.append(
+                {
+                    "image_path": Path(image_path),
+                    "bbox": bbox,
+                    "region_type": region_type,
+                    "region_id": region_id,
+                }
+            )
+            return RegionOCRResult(
+                text="Daito-ryu",
+                cleaned_text="Daito-ryu",
+                confidence=0.88,
+                route=RegionOCRRoute(language="eng", psm=6),
+                status="ok",
+                metadata={"fake": True},
+            )
+
+    service = FakeRegionOCRService()
+    app.config["REVIEW_REGION_OCR_SERVICE"] = service
+    client = app.test_client()
+    client.post("/api/review/projects", json={"source_folder": str(scans), "project_id": "region_ocr"})
+    client.post(
+        "/api/review/projects/region_ocr/pages/page_001/regions",
+        json={"reviewed_type": "english_text", "reviewed_bbox": [10, 12, 80, 24]},
+    )
+
+    response = client.post("/api/review/projects/region_ocr/pages/page_001/regions/r_001/ocr")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    attempt = payload["attempt"]
+    assert attempt["attempt_id"] == "ocr_001"
+    assert attempt["region_id"] == "r_001"
+    assert attempt["region_type"] == "english_text"
+    assert attempt["bbox"] == [10, 12, 80, 24]
+    assert attempt["text"] == "Daito-ryu"
+    assert attempt["cleaned_text"] == "Daito-ryu"
+    assert attempt["source_text_mutated"] is False
+    assert attempt["route"]["language"] == "eng"
+    assert service.calls == [
+        {
+            "image_path": scans / "page.png",
+            "bbox": [10, 12, 80, 24],
+            "region_type": "english_text",
+            "region_id": "r_001",
+        }
+    ]
+    region = payload["page"]["regions"][0]
+    assert region["ocr_attempt_ids"] == ["ocr_001"]
+    assert region["last_ocr_attempt_id"] == "ocr_001"
+
+    saved = json.loads(
+        (data_dir / "runtime" / "review_projects" / "region_ocr" / "project_state.json").read_text(encoding="utf-8")
+    )
+    assert saved["pages"][0]["ocr_attempts"][0]["attempt_id"] == "ocr_001"
 
 
 def test_review_project_rejects_disallowed_source_folder(tmp_path):

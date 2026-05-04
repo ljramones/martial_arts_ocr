@@ -176,6 +176,32 @@ Rerun behavior is conservative:
 
 Selected-region audit fields show detector metadata when available, including confidence, mixed-region flags, needs-review flags, layout fusion metadata, and region role.
 
+## Run Selected-Region OCR
+
+After a region has a reviewed/effective type and bbox, select it and click `Run OCR`.
+
+Selected-region OCR:
+
+- runs only on the selected region;
+- crops from the effective-oriented page;
+- uses the selected region's `effective_bbox`;
+- routes from the selected region's `effective_type`;
+- stores an OCR attempt in `project_state.json`;
+- shows the latest OCR output in the right panel.
+
+Initial routing:
+
+```text
+english_text                  -> eng, PSM 6
+romanized_japanese_text       -> eng, PSM 6
+caption_label                 -> eng, PSM 7
+modern_japanese_horizontal    -> jpn, PSM 6, upscale_2x
+modern_japanese_vertical      -> jpn_vert, PSM 5, upscale_2x
+mixed_english_japanese        -> eng+jpn, PSM 6
+```
+
+`image`, `diagram`, `photo`, `ignore`, and unknown regions are skipped in this slice. OCR attempts are review artifacts; they do not mutate source images, OCR text elsewhere, canonical Japanese fields, or runtime defaults.
+
 ## Duplicate and Nudge Regions
 
 If recognition finds one region in a repeated row but misses nearby siblings, prefer `Draw Image Region` for the missing boxes. The selected-region panel also has advanced duplicate/nudge controls:

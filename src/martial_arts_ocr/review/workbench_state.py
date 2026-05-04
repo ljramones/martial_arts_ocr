@@ -235,6 +235,34 @@ class ReviewWorkbenchStore:
             raise KeyError(f"Region not found: {region_id}")
         self.save_project(state)
 
+    def add_region_ocr_attempt(
+        self,
+        state: dict[str, Any],
+        page_id: str,
+        region_id: str,
+        attempt: dict[str, Any],
+    ) -> dict[str, Any]:
+        page = self.get_page(state, page_id)
+        region = self.get_region(page, region_id)
+        if not region.get("effective_bbox"):
+            raise ValueError(f"Region has no effective bbox: {region_id}")
+        attempts = page.setdefault("ocr_attempts", [])
+        attempt_record = {
+            **dict(attempt),
+            "attempt_id": attempt.get("attempt_id") or _next_ocr_attempt_id(attempts),
+            "region_id": region_id,
+            "region_type": region.get("effective_type") or "unknown_needs_review",
+            "bbox": list(region.get("effective_bbox")),
+            "orientation_degrees": _effective_orientation_degrees(page),
+            "created_at": _now(),
+        }
+        attempts.append(attempt_record)
+        region_attempts = region.setdefault("ocr_attempt_ids", [])
+        region_attempts.append(attempt_record["attempt_id"])
+        region["last_ocr_attempt_id"] = attempt_record["attempt_id"]
+        self.save_project(state)
+        return attempt_record
+
     def import_detected_regions(
         self,
         state: dict[str, Any],
@@ -508,6 +536,15 @@ def _next_detected_region_id(regions: list[dict[str, Any]]) -> str:
         if match:
             max_index = max(max_index, int(match.group(1)))
     return f"det_{max_index + 1:03d}"
+
+
+def _next_ocr_attempt_id(attempts: list[dict[str, Any]]) -> str:
+    max_index = 0
+    for attempt in attempts:
+        match = re.fullmatch(r"ocr_(\d+)", str(attempt.get("attempt_id", "")))
+        if match:
+            max_index = max(max_index, int(match.group(1)))
+    return f"ocr_{max_index + 1:03d}"
 
 
 def _is_replaceable_machine_region(region: dict[str, Any]) -> bool:

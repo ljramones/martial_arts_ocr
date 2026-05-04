@@ -33,7 +33,7 @@ from martial_arts_ocr.db.models import Document, Page, ProcessingResult
 from martial_arts_ocr.pipeline import PipelineRequest, WorkflowOrchestrator
 from martial_arts_ocr.pipeline.document_models import DocumentResult, PageResult
 from martial_arts_ocr.pipeline.extraction_service import ExtractionService, ExtractionServiceOptions
-from martial_arts_ocr.review import OrientationService, REGION_TYPES, ReviewWorkbenchStore
+from martial_arts_ocr.review import OrientationService, RegionOCRService, REGION_TYPES, ReviewWorkbenchStore
 
 APP_EXTENSION_KEY = "martial_arts_ocr"
 
@@ -454,6 +454,13 @@ def _review_orientation_service() -> OrientationService:
             "experiments/orientation_model/checkpoints/orient_effnetv2s.pth",
         ),
     )
+
+
+def _review_region_ocr_service() -> RegionOCRService:
+    injected_service = current_app.config.get("REVIEW_REGION_OCR_SERVICE")
+    if injected_service is not None:
+        return injected_service
+    return RegionOCRService()
 
 
 def _review_json_error(exc: Exception, status_code: int = 400):
@@ -990,6 +997,38 @@ def api_review_duplicate_region(project_id, page_id, region_id):
     except FileNotFoundError as exc:
         return _review_json_error(exc, 404)
     except KeyError as exc:
+        return _review_json_error(exc, 404)
+    except Exception as exc:
+        return _review_json_error(exc, 400)
+
+
+@app.post("/api/review/projects/<project_id>/pages/<page_id>/regions/<region_id>/ocr")
+def api_review_region_ocr(project_id, page_id, region_id):
+    store = _review_workbench_store()
+    try:
+        state = store.load_project(project_id)
+        page = store.get_page(state, page_id)
+        region = store.get_region(page, region_id)
+        bbox = region.get("effective_bbox")
+        if not bbox:
+            return _review_json_error(ValueError("Region has no effective bbox"))
+        image_path = _effective_page_image_path(store, state, page_id)
+        ocr_result = _review_region_ocr_service().run(
+            image_path=image_path,
+            bbox=bbox,
+            region_type=region.get("effective_type") or "unknown_needs_review",
+            region_id=region_id,
+        )
+        attempt = store.add_region_ocr_attempt(
+            state,
+            page_id,
+            region_id,
+            ocr_result.to_attempt(),
+        )
+        return jsonify({"attempt": attempt, "page": store.get_page(state, page_id)}), 200
+    except PermissionError as exc:
+        return _review_json_error(exc, 403)
+    except (FileNotFoundError, KeyError) as exc:
         return _review_json_error(exc, 404)
     except Exception as exc:
         return _review_json_error(exc, 400)

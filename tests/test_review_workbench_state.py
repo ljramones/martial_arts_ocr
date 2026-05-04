@@ -240,6 +240,44 @@ def test_duplicate_region_left_right_clamps_to_page_bounds(tmp_path):
     assert right["reviewed_bbox"] == [45, 10, 40, 50]
 
 
+def test_add_region_ocr_attempt_records_page_and_region_links(tmp_path):
+    source = tmp_path / "scans"
+    source.mkdir()
+    _write_image(source / "page.png", size=(120, 90))
+    store = ReviewWorkbenchStore(tmp_path / "runtime" / "review_projects", allowed_roots=[tmp_path])
+    state = store.create_project(source, project_id="ocr_attempt")
+    page_id = state["pages"][0]["page_id"]
+    region = store.add_region(state, page_id, {"reviewed_type": "english_text", "bbox": [5, 10, 60, 20]})
+
+    attempt = store.add_region_ocr_attempt(
+        state,
+        page_id,
+        region["region_id"],
+        {
+            "text": "Daito-ryu",
+            "cleaned_text": "Daito-ryu",
+            "confidence": 0.83,
+            "route": {"engine": "tesseract", "language": "eng", "psm": 6},
+            "status": "ok",
+            "source_text_mutated": False,
+        },
+    )
+
+    assert attempt["attempt_id"] == "ocr_001"
+    assert attempt["region_id"] == "r_001"
+    assert attempt["region_type"] == "english_text"
+    assert attempt["bbox"] == [5, 10, 60, 20]
+    assert attempt["orientation_degrees"] == 0
+    page = store.get_page(state, page_id)
+    assert page["ocr_attempts"][0]["text"] == "Daito-ryu"
+    stored_region = store.get_region(page, "r_001")
+    assert stored_region["ocr_attempt_ids"] == ["ocr_001"]
+    assert stored_region["last_ocr_attempt_id"] == "ocr_001"
+
+    loaded = store.load_project("ocr_attempt")
+    assert loaded["pages"][0]["ocr_attempts"][0]["attempt_id"] == "ocr_001"
+
+
 def test_import_detected_regions_preserves_reviewer_work_and_replaces_unreviewed_machine_regions(tmp_path):
     source = tmp_path / "scans"
     source.mkdir()

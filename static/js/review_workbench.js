@@ -58,6 +58,11 @@
         nudgeRight: document.getElementById("review-nudge-right"),
         nudgeUp: document.getElementById("review-nudge-up"),
         nudgeDown: document.getElementById("review-nudge-down"),
+        runRegionOcr: document.getElementById("review-run-region-ocr"),
+        ocrStatus: document.getElementById("review-ocr-status"),
+        ocrRoute: document.getElementById("review-ocr-route"),
+        ocrConfidence: document.getElementById("review-ocr-confidence"),
+        ocrOutput: document.getElementById("review-ocr-output"),
         detectedType: document.getElementById("review-detected-type"),
         effectiveType: document.getElementById("review-effective-type"),
         detectedBbox: document.getElementById("review-detected-bbox"),
@@ -110,6 +115,7 @@
     els.nudgeRight.addEventListener("click", () => nudgeSelectedRegion(10, 0));
     els.nudgeUp.addEventListener("click", () => nudgeSelectedRegion(0, -10));
     els.nudgeDown.addEventListener("click", () => nudgeSelectedRegion(0, 10));
+    els.runRegionOcr.addEventListener("click", runSelectedRegionOcr);
     [els.type, els.bboxX, els.bboxY, els.bboxW, els.bboxH, els.notes].forEach((element) => {
         element.addEventListener("input", updateSelectedFromPanel);
     });
@@ -588,6 +594,7 @@
             els.nudgeRight,
             els.nudgeUp,
             els.nudgeDown,
+            els.runRegionOcr,
             ...els.quickTypeButtons,
         ].forEach((element) => {
             element.disabled = !enabled;
@@ -603,6 +610,7 @@
             els.regionSource.textContent = "-";
             els.quickTypeButtons.forEach((button) => button.classList.remove("active"));
             renderRegionMetadata(null);
+            renderRegionOcr(null);
             return;
         }
         const bbox = region.reviewed_bbox || region.effective_bbox || [0, 0, 1, 1];
@@ -620,6 +628,31 @@
             button.classList.toggle("active", button.dataset.reviewType === els.type.value);
         });
         renderRegionMetadata(region);
+        renderRegionOcr(region);
+    }
+
+    function renderRegionOcr(region) {
+        const attempts = state.page?.ocr_attempts || [];
+        const attemptId = region?.last_ocr_attempt_id;
+        const attempt = attempts.find((item) => item.attempt_id === attemptId)
+            || [...attempts].reverse().find((item) => item.region_id === region?.region_id);
+        if (!region || !attempt) {
+            els.ocrStatus.textContent = region ? "Not run" : "-";
+            els.ocrRoute.textContent = "-";
+            els.ocrConfidence.textContent = "-";
+            els.ocrOutput.value = "";
+            return;
+        }
+        const route = attempt.route || {};
+        els.ocrStatus.textContent = attempt.status || "-";
+        els.ocrRoute.textContent = [
+            route.engine || "tesseract",
+            route.language || "none",
+            route.psm ? `PSM ${route.psm}` : null,
+            route.preprocess_profile || null,
+        ].filter(Boolean).join(" / ");
+        els.ocrConfidence.textContent = formatConfidence(attempt.confidence);
+        els.ocrOutput.value = attempt.cleaned_text || attempt.text || "";
     }
 
     function renderRegionMetadata(region) {
@@ -770,6 +803,30 @@
         renderOverlay();
         renderSelectedRegion();
         setStatus(`Duplicated ${region.region_id} ${direction}.`);
+    }
+
+    async function runSelectedRegionOcr() {
+        const region = selectedRegion();
+        if (!state.project || !state.page || !region) return;
+        els.runRegionOcr.disabled = true;
+        setStatus(`Running OCR for ${region.region_id}...`);
+        try {
+            const result = await requestJson(
+                `/api/review/projects/${encodeURIComponent(state.project.project_id)}/pages/${encodeURIComponent(state.page.page_id)}/regions/${encodeURIComponent(region.region_id)}/ocr`,
+                { method: "POST" }
+            );
+            state.page = result.page;
+            state.selectedRegionId = region.region_id;
+            renderRegionList();
+            renderRecognitionDiagnostics();
+            renderOverlay();
+            renderSelectedRegion();
+            setStatus(`OCR ${result.attempt.status} for ${region.region_id}.`);
+        } catch (error) {
+            setStatus(error.message || "Region OCR failed.");
+        } finally {
+            els.runRegionOcr.disabled = !selectedRegion();
+        }
     }
 
     function nudgeSelectedRegion(dx, dy) {

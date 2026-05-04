@@ -181,6 +181,21 @@
         </section>
 
         <section class="review-card">
+            <h3>Selected Region OCR</h3>
+            <p class="review-muted">Runs only on the selected region's effective type and bbox.</p>
+            <div class="review-button-row">
+                <button id="review-run-region-ocr" class="btn btn-primary btn-sm" type="button" disabled>Run OCR</button>
+            </div>
+            <dl class="review-audit review-ocr-summary">
+                <dt>Status</dt><dd id="review-ocr-status">-</dd>
+                <dt>Route</dt><dd id="review-ocr-route">-</dd>
+                <dt>Confidence</dt><dd id="review-ocr-confidence">-</dd>
+            </dl>
+            <label for="review-ocr-output">OCR output</label>
+            <textarea id="review-ocr-output" rows="8" readonly></textarea>
+        </section>
+
+        <section class="review-card">
             <h3>Audit</h3>
             <dl class="review-audit">
                 <dt>Detected type</dt><dd id="review-detected-type">-</dd>
