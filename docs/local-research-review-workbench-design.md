@@ -46,6 +46,14 @@ MVP slice 3 implemented:
 - `Run Recognition` uses the effective-oriented page;
 - existing regions are marked stale when effective orientation changes.
 
+MVP slice 4 implemented:
+
+- region marking tools for select/move, draw image region, draw text region, and draw Japanese region;
+- right-panel region inventory grouped by image/text/Japanese/ignored/other regions;
+- quick type buttons for common reviewer labels;
+- duplicate/nudge controls moved into an advanced section;
+- review feedback labels recorded for accepted, resized, rejected, manually added, and ignored regions.
+
 Not implemented yet:
 
 - OCR execution;
@@ -189,6 +197,11 @@ The region model must preserve both machine detection and reviewer correction.
 
   "status": "reviewed",
   "source": "reviewer_override",
+  "review_status": "resized",
+  "training_feedback": {
+    "label": "resized_positive",
+    "target_type": "modern_japanese_vertical"
+  },
   "confidence": 0.64,
   "needs_review": false,
   "ignored": false,
@@ -206,6 +219,8 @@ Field meanings:
 - `effective_bbox`: `reviewed_bbox` if present, otherwise `detected_bbox`.
 - `status`: `detected`, `reviewed`, `ignored`, `manual`, `ocr_ready`, `ocr_reviewed`.
 - `source`: `machine_detection`, `reviewer_override`, `manual`, `imported`.
+- `review_status`: local review result such as `unreviewed`, `accepted`, `resized`, `rejected`, `manually_added`, or `ignored`.
+- `training_feedback`: compact audit metadata for future detector evaluation/training exports.
 - `notes`: free-form researcher note.
 
 Do not overwrite detected fields when reviewer fields change.
@@ -251,12 +266,15 @@ The viewer must support:
 
 The first implementation does not need pixel-perfect drawing tools. It does need reliable basic edits:
 
+- region marking tools for drawing image/text/Japanese boxes directly on the page;
 - drag box body to move;
 - drag corner/edge handles to resize;
 - numeric bbox fields for precise correction;
 - reset reviewed bbox to detected bbox;
 - snap-to-image bounds so bboxes cannot leave the page image;
 - mark region as reviewed after bbox/type changes.
+
+For research pages with missed figure siblings, manual drawing is preferred over repeatedly tuning detector thresholds. The detector should provide useful suggestions, but the reviewer should be able to mark the true regions quickly and preserve that feedback for later evaluation.
 
 Coordinate system:
 

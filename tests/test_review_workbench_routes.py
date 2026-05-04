@@ -39,6 +39,8 @@ def test_review_page_route_loads(tmp_path):
 
     assert response.status_code == 200
     assert b"Local Research Review Workbench" in response.data
+    assert b"Draw Image Region" in response.data
+    assert b"Region Inventory" in response.data
 
 
 def test_review_project_routes_create_list_image_and_reload(tmp_path):
@@ -178,6 +180,8 @@ def test_review_region_routes_add_update_ignore_delete_and_preserve_detected_fie
     assert region["detected_type"] is None
     assert region["effective_type"] == "modern_japanese_vertical"
     assert region["effective_bbox"] == [15, 20, 40, 80]
+    assert region["review_status"] == "manually_added"
+    assert region["training_feedback"]["label"] == "manually_added"
 
     update_response = client.patch(
         "/api/review/projects/regions/pages/page_001/regions/r_001",
@@ -195,6 +199,7 @@ def test_review_region_routes_add_update_ignore_delete_and_preserve_detected_fie
     assert updated["reviewed_bbox"] == [10, 12, 50, 60]
     assert updated["detected_bbox"] is None
     assert updated["status"] == "reviewed"
+    assert updated["review_status"] == "manually_added"
 
     ignore_response = client.patch(
         "/api/review/projects/regions/pages/page_001/regions/r_001",
@@ -204,6 +209,7 @@ def test_review_region_routes_add_update_ignore_delete_and_preserve_detected_fie
     ignored = ignore_response.get_json()["region"]
     assert ignored["status"] == "ignored"
     assert ignored["ignored"] is True
+    assert ignored["review_status"] == "ignored"
 
     delete_response = client.delete("/api/review/projects/regions/pages/page_001/regions/r_001")
     assert delete_response.status_code == 200
@@ -239,6 +245,7 @@ def test_review_region_duplicate_route_creates_manual_sibling(tmp_path):
     assert duplicate["reviewed_bbox"] == [120, 20, 50, 60]
     assert duplicate["reviewed_type"] == "diagram"
     assert duplicate["metadata"]["duplicated_from_region_id"] == "r_001"
+    assert duplicate["review_status"] == "manually_added"
     assert len(payload["page"]["regions"]) == 2
 
     saved = json.loads(

@@ -56,7 +56,9 @@ data/runtime/review_projects/<project_id>/project_state.json
 The workbench supports manual region review:
 
 - select a page;
-- add a manual region;
+- choose `Select / Move`, `Draw Image Region`, `Draw Text Region`, or `Draw Japanese Region`;
+- drag a rectangle on the page to create a reviewed manual region;
+- add a default manual region if preferred;
 - click a region overlay or region list item;
 - drag the region to move it;
 - drag corner handles to resize it;
@@ -77,6 +79,22 @@ effective_bbox
 ```
 
 Reviewer edits update reviewed/effective fields. They do not overwrite detected fields.
+
+The right panel includes a region inventory grouped by image, text, Japanese, ignored, and other regions. Use it as the page checklist: click any item to select the corresponding overlay box.
+
+Quick type buttons set common review labels such as `image`, `diagram`, `photo`, English text, Japanese horizontal, Japanese vertical, or `ignore`. Advanced duplicate/nudge controls remain available in the collapsible section, but the primary review flow is drawing and correcting meaningful regions.
+
+Review actions also record lightweight feedback metadata:
+
+```text
+accepted
+resized
+rejected
+manually_added
+ignored
+```
+
+This feedback is local review data. It is intended for future detector evaluation/training exports, not live learning.
 
 ## Overlay Alignment
 
@@ -160,7 +178,7 @@ Selected-region audit fields show detector metadata when available, including co
 
 ## Duplicate and Nudge Regions
 
-If recognition finds one region in a repeated row but misses nearby siblings, use the selected-region controls:
+If recognition finds one region in a repeated row but misses nearby siblings, prefer `Draw Image Region` for the missing boxes. The selected-region panel also has advanced duplicate/nudge controls:
 
 - `Duplicate` creates a same-position manual copy.
 - `Duplicate Left` / `Duplicate Right` creates same-sized sibling boxes offset by one region width.

@@ -103,6 +103,9 @@ def test_add_update_ignore_delete_region_preserves_detected_fields(tmp_path):
     assert region["effective_type"] == "modern_japanese_vertical"
     assert region["effective_bbox"] == [10, 20, 50, 90]
     assert region["source"] == "manual"
+    assert region["review_status"] == "manually_added"
+    assert region["training_feedback"]["label"] == "manually_added"
+    assert region["training_feedback"]["target_type"] == "modern_japanese_vertical"
 
     # Simulate a machine-detected region, then verify reviewer edits do not
     # overwrite detected evidence.
@@ -142,11 +145,15 @@ def test_add_update_ignore_delete_region_preserves_detected_fields(tmp_path):
     assert updated["effective_bbox"] == [95, 25, 55, 45]
     assert updated["status"] == "reviewed"
     assert updated["source"] == "reviewer_override"
+    assert updated["review_status"] == "resized"
+    assert updated["training_feedback"]["label"] == "resized_positive"
 
     ignored = store.update_region(state, page_id, "r_002", {"reviewed_type": "ignore"})
     assert ignored["status"] == "ignored"
     assert ignored["ignored"] is True
     assert ignored["effective_type"] == "ignore"
+    assert ignored["review_status"] == "rejected"
+    assert ignored["training_feedback"]["label"] == "false_positive"
 
     store.delete_region(state, page_id, "r_001")
     assert [region["region_id"] for region in store.get_page(state, page_id)["regions"]] == ["r_002"]
@@ -198,6 +205,9 @@ def test_duplicate_region_creates_reviewed_manual_copy_and_preserves_original(tm
     assert duplicate["effective_type"] == "diagram"
     assert duplicate["metadata"]["duplicated_from_region_id"] == "det_001"
     assert duplicate["metadata"]["duplicated_from_detector"] == "fake_detector"
+    assert duplicate["review_status"] == "manually_added"
+    assert duplicate["training_feedback"]["label"] == "manually_added"
+    assert duplicate["training_feedback"]["related_machine_regions"] == ["det_001"]
     assert store.get_region(store.get_page(state, page_id), "det_001") == original
 
     loaded = store.load_project("duplicate")
@@ -263,6 +273,7 @@ def test_import_detected_regions_preserves_reviewer_work_and_replaces_unreviewed
     assert first["effective_bbox"] == [10, 12, 40, 50]
     assert first["metadata"]["detector"] == "fake_detector"
     assert first["source"] == "machine_detection"
+    assert first["review_status"] == "unreviewed"
     assert page["regions"][1]["detected_type"] == "unknown_needs_review"
 
     manual = store.add_region(state, page_id, {"reviewed_type": "caption_label", "bbox": [5, 5, 20, 20]})

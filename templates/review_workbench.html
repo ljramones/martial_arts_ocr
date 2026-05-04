@@ -100,6 +100,12 @@
         <div class="review-caveat">
             Machine regions are advisory. Preserve the detected box, adjust the reviewed box, and save before using downstream OCR.
         </div>
+        <div class="review-tool-row" aria-label="Region marking tools">
+            <button class="active" data-review-tool="select" type="button">Select / Move</button>
+            <button data-review-tool="draw_image" type="button">Draw Image Region</button>
+            <button data-review-tool="draw_text" type="button">Draw Text Region</button>
+            <button data-review-tool="draw_japanese" type="button">Draw Japanese Region</button>
+        </div>
         <div id="review-page-stage" class="review-page-stage is-empty">
             <div class="review-empty-state" id="review-empty-state">Create or load a project, then select a page.</div>
             <img id="review-page-image" alt="Selected scanned page" hidden>
@@ -109,11 +115,26 @@
 
     <aside class="review-panel review-right-panel" aria-label="Selected region controls">
         <section class="review-card">
+            <h3>Region Inventory</h3>
+            <div id="review-region-inventory" class="review-region-inventory"></div>
+        </section>
+
+        <section class="review-card">
             <h3>Selected Region</h3>
             <p id="review-selected-region-id" class="review-muted">No region selected.</p>
 
             <label for="review-region-type">Reviewed type</label>
             <select id="review-region-type" disabled></select>
+
+            <div class="review-quick-type-row" aria-label="Quick region type choices">
+                <button data-review-type="image" class="btn btn-secondary btn-sm" type="button" disabled>Image</button>
+                <button data-review-type="diagram" class="btn btn-secondary btn-sm" type="button" disabled>Diagram</button>
+                <button data-review-type="photo" class="btn btn-secondary btn-sm" type="button" disabled>Photo</button>
+                <button data-review-type="english_text" class="btn btn-secondary btn-sm" type="button" disabled>English</button>
+                <button data-review-type="modern_japanese_horizontal" class="btn btn-secondary btn-sm" type="button" disabled>Japanese H</button>
+                <button data-review-type="modern_japanese_vertical" class="btn btn-secondary btn-sm" type="button" disabled>Japanese V</button>
+                <button data-review-type="ignore" class="btn btn-secondary btn-sm" type="button" disabled>Ignore</button>
+            </div>
 
             <fieldset class="review-bbox-grid" id="review-bbox-fields" disabled>
                 <legend>Reviewed bbox</legend>
@@ -132,28 +153,31 @@
                 <button id="review-delete-region" class="btn btn-danger btn-sm" type="button" disabled>Delete</button>
             </div>
 
-            <div class="review-subsection">
-                <h4>Duplicate</h4>
-                <div class="review-button-row">
-                    <button id="review-duplicate-region" class="btn btn-secondary btn-sm" type="button" disabled>Duplicate</button>
-                    <button id="review-duplicate-left" class="btn btn-secondary btn-sm" type="button" disabled>Duplicate Left</button>
-                    <button id="review-duplicate-right" class="btn btn-secondary btn-sm" type="button" disabled>Duplicate Right</button>
+            <details class="review-advanced-region-controls">
+                <summary>Advanced duplicate / nudge</summary>
+                <div class="review-subsection">
+                    <h4>Duplicate</h4>
+                    <div class="review-button-row">
+                        <button id="review-duplicate-region" class="btn btn-secondary btn-sm" type="button" disabled>Duplicate</button>
+                        <button id="review-duplicate-left" class="btn btn-secondary btn-sm" type="button" disabled>Duplicate Left</button>
+                        <button id="review-duplicate-right" class="btn btn-secondary btn-sm" type="button" disabled>Duplicate Right</button>
+                    </div>
+                    <div class="review-button-row">
+                        <button id="review-duplicate-up" class="btn btn-secondary btn-sm" type="button" disabled>Duplicate Up</button>
+                        <button id="review-duplicate-down" class="btn btn-secondary btn-sm" type="button" disabled>Duplicate Down</button>
+                    </div>
                 </div>
-                <div class="review-button-row">
-                    <button id="review-duplicate-up" class="btn btn-secondary btn-sm" type="button" disabled>Duplicate Up</button>
-                    <button id="review-duplicate-down" class="btn btn-secondary btn-sm" type="button" disabled>Duplicate Down</button>
-                </div>
-            </div>
 
-            <div class="review-subsection">
-                <h4>Nudge</h4>
-                <div class="review-nudge-grid" aria-label="Nudge selected region">
-                    <button id="review-nudge-up" class="btn btn-secondary btn-sm" type="button" disabled>Up</button>
-                    <button id="review-nudge-left" class="btn btn-secondary btn-sm" type="button" disabled>Left</button>
-                    <button id="review-nudge-right" class="btn btn-secondary btn-sm" type="button" disabled>Right</button>
-                    <button id="review-nudge-down" class="btn btn-secondary btn-sm" type="button" disabled>Down</button>
+                <div class="review-subsection">
+                    <h4>Nudge</h4>
+                    <div class="review-nudge-grid" aria-label="Nudge selected region">
+                        <button id="review-nudge-up" class="btn btn-secondary btn-sm" type="button" disabled>Up</button>
+                        <button id="review-nudge-left" class="btn btn-secondary btn-sm" type="button" disabled>Left</button>
+                        <button id="review-nudge-right" class="btn btn-secondary btn-sm" type="button" disabled>Right</button>
+                        <button id="review-nudge-down" class="btn btn-secondary btn-sm" type="button" disabled>Down</button>
+                    </div>
                 </div>
-            </div>
+            </details>
         </section>
 
         <section class="review-card">

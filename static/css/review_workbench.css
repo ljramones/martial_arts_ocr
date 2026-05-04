@@ -52,6 +52,53 @@
     margin-top: 0.75rem;
 }
 
+.review-tool-row {
+    align-items: center;
+    background: #ffffff;
+    border: 1px solid #d8e0e7;
+    border-radius: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    padding: 0.65rem;
+}
+
+.review-tool-row button,
+.review-quick-type-row button {
+    border: 1px solid #b8c4cf;
+    background: #f7f9fb;
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 0.4rem 0.55rem;
+}
+
+.review-tool-row button.active,
+.review-quick-type-row button.active {
+    background: #e5f2fa;
+    border-color: #2474a6;
+    color: #174e70;
+}
+
+.review-quick-type-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.6rem;
+}
+
+.review-advanced-region-controls {
+    border-top: 1px solid #e1e7ed;
+    margin-top: 1rem;
+    padding-top: 0.85rem;
+}
+
+.review-advanced-region-controls summary {
+    cursor: pointer;
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
 .review-subsection {
     border-top: 1px solid #e1e7ed;
     margin-top: 1rem;
@@ -173,6 +220,10 @@
     overflow: visible;
 }
 
+.review-overlay.is-drawing {
+    cursor: crosshair;
+}
+
 .review-region-rect {
     fill: rgba(45, 145, 205, 0.12);
     stroke: #1b75a6;
@@ -197,6 +248,15 @@
     stroke: #666666;
     stroke-width: 2;
     stroke-dasharray: 5 5;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
+}
+
+.review-draft-rect {
+    fill: rgba(36, 116, 166, 0.1);
+    stroke: #2474a6;
+    stroke-dasharray: 6 4;
+    stroke-width: 2;
     vector-effect: non-scaling-stroke;
     pointer-events: none;
 }
@@ -250,6 +310,54 @@
 .review-audit dd {
     margin: 0;
     overflow-wrap: anywhere;
+}
+
+.review-region-inventory {
+    display: grid;
+    gap: 0.75rem;
+    max-height: 34vh;
+    overflow: auto;
+}
+
+.review-inventory-group {
+    display: grid;
+    gap: 0.35rem;
+}
+
+.review-inventory-group h4 {
+    align-items: center;
+    color: #465665;
+    display: flex;
+    font-size: 0.86rem;
+    justify-content: space-between;
+    margin: 0;
+}
+
+.review-inventory-group h4 span {
+    color: #647484;
+    font-weight: 600;
+}
+
+.review-inventory-row {
+    border: 1px solid #d8e0e7;
+    background: #f7f9fb;
+    border-radius: 4px;
+    cursor: pointer;
+    display: grid;
+    gap: 0.1rem;
+    padding: 0.45rem;
+    text-align: left;
+}
+
+.review-inventory-row.active {
+    border-color: #2474a6;
+    background: #e5f2fa;
+}
+
+.review-inventory-row span,
+.review-inventory-row code {
+    color: #657382;
+    font-size: 0.75rem;
 }
 
 .review-orientation-summary {

@@ -8,6 +8,8 @@
         page: null,
         selectedRegionId: null,
         drag: null,
+        draw: null,
+        tool: "select",
         imageLayout: null,
     };
 
@@ -19,6 +21,9 @@
         status: document.getElementById("review-status"),
         pageList: document.getElementById("review-page-list"),
         regionList: document.getElementById("review-region-list"),
+        regionInventory: document.getElementById("review-region-inventory"),
+        toolButtons: Array.from(document.querySelectorAll("[data-review-tool]")),
+        quickTypeButtons: Array.from(document.querySelectorAll("[data-review-type]")),
         detectOrientation: document.getElementById("review-detect-orientation"),
         orientationDetected: document.getElementById("review-orientation-detected"),
         orientationConfidence: document.getElementById("review-orientation-confidence"),
@@ -90,6 +95,12 @@
     els.save.addEventListener("click", saveSelectedRegion);
     els.ignore.addEventListener("click", ignoreSelectedRegion);
     els.delete.addEventListener("click", deleteSelectedRegion);
+    els.toolButtons.forEach((button) => {
+        button.addEventListener("click", () => setTool(button.dataset.reviewTool || "select"));
+    });
+    els.quickTypeButtons.forEach((button) => {
+        button.addEventListener("click", () => setSelectedRegionType(button.dataset.reviewType));
+    });
     els.duplicate.addEventListener("click", () => duplicateSelectedRegion("same"));
     els.duplicateLeft.addEventListener("click", () => duplicateSelectedRegion("left"));
     els.duplicateRight.addEventListener("click", () => duplicateSelectedRegion("right"));
@@ -104,9 +115,13 @@
     });
     window.addEventListener("keydown", onKeyDown);
 
-    window.addEventListener("mousemove", onDragMove);
-    window.addEventListener("mouseup", () => {
+    els.overlay.addEventListener("mousedown", beginDraw);
+    window.addEventListener("mousemove", onPointerMove);
+    window.addEventListener("mouseup", onPointerUp);
+    window.addEventListener("mouseleave", () => {
         state.drag = null;
+        state.draw = null;
+        renderOverlay();
     });
     window.addEventListener("resize", () => {
         syncOverlaySize();
@@ -146,6 +161,16 @@
         renderRecognitionDiagnostics();
         renderSelectedRegion();
         clearViewer();
+    }
+
+    function setTool(tool) {
+        state.tool = tool || "select";
+        state.draw = null;
+        els.toolButtons.forEach((button) => {
+            button.classList.toggle("active", button.dataset.reviewTool === state.tool);
+        });
+        els.overlay.classList.toggle("is-drawing", state.tool.startsWith("draw_"));
+        renderOverlay();
     }
 
     function renderPageList() {
@@ -306,6 +331,47 @@
             button.addEventListener("click", () => selectRegion(region.region_id));
             els.regionList.appendChild(button);
         });
+        renderRegionInventory();
+    }
+
+    function renderRegionInventory() {
+        if (!els.regionInventory) return;
+        els.regionInventory.innerHTML = "";
+        const regions = state.page?.regions || [];
+        if (!regions.length) {
+            els.regionInventory.textContent = "No regions marked yet.";
+            return;
+        }
+
+        const groups = [
+            ["Image Regions", (region) => ["image", "diagram", "photo"].includes(region.effective_type)],
+            ["Text Regions", (region) => ["english_text", "romanized_japanese_text", "caption_label"].includes(region.effective_type)],
+            ["Japanese Regions", (region) => ["modern_japanese_horizontal", "modern_japanese_vertical", "mixed_english_japanese"].includes(region.effective_type)],
+            ["Ignored Regions", (region) => region.ignored || region.effective_type === "ignore" || region.status === "ignored"],
+            ["Other Regions", (region) => true],
+        ];
+        const claimed = new Set();
+        for (const [title, predicate] of groups) {
+            const groupRegions = regions.filter((region) => !claimed.has(region.region_id) && predicate(region));
+            if (!groupRegions.length) continue;
+            groupRegions.forEach((region) => claimed.add(region.region_id));
+            const section = document.createElement("div");
+            section.className = "review-inventory-group";
+            section.innerHTML = `<h4>${escapeHtml(title)} <span>${groupRegions.length}</span></h4>`;
+            for (const region of groupRegions) {
+                const row = document.createElement("button");
+                row.type = "button";
+                row.className = state.selectedRegionId === region.region_id ? "review-inventory-row active" : "review-inventory-row";
+                row.innerHTML = [
+                    `<strong>${escapeHtml(region.effective_type || "unknown")}</strong>`,
+                    `<span>${escapeHtml(region.review_status || region.status || "-")} · ${escapeHtml(region.source || "-")}</span>`,
+                    `<code>${escapeHtml(JSON.stringify(region.effective_bbox || []))}</code>`,
+                ].join("");
+                row.addEventListener("click", () => selectRegion(region.region_id));
+                section.appendChild(row);
+            }
+            els.regionInventory.appendChild(section);
+        }
     }
 
     function renderRecognitionDiagnostics() {
@@ -381,6 +447,83 @@
                 }
             }
         }
+        if (state.draw) {
+            els.overlay.appendChild(svgRect(drawScreenBBox(), "review-draft-rect"));
+        }
+    }
+
+    function beginDraw(event) {
+        if (!state.page || !state.tool.startsWith("draw_") || event.target !== els.overlay) return;
+        event.preventDefault();
+        const point = svgPoint(event);
+        state.selectedRegionId = null;
+        state.draw = {
+            start: point,
+            current: point,
+            reviewedType: regionTypeForTool(state.tool),
+        };
+        renderRegionList();
+        renderOverlay();
+        renderSelectedRegion();
+    }
+
+    function onDrawMove(event) {
+        if (!state.draw) return;
+        state.draw.current = svgPoint(event);
+        renderOverlay();
+    }
+
+    async function finishDraw() {
+        if (!state.draw || !state.project || !state.page || !state.imageLayout) return;
+        const bbox = screenBBoxToImageBBox(state.imageLayout, drawScreenBBox());
+        const draw = state.draw;
+        state.draw = null;
+        if (bbox[2] < 6 || bbox[3] < 6) {
+            renderOverlay();
+            return;
+        }
+        try {
+            const result = await requestJson(
+                `/api/review/projects/${encodeURIComponent(state.project.project_id)}/pages/${encodeURIComponent(state.page.page_id)}/regions`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        reviewed_type: draw.reviewedType,
+                        reviewed_bbox: bbox,
+                        status: "reviewed",
+                        review_status: "manually_added",
+                    }),
+                }
+            );
+            state.page = result.page;
+            state.selectedRegionId = result.region.region_id;
+            setTool("select");
+            renderRegionList();
+            renderRecognitionDiagnostics();
+            renderOverlay();
+            renderSelectedRegion();
+            setStatus(`Added ${result.region.region_id} as ${draw.reviewedType}.`);
+        } catch (error) {
+            setStatus(error.message || "Drawing region failed.");
+            renderOverlay();
+        }
+    }
+
+    function drawScreenBBox() {
+        const start = state.draw?.start || { x: 0, y: 0 };
+        const current = state.draw?.current || start;
+        const x = Math.min(start.x, current.x);
+        const y = Math.min(start.y, current.y);
+        const w = Math.abs(current.x - start.x);
+        const h = Math.abs(current.y - start.y);
+        return [x, y, w, h];
+    }
+
+    function regionTypeForTool(tool) {
+        if (tool === "draw_image") return "image";
+        if (tool === "draw_text") return "english_text";
+        if (tool === "draw_japanese") return "modern_japanese_horizontal";
+        return "unknown_needs_review";
     }
 
     function svgRect(bbox, className) {
@@ -445,6 +588,7 @@
             els.nudgeRight,
             els.nudgeUp,
             els.nudgeDown,
+            ...els.quickTypeButtons,
         ].forEach((element) => {
             element.disabled = !enabled;
         });
@@ -457,6 +601,7 @@
             els.effectiveBbox.textContent = "-";
             els.regionStatus.textContent = "-";
             els.regionSource.textContent = "-";
+            els.quickTypeButtons.forEach((button) => button.classList.remove("active"));
             renderRegionMetadata(null);
             return;
         }
@@ -471,6 +616,9 @@
         els.effectiveBbox.textContent = region.effective_bbox ? JSON.stringify(region.effective_bbox) : "-";
         els.regionStatus.textContent = region.status || "-";
         els.regionSource.textContent = region.source || "-";
+        els.quickTypeButtons.forEach((button) => {
+            button.classList.toggle("active", button.dataset.reviewType === els.type.value);
+        });
         renderRegionMetadata(region);
     }
 
@@ -500,9 +648,18 @@
         region.notes = els.notes.value;
         region.status = region.reviewed_type === "ignore" ? "ignored" : "reviewed";
         region.ignored = region.reviewed_type === "ignore";
+        region.review_status = region.reviewed_type === "ignore"
+            ? (region.source === "machine_detection" ? "rejected" : "ignored")
+            : (region.review_status || (region.source === "machine_detection" ? "accepted" : "manually_added"));
         renderRegionList();
         renderOverlay();
         renderSelectedRegion();
+    }
+
+    function setSelectedRegionType(regionType) {
+        if (!selectedRegion() || !regionType) return;
+        els.type.value = regionType;
+        updateSelectedFromPanel();
     }
 
     async function addManualRegion() {
@@ -625,6 +782,7 @@
         region.effective_type = region.reviewed_type;
         region.status = region.reviewed_type === "ignore" ? "ignored" : "reviewed";
         region.ignored = region.reviewed_type === "ignore";
+        region.review_status = region.source === "machine_detection" ? "resized" : "manually_added";
         [els.bboxX.value, els.bboxY.value, els.bboxW.value, els.bboxH.value] = region.reviewed_bbox;
         renderRegionList();
         renderOverlay();
@@ -673,9 +831,22 @@
         region.reviewed_bbox = screenBBoxToImageBBox(layout, [x, y, w, h]);
         region.effective_bbox = region.reviewed_bbox;
         region.status = region.status === "manual" ? "manual" : "reviewed";
+        region.review_status = region.source === "machine_detection" ? "resized" : "manually_added";
         [els.bboxX.value, els.bboxY.value, els.bboxW.value, els.bboxH.value] = region.reviewed_bbox;
         renderOverlay();
         renderSelectedRegion();
+    }
+
+    function onPointerMove(event) {
+        onDragMove(event);
+        onDrawMove(event);
+    }
+
+    async function onPointerUp() {
+        if (state.draw) {
+            await finishDraw();
+        }
+        state.drag = null;
     }
 
     function onKeyDown(event) {

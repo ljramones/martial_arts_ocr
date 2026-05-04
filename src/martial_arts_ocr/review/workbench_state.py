@@ -125,10 +125,15 @@ class ReviewWorkbenchStore:
                 "reviewed_type": region_type,
                 "detected_bbox": None,
                 "reviewed_bbox": bbox,
-                "status": str(payload.get("status") or "manual"),
+                "status": str(payload.get("status") or "reviewed"),
                 "source": "manual",
                 "notes": str(payload.get("notes") or ""),
                 "ignored": region_type == "ignore",
+                "review_status": str(payload.get("review_status") or "manually_added"),
+                "training_feedback": {
+                    "label": "manually_added",
+                    "target_type": region_type,
+                },
             }
         )
         regions.append(region)
@@ -168,6 +173,7 @@ class ReviewWorkbenchStore:
         if region.get("source") not in {"manual", "reviewer_manual_duplicate"}:
             region["source"] = "reviewer_override"
         region.update(_effective_fields(region))
+        _update_review_feedback(region)
         self.save_project(state)
         return region
 
@@ -205,7 +211,13 @@ class ReviewWorkbenchStore:
                 "source": "reviewer_manual_duplicate",
                 "notes": f"Duplicated from {region_id}",
                 "ignored": effective_type == "ignore",
+                "review_status": "manually_added",
                 "metadata": duplicate_metadata,
+                "training_feedback": {
+                    "label": "manually_added",
+                    "target_type": effective_type,
+                    "related_machine_regions": [region_id] if source_region.get("source") == "machine_detection" else [],
+                },
             }
         )
         regions.append(region)
@@ -261,6 +273,7 @@ class ReviewWorkbenchStore:
                     "source": "machine_detection",
                     "notes": str(detected.get("notes") or ""),
                     "ignored": False,
+                    "review_status": "unreviewed",
                     "metadata": metadata,
                 }
             )
@@ -435,6 +448,47 @@ def _effective_fields(region: dict[str, Any]) -> dict[str, Any]:
     return {
         "effective_type": effective_type,
         "effective_bbox": effective_bbox,
+    }
+
+
+def _update_review_feedback(region: dict[str, Any]) -> None:
+    """Record review feedback without mutating preserved detector evidence."""
+    effective_type = region.get("effective_type") or region.get("reviewed_type") or region.get("detected_type")
+    source = region.get("source")
+    detected_bbox = region.get("detected_bbox")
+    reviewed_bbox = region.get("reviewed_bbox")
+    detected_type = region.get("detected_type")
+    reviewed_type = region.get("reviewed_type")
+
+    if region.get("ignored") or region.get("status") == "ignored" or effective_type == "ignore":
+        region["review_status"] = "ignored" if source in {"manual", "reviewer_manual_duplicate"} else "rejected"
+        region["training_feedback"] = {
+            "label": "ignored" if source in {"manual", "reviewer_manual_duplicate"} else "false_positive",
+            "target_type": effective_type or "ignore",
+            "reason": "reviewer_ignored",
+        }
+        return
+
+    if source in {"manual", "reviewer_manual_duplicate"} or not detected_bbox:
+        feedback = dict(region.get("training_feedback") or {})
+        feedback.setdefault("label", "manually_added")
+        feedback["target_type"] = effective_type or "unknown_needs_review"
+        region["training_feedback"] = feedback
+        region["review_status"] = str(region.get("review_status") or "manually_added")
+        return
+
+    feedback_label = "accepted_positive"
+    review_status = "accepted"
+    if reviewed_bbox and reviewed_bbox != detected_bbox:
+        feedback_label = "resized_positive"
+        review_status = "resized"
+    elif reviewed_type and detected_type and reviewed_type != detected_type:
+        feedback_label = "type_corrected"
+
+    region["review_status"] = review_status
+    region["training_feedback"] = {
+        "label": feedback_label,
+        "target_type": effective_type or "unknown_needs_review",
     }
 
 
