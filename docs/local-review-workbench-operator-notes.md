@@ -232,6 +232,38 @@ source_text_mutated=false
 
 Use reviewed text for cases where the scan is legible to a human but OCR misses a dirty or typewritten line. For example, if OCR misses `[Question.]`, enter the corrected line in `Reviewed text` and save it as edited. This does not mutate the OCR attempt's raw text, page image, region bbox, or canonical document fields.
 
+## Export Reviewed Page State
+
+Click `Export Page` after reviewing regions and OCR attempts for the selected page.
+
+The workbench writes a timestamped local export under:
+
+```text
+data/runtime/review_projects/<project_id>/exports/<timestamp>/
+```
+
+Initial export files:
+
+```text
+project_state_snapshot.json
+page_<page_id>_review.json
+page_<page_id>_review.md
+page_<page_id>_text.txt
+crops/
+  region_<region_id>.png
+```
+
+Export behavior:
+
+- `page_<page_id>_review.json` preserves region geometry, source, review status, OCR route, raw OCR, reviewed text, and `source_text_mutated=false`.
+- `page_<page_id>_review.md` is a human-readable review artifact.
+- `page_<page_id>_text.txt` concatenates reviewed text-region output by page order.
+- Plain text export prefers `reviewed_text` when present, then cleaned/raw OCR text.
+- Region crops use the effective-oriented page image and each region's effective bbox.
+- Ignored regions remain in JSON metadata but are omitted from text export and crop export.
+
+Generated exports live under `data/runtime/` and should not be committed.
+
 ## Duplicate and Nudge Regions
 
 If recognition finds one region in a repeated row but misses nearby siblings, prefer `Draw Image Region` for the missing boxes. The selected-region panel also has advanced duplicate/nudge controls:
@@ -341,4 +373,4 @@ Commit only source code, templates/static assets, tests, and docs.
 - No polished annotation UI.
 - No OCR-all-regions action yet; OCR is selected-region only.
 
-The next slice should focus on translation or export only after selected-region OCR review has been exercised on real pages.
+The next slice should focus on either OCR-all-reviewed-regions or export ergonomics after page-level exports have been exercised on real pages.

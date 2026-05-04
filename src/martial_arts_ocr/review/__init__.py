@@ -15,6 +15,7 @@ from martial_arts_ocr.review.workbench_state import (
     REGION_TYPES,
     ReviewWorkbenchStore,
 )
+from martial_arts_ocr.review.workbench_export import export_page_review
 
 __all__ = [
     "ORIENTATION_CONVENTION",
@@ -26,4 +27,5 @@ __all__ = [
     "rank_region_ocr_results",
     "REGION_TYPES",
     "ReviewWorkbenchStore",
+    "export_page_review",
 ]

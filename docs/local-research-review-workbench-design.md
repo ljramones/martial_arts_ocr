@@ -77,6 +77,15 @@ MVP slice 6 implemented:
 - `source_text_mutated=false` remains explicit on OCR attempts;
 - reviewed text editing is local workbench state, not OCR normalization or canonical field promotion.
 
+MVP slice 7 implemented:
+
+- selected page review export endpoint and `Export Page` UI button;
+- timestamped local export folders under `data/runtime/review_projects/<project_id>/exports/`;
+- `project_state_snapshot.json`, page review JSON, Markdown, text, and region crop artifacts;
+- text export prefers `reviewed_text` when present, then cleaned/raw OCR;
+- raw OCR text and `source_text_mutated=false` remain preserved in JSON review artifacts;
+- crops use the effective-oriented page image and reviewed/effective region bbox.
+
 Not implemented yet:
 
 - translation;
@@ -502,6 +511,12 @@ Initial exports:
 - `text.txt`
 - `page_1.html`
 - `crops/`
+- selected-page review export:
+  - `project_state_snapshot.json`
+  - `page_<page_id>_review.json`
+  - `page_<page_id>_review.md`
+  - `page_<page_id>_text.txt`
+  - `crops/region_<region_id>.png`
 - region OCR review JSON/CSV/Markdown where applicable
 - macron candidate review summaries where applicable
 
@@ -518,6 +533,9 @@ Export rules:
 
 - Preserve original OCR and detected regions.
 - Include reviewer overrides separately.
+- Prefer `reviewed_text` in plain text exports when present.
+- Preserve raw OCR separately in JSON/Markdown review artifacts.
+- Crop from the effective-oriented page image using `effective_bbox`.
 - Make incomplete/review-needed status visible.
 - Do not claim reviewed output is authoritative unless reviewer explicitly marks it accepted.
 
@@ -695,7 +713,7 @@ OCR and translation can be Phase 2, but the state model must anticipate them.
 - Show OCR output and route metadata.
 - Let the reviewer accept, reject, or edit OCR attempts.
 - Store reviewed OCR text separately from raw OCR output.
-- Export region OCR JSON/CSV/Markdown.
+- Export reviewed page state as JSON/Markdown/text/crops.
 
 ### Phase 3: Japanese Region and Macron Review
 

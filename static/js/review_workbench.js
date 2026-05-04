@@ -33,6 +33,8 @@
         saveOrientation: document.getElementById("review-save-orientation"),
         orientationWarning: document.getElementById("review-orientation-warning"),
         recognize: document.getElementById("review-recognize-page"),
+        exportPage: document.getElementById("review-export-page"),
+        exportSummary: document.getElementById("review-export-summary"),
         addRegion: document.getElementById("review-add-region"),
         stage: document.getElementById("review-page-stage"),
         image: document.getElementById("review-page-image"),
@@ -101,6 +103,7 @@
     els.detectOrientation.addEventListener("click", detectOrientation);
     els.saveOrientation.addEventListener("click", saveOrientationOverride);
     els.recognize.addEventListener("click", recognizePage);
+    els.exportPage.addEventListener("click", exportPageReview);
     els.addRegion.addEventListener("click", addManualRegion);
     els.save.addEventListener("click", saveSelectedRegion);
     els.ignore.addEventListener("click", ignoreSelectedRegion);
@@ -226,6 +229,8 @@
         els.orientationOverride.disabled = false;
         els.saveOrientation.disabled = false;
         els.recognize.disabled = false;
+        els.exportPage.disabled = false;
+        els.exportSummary.textContent = "No export generated.";
     }
 
     function syncOverlaySize() {
@@ -256,6 +261,8 @@
         els.orientationOverride.disabled = true;
         els.saveOrientation.disabled = true;
         els.recognize.disabled = true;
+        els.exportPage.disabled = true;
+        els.exportSummary.textContent = "No export generated.";
         renderOrientation();
         renderRecognitionDiagnostics();
     }
@@ -757,6 +764,29 @@
             setStatus(error.message || "Recognition failed.");
         } finally {
             els.recognize.disabled = !state.page;
+        }
+    }
+
+    async function exportPageReview() {
+        if (!state.project || !state.page) return;
+        els.exportPage.disabled = true;
+        setStatus("Exporting reviewed page state...");
+        try {
+            const result = await requestJson(
+                `/api/review/projects/${encodeURIComponent(state.project.project_id)}/pages/${encodeURIComponent(state.page.page_id)}/export`,
+                { method: "POST" }
+            );
+            const summary = result.summary || {};
+            els.exportSummary.textContent = [
+                `Export: ${result.export_dir || "-"}`,
+                `regions=${summary.region_count ?? 0}`,
+                `crops=${summary.crop_count ?? 0}`,
+            ].join(" · ");
+            setStatus(`Exported ${state.page.page_id} review state.`);
+        } catch (error) {
+            setStatus(error.message || "Page export failed.");
+        } finally {
+            els.exportPage.disabled = !state.page;
         }
     }
 

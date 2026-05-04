@@ -38,6 +38,7 @@ from martial_arts_ocr.review import (
     RegionOCRService,
     REGION_TYPES,
     ReviewWorkbenchStore,
+    export_page_review,
     rank_region_ocr_results,
 )
 
@@ -1108,6 +1109,28 @@ def api_review_update_ocr_attempt(project_id, page_id, attempt_id):
     except FileNotFoundError as exc:
         return _review_json_error(exc, 404)
     except KeyError as exc:
+        return _review_json_error(exc, 404)
+    except Exception as exc:
+        return _review_json_error(exc, 400)
+
+
+@app.post("/api/review/projects/<project_id>/pages/<page_id>/export")
+def api_review_export_page(project_id, page_id):
+    store = _review_workbench_store()
+    try:
+        state = store.load_project(project_id)
+        page = store.get_page(state, page_id)
+        image_path = _effective_page_image_path(store, state, page_id)
+        export_result = export_page_review(
+            state=state,
+            page=page,
+            project_dir=store.project_dir(project_id),
+            effective_image_path=image_path,
+        )
+        return jsonify(export_result), 200
+    except PermissionError as exc:
+        return _review_json_error(exc, 403)
+    except (FileNotFoundError, KeyError) as exc:
         return _review_json_error(exc, 404)
     except Exception as exc:
         return _review_json_error(exc, 400)
