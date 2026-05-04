@@ -22,6 +22,9 @@
 - [Local Review Workbench Operator Notes](local-review-workbench-operator-notes.md):
   how to run the first local page viewer and editable overlay prototype, where
   `project_state.json` lives, and what not to commit.
+- [Review Feedback to Algorithm Improvement Plan](review-feedback-to-algorithm-improvement-plan.md):
+  plan for using accepted, resized, rejected, ignored, and manually added
+  workbench regions as future detector evaluation/training evidence.
 - [Orientation Subsystem Inventory](orientation-subsystem-inventory.md):
   inventory of the existing NN-based 0/90/180/270 page-orientation training,
   inference, checkpoint, and recommended workbench integration seam.
