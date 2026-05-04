@@ -373,7 +373,8 @@
     margin-top: 0.75rem;
 }
 
-#review-ocr-output {
+#review-ocr-output,
+#review-ocr-reviewed-text {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     min-height: 9rem;
     white-space: pre-wrap;

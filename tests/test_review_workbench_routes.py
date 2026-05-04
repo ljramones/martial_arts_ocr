@@ -375,6 +375,51 @@ def test_review_region_ocr_variants_store_grouped_attempts_and_select_best(tmp_p
     assert len(saved["pages"][0]["ocr_attempts"]) == 2
 
 
+def test_review_ocr_attempt_review_route_preserves_raw_and_stores_reviewed_text(tmp_path):
+    app, data_dir, scans = _create_review_app(tmp_path)
+    _write_image(scans / "page.png", size=(220, 140))
+
+    class FakeRegionOCRService:
+        def run(self, *, image_path, bbox, region_type, region_id):
+            return RegionOCRResult(
+                text="Le opmgageet",
+                cleaned_text="Le opmgageet",
+                confidence=0.42,
+                route=RegionOCRRoute(language="eng", psm=6),
+                status="ok",
+            )
+
+    app.config["REVIEW_REGION_OCR_SERVICE"] = FakeRegionOCRService()
+    client = app.test_client()
+    client.post("/api/review/projects", json={"source_folder": str(scans), "project_id": "ocr_review_route"})
+    client.post(
+        "/api/review/projects/ocr_review_route/pages/page_001/regions",
+        json={"reviewed_type": "english_text", "reviewed_bbox": [10, 12, 80, 24]},
+    )
+    client.post("/api/review/projects/ocr_review_route/pages/page_001/regions/r_001/ocr")
+
+    response = client.patch(
+        "/api/review/projects/ocr_review_route/pages/page_001/ocr_attempts/ocr_001",
+        json={
+            "reviewed_text": "[Question.]\nAaaa yes.",
+            "review_status": "edited",
+        },
+    )
+
+    assert response.status_code == 200
+    attempt = response.get_json()["attempt"]
+    assert attempt["text"] == "Le opmgageet"
+    assert attempt["cleaned_text"] == "Le opmgageet"
+    assert attempt["reviewed_text"] == "[Question.]\nAaaa yes."
+    assert attempt["review_status"] == "edited"
+    assert attempt["source_text_mutated"] is False
+
+    saved = json.loads(
+        (data_dir / "runtime" / "review_projects" / "ocr_review_route" / "project_state.json").read_text(encoding="utf-8")
+    )
+    assert saved["pages"][0]["ocr_attempts"][0]["reviewed_text"] == "[Question.]\nAaaa yes."
+
+
 def test_review_project_rejects_disallowed_source_folder(tmp_path):
     app, _data_dir, _scans = _create_review_app(tmp_path)
     outside = tmp_path.parent / "outside_review_source"

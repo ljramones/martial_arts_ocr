@@ -30,6 +30,7 @@ Useful feedback events include:
 - `region_split_needed`
 - `region_duplicate_created`
 - `ocr_result_accepted`
+- `ocr_result_edited`
 - `ocr_result_rejected`
 - `translation_result_accepted`
 - `translation_result_rejected`
@@ -83,6 +84,22 @@ For rejected machine regions:
 }
 ```
 
+For edited OCR attempts:
+
+```json
+{
+  "feedback_type": "ocr_result_edited",
+  "attempt_id": "ocr_001",
+  "region_id": "r_004",
+  "raw_text": "Le opmgageet I'm glad you're frank...",
+  "reviewed_text": "[Question.]\nAaaa yes. I'm glad you're frank...",
+  "review_status": "edited",
+  "source_text_mutated": false,
+  "reason": "dirty_typewritten_first_line",
+  "page_id": "page_025"
+}
+```
+
 Short-term workbench state should preserve enough information to derive these records:
 
 - `source`: `machine_detection`, `reviewer_manual`, `reviewer_manual_duplicate`, or `reviewer_override`;
@@ -93,6 +110,9 @@ Short-term workbench state should preserve enough information to derive these re
 - `reviewed_type`;
 - `effective_type`;
 - `review_status`;
+- OCR attempt `text` / `cleaned_text`;
+- OCR attempt `reviewed_text`;
+- OCR attempt `source_text_mutated=false`;
 - `training_feedback`;
 - `notes`.
 

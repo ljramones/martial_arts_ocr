@@ -260,6 +260,8 @@ class ReviewWorkbenchStore:
             "region_type": region.get("effective_type") or "unknown_needs_review",
             "bbox": list(region.get("effective_bbox")),
             "orientation_degrees": _effective_orientation_degrees(page),
+            "review_status": str(attempt.get("review_status") or "unreviewed"),
+            "source_text_mutated": False,
             "created_at": _now(),
         }
         attempts.append(attempt_record)
@@ -268,6 +270,31 @@ class ReviewWorkbenchStore:
         region["last_ocr_attempt_id"] = attempt_record["attempt_id"]
         self.save_project(state)
         return attempt_record
+
+    def update_ocr_attempt_review(
+        self,
+        state: dict[str, Any],
+        page_id: str,
+        attempt_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        page = self.get_page(state, page_id)
+        attempt = _get_ocr_attempt(page, attempt_id)
+        if "reviewed_text" in payload:
+            attempt["reviewed_text"] = str(payload.get("reviewed_text") or "")
+        if "review_status" in payload:
+            review_status = str(payload.get("review_status") or "unreviewed")
+            if review_status not in {"unreviewed", "accepted", "edited", "rejected"}:
+                raise ValueError("review_status must be unreviewed, accepted, edited, or rejected")
+            attempt["review_status"] = review_status
+        elif "reviewed_text" in payload:
+            attempt["review_status"] = "edited"
+        if "notes" in payload:
+            attempt["review_notes"] = str(payload.get("notes") or "")
+        attempt["reviewed_at"] = _now()
+        attempt["source_text_mutated"] = False
+        self.save_project(state)
+        return attempt
 
     def import_detected_regions(
         self,
@@ -554,6 +581,13 @@ def _next_ocr_attempt_id(attempts: list[dict[str, Any]]) -> str:
         if match:
             max_index = max(max_index, int(match.group(1)))
     return f"ocr_{max_index + 1:03d}"
+
+
+def _get_ocr_attempt(page: dict[str, Any], attempt_id: str) -> dict[str, Any]:
+    for attempt in page.get("ocr_attempts", []):
+        if attempt.get("attempt_id") == attempt_id:
+            return attempt
+    raise KeyError(f"OCR attempt not found: {attempt_id}")
 
 
 def _is_replaceable_machine_region(region: dict[str, Any]) -> bool:

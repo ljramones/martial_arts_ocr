@@ -64,6 +64,10 @@
         ocrRoute: document.getElementById("review-ocr-route"),
         ocrConfidence: document.getElementById("review-ocr-confidence"),
         ocrOutput: document.getElementById("review-ocr-output"),
+        ocrReviewedText: document.getElementById("review-ocr-reviewed-text"),
+        ocrAccept: document.getElementById("review-ocr-accept"),
+        ocrSaveReviewed: document.getElementById("review-ocr-save-reviewed"),
+        ocrReject: document.getElementById("review-ocr-reject"),
         detectedType: document.getElementById("review-detected-type"),
         effectiveType: document.getElementById("review-effective-type"),
         detectedBbox: document.getElementById("review-detected-bbox"),
@@ -118,6 +122,9 @@
     els.nudgeDown.addEventListener("click", () => nudgeSelectedRegion(0, 10));
     els.runRegionOcr.addEventListener("click", runSelectedRegionOcr);
     els.runRegionOcrVariants.addEventListener("click", runSelectedRegionOcrVariants);
+    els.ocrAccept.addEventListener("click", () => updateSelectedOcrAttempt("accepted"));
+    els.ocrSaveReviewed.addEventListener("click", () => updateSelectedOcrAttempt("edited"));
+    els.ocrReject.addEventListener("click", () => updateSelectedOcrAttempt("rejected"));
     [els.type, els.bboxX, els.bboxY, els.bboxW, els.bboxH, els.notes].forEach((element) => {
         element.addEventListener("input", updateSelectedFromPanel);
     });
@@ -647,10 +654,15 @@
             els.ocrRoute.textContent = "-";
             els.ocrConfidence.textContent = "-";
             els.ocrOutput.value = "";
+            els.ocrReviewedText.value = "";
+            els.ocrReviewedText.disabled = true;
+            [els.ocrAccept, els.ocrSaveReviewed, els.ocrReject].forEach((element) => {
+                element.disabled = true;
+            });
             return;
         }
         const route = attempt.route || {};
-        els.ocrStatus.textContent = attempt.status || "-";
+        els.ocrStatus.textContent = [attempt.status || "-", attempt.review_status || "unreviewed"].join(" / ");
         els.ocrRoute.textContent = [
             route.engine || "tesseract",
             route.language || "none",
@@ -659,6 +671,11 @@
         ].filter(Boolean).join(" / ");
         els.ocrConfidence.textContent = formatConfidence(attempt.confidence);
         els.ocrOutput.value = attempt.cleaned_text || attempt.text || "";
+        els.ocrReviewedText.disabled = false;
+        els.ocrReviewedText.value = attempt.reviewed_text ?? (attempt.cleaned_text || attempt.text || "");
+        [els.ocrAccept, els.ocrSaveReviewed, els.ocrReject].forEach((element) => {
+            element.disabled = false;
+        });
     }
 
     function renderRegionMetadata(region) {
@@ -858,6 +875,32 @@
             setStatus(error.message || "Region OCR variants failed.");
         } finally {
             els.runRegionOcrVariants.disabled = !selectedRegion();
+        }
+    }
+
+    async function updateSelectedOcrAttempt(reviewStatus) {
+        const region = selectedRegion();
+        if (!state.project || !state.page || !region?.last_ocr_attempt_id) return;
+        const payload = {
+            review_status: reviewStatus,
+            reviewed_text: reviewStatus === "rejected" ? "" : els.ocrReviewedText.value,
+        };
+        try {
+            const result = await requestJson(
+                `/api/review/projects/${encodeURIComponent(state.project.project_id)}/pages/${encodeURIComponent(state.page.page_id)}/ocr_attempts/${encodeURIComponent(region.last_ocr_attempt_id)}`,
+                {
+                    method: "PATCH",
+                    body: JSON.stringify(payload),
+                }
+            );
+            state.page = result.page;
+            state.selectedRegionId = region.region_id;
+            renderRegionList();
+            renderOverlay();
+            renderSelectedRegion();
+            setStatus(`OCR attempt ${result.attempt.attempt_id} marked ${result.attempt.review_status}.`);
+        } catch (error) {
+            setStatus(error.message || "OCR review update failed.");
         }
     }
 

@@ -210,6 +210,28 @@ Use `Run Variants` when the default selected-region OCR is poor. This runs a sma
 
 Variant results are comparison evidence, not truth. Review the actual output before accepting or using it downstream.
 
+## Review OCR Attempts
+
+The OCR panel separates machine output from reviewed text:
+
+- `OCR output` is the raw/cleaned OCR attempt output and is read-only.
+- `Reviewed text` is the local reviewer correction field.
+- `Accept OCR` marks the attempt accepted and stores the current reviewed text.
+- `Save Reviewed Text` marks the attempt edited and stores the corrected text.
+- `Reject OCR` marks the attempt rejected and leaves the raw OCR evidence intact.
+
+OCR attempt records keep raw fields and review fields separate:
+
+```text
+text
+cleaned_text
+reviewed_text
+review_status
+source_text_mutated=false
+```
+
+Use reviewed text for cases where the scan is legible to a human but OCR misses a dirty or typewritten line. For example, if OCR misses `[Question.]`, enter the corrected line in `Reviewed text` and save it as edited. This does not mutate the OCR attempt's raw text, page image, region bbox, or canonical document fields.
+
 ## Duplicate and Nudge Regions
 
 If recognition finds one region in a repeated row but misses nearby siblings, prefer `Draw Image Region` for the missing boxes. The selected-region panel also has advanced duplicate/nudge controls:
@@ -313,10 +335,10 @@ Commit only source code, templates/static assets, tests, and docs.
 
 ## Current Limits
 
-- No OCR button yet.
 - No translation button yet.
 - No PDF/DOCX export.
 - No multi-user coordination.
 - No polished annotation UI.
+- No OCR-all-regions action yet; OCR is selected-region only.
 
-The next slice should add reviewed-region OCR controls without changing OCR defaults or mutating source text.
+The next slice should focus on translation or export only after selected-region OCR review has been exercised on real pages.

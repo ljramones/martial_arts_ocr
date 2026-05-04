@@ -302,12 +302,69 @@ def test_add_region_ocr_attempt_records_page_and_region_links(tmp_path):
     assert attempt["orientation_degrees"] == 0
     page = store.get_page(state, page_id)
     assert page["ocr_attempts"][0]["text"] == "Daito-ryu"
+    assert page["ocr_attempts"][0]["review_status"] == "unreviewed"
+    assert page["ocr_attempts"][0]["source_text_mutated"] is False
     stored_region = store.get_region(page, "r_001")
     assert stored_region["ocr_attempt_ids"] == ["ocr_001"]
     assert stored_region["last_ocr_attempt_id"] == "ocr_001"
 
     loaded = store.load_project("ocr_attempt")
     assert loaded["pages"][0]["ocr_attempts"][0]["attempt_id"] == "ocr_001"
+
+
+def test_update_ocr_attempt_review_preserves_raw_text_and_records_reviewed_text(tmp_path):
+    source = tmp_path / "scans"
+    source.mkdir()
+    _write_image(source / "page.png", size=(120, 90))
+    store = ReviewWorkbenchStore(tmp_path / "runtime" / "review_projects", allowed_roots=[tmp_path])
+    state = store.create_project(source, project_id="ocr_review")
+    page_id = state["pages"][0]["page_id"]
+    region = store.add_region(state, page_id, {"reviewed_type": "english_text", "bbox": [5, 10, 60, 20]})
+    attempt = store.add_region_ocr_attempt(
+        state,
+        page_id,
+        region["region_id"],
+        {
+            "text": "Le opmgageet",
+            "cleaned_text": "Le opmgageet",
+            "confidence": 0.42,
+            "route": {"engine": "tesseract", "language": "eng", "psm": 6},
+            "status": "ok",
+            "source_text_mutated": False,
+        },
+    )
+
+    reviewed = store.update_ocr_attempt_review(
+        state,
+        page_id,
+        attempt["attempt_id"],
+        {
+            "reviewed_text": "[Question.]\nAaaa yes.",
+            "review_status": "edited",
+        },
+    )
+
+    assert reviewed["text"] == "Le opmgageet"
+    assert reviewed["cleaned_text"] == "Le opmgageet"
+    assert reviewed["reviewed_text"] == "[Question.]\nAaaa yes."
+    assert reviewed["review_status"] == "edited"
+    assert reviewed["source_text_mutated"] is False
+    assert "reviewed_at" in reviewed
+
+    accepted = store.update_ocr_attempt_review(state, page_id, attempt["attempt_id"], {"review_status": "accepted"})
+    assert accepted["review_status"] == "accepted"
+    assert accepted["reviewed_text"] == "[Question.]\nAaaa yes."
+
+    rejected = store.update_ocr_attempt_review(state, page_id, attempt["attempt_id"], {"review_status": "rejected"})
+    assert rejected["review_status"] == "rejected"
+    assert rejected["text"] == "Le opmgageet"
+
+    try:
+        store.update_ocr_attempt_review(state, page_id, attempt["attempt_id"], {"review_status": "final_truth"})
+    except ValueError as exc:
+        assert "review_status must be" in str(exc)
+    else:  # pragma: no cover - assertion guard
+        raise AssertionError("invalid OCR review status should raise")
 
 
 def test_import_detected_regions_preserves_reviewer_work_and_replaces_unreviewed_machine_regions(tmp_path):

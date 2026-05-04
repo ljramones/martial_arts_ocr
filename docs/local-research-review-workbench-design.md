@@ -68,6 +68,15 @@ MVP slice 5 implemented:
 - OCR output is shown for review without mutating source text or canonical fields.
 - variant attempts are grouped in metadata and remain review artifacts.
 
+MVP slice 6 implemented:
+
+- selected OCR attempts can be marked accepted, edited, or rejected;
+- raw OCR text remains read-only and is preserved on the attempt;
+- reviewed text is stored separately as `reviewed_text`;
+- OCR review status is stored as `review_status`;
+- `source_text_mutated=false` remains explicit on OCR attempts;
+- reviewed text editing is local workbench state, not OCR normalization or canonical field promotion.
+
 Not implemented yet:
 
 - translation;
@@ -430,6 +439,9 @@ OCR attempt record:
     "preprocess_profile": "none"
   },
   "ocr_output": "...",
+  "reviewed_text": null,
+  "review_status": "unreviewed",
+  "source_text_mutated": false,
   "terms_recovered": ["忍者", "伊賀"],
   "quality_judgment": "partial",
   "selected": false,
@@ -439,6 +451,12 @@ OCR attempt record:
 ```
 
 Keep all attempts unless the researcher explicitly deletes local experiment output.
+
+Reviewing an OCR attempt updates review metadata only. Raw `text` and
+`cleaned_text` stay preserved as OCR evidence. If a reviewer fixes a dirty
+typewritten line such as `[Question.]`, the corrected value is stored in
+`reviewed_text`, and downstream export can prefer that reviewed value later
+without claiming the OCR engine produced it.
 
 ## Translation Flow
 
@@ -675,6 +693,8 @@ OCR and translation can be Phase 2, but the state model must anticipate them.
 - Use effective type and effective bbox.
 - Store OCR attempts.
 - Show OCR output and route metadata.
+- Let the reviewer accept, reject, or edit OCR attempts.
+- Store reviewed OCR text separately from raw OCR output.
 - Export region OCR JSON/CSV/Markdown.
 
 ### Phase 3: Japanese Region and Macron Review

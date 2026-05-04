@@ -195,6 +195,13 @@
             </dl>
             <label for="review-ocr-output">OCR output</label>
             <textarea id="review-ocr-output" rows="8" readonly></textarea>
+            <label for="review-ocr-reviewed-text">Reviewed text</label>
+            <textarea id="review-ocr-reviewed-text" rows="8" disabled></textarea>
+            <div class="review-button-row">
+                <button id="review-ocr-accept" class="btn btn-secondary btn-sm" type="button" disabled>Accept OCR</button>
+                <button id="review-ocr-save-reviewed" class="btn btn-primary btn-sm" type="button" disabled>Save Reviewed Text</button>
+                <button id="review-ocr-reject" class="btn btn-danger btn-sm" type="button" disabled>Reject OCR</button>
+            </div>
         </section>
 
         <section class="review-card">

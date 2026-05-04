@@ -1097,6 +1097,22 @@ def api_review_region_ocr_variants(project_id, page_id, region_id):
         return _review_json_error(exc, 400)
 
 
+@app.patch("/api/review/projects/<project_id>/pages/<page_id>/ocr_attempts/<attempt_id>")
+def api_review_update_ocr_attempt(project_id, page_id, attempt_id):
+    data = request.get_json() or {}
+    store = _review_workbench_store()
+    try:
+        state = store.load_project(project_id)
+        attempt = store.update_ocr_attempt_review(state, page_id, attempt_id, data)
+        return jsonify({"attempt": attempt, "page": store.get_page(state, page_id)}), 200
+    except FileNotFoundError as exc:
+        return _review_json_error(exc, 404)
+    except KeyError as exc:
+        return _review_json_error(exc, 404)
+    except Exception as exc:
+        return _review_json_error(exc, 400)
+
+
 @app.delete("/api/review/projects/<project_id>/pages/<page_id>/regions/<region_id>")
 def api_review_delete_region(project_id, page_id, region_id):
     store = _review_workbench_store()
