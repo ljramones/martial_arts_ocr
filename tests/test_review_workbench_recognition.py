@@ -375,7 +375,7 @@ def test_recognition_rerun_preserves_manual_and_reviewed_regions(tmp_path):
     regions = {region["region_id"]: region for region in rerun_response.get_json()["page"]["regions"]}
     assert regions["det_001"]["reviewed_type"] == "diagram"
     assert regions["det_001"]["detected_bbox"] == [10, 10, 30, 30]
-    assert regions["r_001"]["source"] == "manual"
+    assert regions["r_001"]["source"] == "reviewer_manual"
     assert regions["det_002"]["detected_type"] == "diagram"
     assert regions["det_002"]["metadata"]["detector"] == "second"
     assert len(regions) == 3

@@ -41,6 +41,7 @@ def test_review_page_route_loads(tmp_path):
     assert response.status_code == 200
     assert b"Local Research Review Workbench" in response.data
     assert b"Draw Image Region" in response.data
+    assert b"Draw Ignore Region" in response.data
     assert b"Region Inventory" in response.data
 
 
@@ -181,8 +182,10 @@ def test_review_region_routes_add_update_ignore_delete_and_preserve_detected_fie
     assert region["detected_type"] is None
     assert region["effective_type"] == "modern_japanese_vertical"
     assert region["effective_bbox"] == [15, 20, 40, 80]
+    assert region["source"] == "reviewer_manual"
     assert region["review_status"] == "manually_added"
     assert region["training_feedback"]["label"] == "manually_added"
+    assert region["metadata"]["feedback_type"] == "missed_positive"
 
     update_response = client.patch(
         "/api/review/projects/regions/pages/page_001/regions/r_001",

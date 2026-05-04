@@ -118,6 +118,10 @@ class ReviewWorkbenchStore:
             payload.get("reviewed_bbox") or payload.get("bbox") or _default_bbox(page),
             page,
         )
+        status = str(payload.get("status") or ("ignored" if region_type == "ignore" else "reviewed"))
+        metadata = dict(payload.get("metadata") or {})
+        metadata.setdefault("feedback_type", "missed_positive")
+        metadata.setdefault("manually_added", True)
         region = _with_effective_fields(
             {
                 "region_id": payload.get("region_id") or _next_region_id(regions),
@@ -125,13 +129,15 @@ class ReviewWorkbenchStore:
                 "reviewed_type": region_type,
                 "detected_bbox": None,
                 "reviewed_bbox": bbox,
-                "status": str(payload.get("status") or "reviewed"),
-                "source": "manual",
+                "status": status,
+                "source": "reviewer_manual",
                 "notes": str(payload.get("notes") or ""),
                 "ignored": region_type == "ignore",
-                "review_status": str(payload.get("review_status") or "manually_added"),
+                "review_status": str(payload.get("review_status") or ("ignored" if region_type == "ignore" else "manually_added")),
+                "metadata": metadata,
                 "training_feedback": {
                     "label": "manually_added",
+                    "feedback_type": "missed_positive",
                     "target_type": region_type,
                 },
             }
@@ -170,7 +176,7 @@ class ReviewWorkbenchStore:
         if region.get("reviewed_type") == "ignore" or region.get("status") == "ignored":
             region["ignored"] = True
             region["status"] = "ignored"
-        if region.get("source") not in {"manual", "reviewer_manual_duplicate"}:
+        if region.get("source") not in {"manual", "reviewer_manual", "reviewer_manual_duplicate"}:
             region["source"] = "reviewer_override"
         region.update(_effective_fields(region))
         _update_review_feedback(region)
@@ -488,18 +494,21 @@ def _update_review_feedback(region: dict[str, Any]) -> None:
     detected_type = region.get("detected_type")
     reviewed_type = region.get("reviewed_type")
 
+    manual_sources = {"manual", "reviewer_manual", "reviewer_manual_duplicate"}
+
     if region.get("ignored") or region.get("status") == "ignored" or effective_type == "ignore":
-        region["review_status"] = "ignored" if source in {"manual", "reviewer_manual_duplicate"} else "rejected"
+        region["review_status"] = "ignored" if source in manual_sources else "rejected"
         region["training_feedback"] = {
-            "label": "ignored" if source in {"manual", "reviewer_manual_duplicate"} else "false_positive",
+            "label": "ignored" if source in manual_sources else "false_positive",
             "target_type": effective_type or "ignore",
             "reason": "reviewer_ignored",
         }
         return
 
-    if source in {"manual", "reviewer_manual_duplicate"} or not detected_bbox:
+    if source in manual_sources or not detected_bbox:
         feedback = dict(region.get("training_feedback") or {})
         feedback.setdefault("label", "manually_added")
+        feedback.setdefault("feedback_type", "missed_positive")
         feedback["target_type"] = effective_type or "unknown_needs_review"
         region["training_feedback"] = feedback
         region["review_status"] = str(region.get("review_status") or "manually_added")

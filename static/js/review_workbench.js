@@ -9,7 +9,7 @@
         selectedRegionId: null,
         drag: null,
         draw: null,
-        tool: "select",
+        tool: "select_move",
         imageLayout: null,
     };
 
@@ -170,7 +170,7 @@
     }
 
     function setTool(tool) {
-        state.tool = tool || "select";
+        state.tool = tool || "select_move";
         state.draw = null;
         els.toolButtons.forEach((button) => {
             button.classList.toggle("active", button.dataset.reviewTool === state.tool);
@@ -484,7 +484,7 @@
         const bbox = screenBBoxToImageBBox(state.imageLayout, drawScreenBBox());
         const draw = state.draw;
         state.draw = null;
-        if (bbox[2] < 6 || bbox[3] < 6) {
+        if (bbox[2] < 8 || bbox[3] < 8) {
             renderOverlay();
             return;
         }
@@ -496,14 +496,13 @@
                     body: JSON.stringify({
                         reviewed_type: draw.reviewedType,
                         reviewed_bbox: bbox,
-                        status: "reviewed",
-                        review_status: "manually_added",
+                        status: draw.reviewedType === "ignore" ? "ignored" : "reviewed",
+                        review_status: draw.reviewedType === "ignore" ? "ignored" : "manually_added",
                     }),
                 }
             );
             state.page = result.page;
             state.selectedRegionId = result.region.region_id;
-            setTool("select");
             renderRegionList();
             renderRecognitionDiagnostics();
             renderOverlay();
@@ -529,6 +528,7 @@
         if (tool === "draw_image") return "image";
         if (tool === "draw_text") return "english_text";
         if (tool === "draw_japanese") return "modern_japanese_horizontal";
+        if (tool === "draw_ignore") return "ignore";
         return "unknown_needs_review";
     }
 
@@ -601,7 +601,10 @@
         });
         els.bboxFields.disabled = !enabled;
         if (!region) {
-            els.selectedId.textContent = "No region selected.";
+            els.selectedId.textContent = "No region selected. Select a region on the page, or choose a drawing tool and drag on the image.";
+            els.type.value = "";
+            [els.bboxX.value, els.bboxY.value, els.bboxW.value, els.bboxH.value] = ["", "", "", ""];
+            els.notes.value = "";
             els.detectedType.textContent = "-";
             els.effectiveType.textContent = "-";
             els.detectedBbox.textContent = "-";

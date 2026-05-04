@@ -58,6 +58,8 @@ The workbench supports manual region review:
 - select a page;
 - choose `Select / Move`, `Draw Image Region`, `Draw Text Region`, or `Draw Japanese Region`;
 - drag a rectangle on the page to create a reviewed manual region;
+- use `Draw Ignore Region` to mark page areas that should be skipped;
+- keep drawing to create multiple regions in sequence;
 - add a default manual region if preferred;
 - click a region overlay or region list item;
 - drag the region to move it;
@@ -83,6 +85,8 @@ Reviewer edits update reviewed/effective fields. They do not overwrite detected 
 The right panel includes a region inventory grouped by image, text, Japanese, ignored, and other regions. Use it as the page checklist: click any item to select the corresponding overlay box.
 
 Quick type buttons set common review labels such as `image`, `diagram`, `photo`, English text, Japanese horizontal, Japanese vertical, or `ignore`. Advanced duplicate/nudge controls remain available in the collapsible section, but the primary review flow is drawing and correcting meaningful regions.
+
+Numeric bbox fields are for fine adjustment after drawing or selecting a box. They are not the primary way to create regions. When no region is selected, use the page overlay: select a drawing tool and drag directly on the scanned page.
 
 Review actions also record lightweight feedback metadata:
 
@@ -223,6 +227,19 @@ metadata.duplicated_from_region_id=<source region>
 ```
 
 Save the duplicated region after final bbox/type adjustment.
+
+Manually drawn regions are stored as reviewer-created evidence:
+
+```text
+source=reviewer_manual
+detected_bbox=null
+reviewed_bbox=<drawn bbox>
+effective_bbox=<drawn bbox>
+metadata.feedback_type=missed_positive
+metadata.manually_added=true
+```
+
+Those records can later be exported as missed-positive detector feedback.
 
 ## Recognition Diagnostics
 

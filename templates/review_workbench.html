@@ -101,10 +101,11 @@
             Machine regions are advisory. Preserve the detected box, adjust the reviewed box, and save before using downstream OCR.
         </div>
         <div class="review-tool-row" aria-label="Region marking tools">
-            <button class="active" data-review-tool="select" type="button">Select / Move</button>
+            <button class="active" data-review-tool="select_move" type="button">Select / Move</button>
             <button data-review-tool="draw_image" type="button">Draw Image Region</button>
             <button data-review-tool="draw_text" type="button">Draw Text Region</button>
             <button data-review-tool="draw_japanese" type="button">Draw Japanese Region</button>
+            <button data-review-tool="draw_ignore" type="button">Draw Ignore Region</button>
         </div>
         <div id="review-page-stage" class="review-page-stage is-empty">
             <div class="review-empty-state" id="review-empty-state">Create or load a project, then select a page.</div>
@@ -121,7 +122,7 @@
 
         <section class="review-card">
             <h3>Selected Region</h3>
-            <p id="review-selected-region-id" class="review-muted">No region selected.</p>
+            <p id="review-selected-region-id" class="review-muted">No region selected. Select a region on the page, or choose a drawing tool and drag on the image.</p>
 
             <label for="review-region-type">Reviewed type</label>
             <select id="review-region-type" disabled></select>

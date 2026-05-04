@@ -85,7 +85,7 @@ For rejected machine regions:
 
 Short-term workbench state should preserve enough information to derive these records:
 
-- `source`: `machine_detection`, `manual`, `reviewer_manual_duplicate`, or `reviewer_override`;
+- `source`: `machine_detection`, `reviewer_manual`, `reviewer_manual_duplicate`, or `reviewer_override`;
 - `detected_bbox`;
 - `reviewed_bbox`;
 - `effective_bbox`;

@@ -48,7 +48,9 @@ MVP slice 3 implemented:
 
 MVP slice 4 implemented:
 
-- region marking tools for select/move, draw image region, draw text region, and draw Japanese region;
+- region marking tools for select/move, draw image region, draw text region, draw Japanese region, and draw ignore region;
+- direct click-drag box creation on the displayed page;
+- repeatable drawing mode for creating multiple manual regions quickly;
 - right-panel region inventory grouped by image/text/Japanese/ignored/other regions;
 - quick type buttons for common reviewer labels;
 - duplicate/nudge controls moved into an advanced section;
@@ -227,7 +229,7 @@ Field meanings:
 - `reviewed_bbox`: reviewer-adjusted bbox, nullable.
 - `effective_bbox`: `reviewed_bbox` if present, otherwise `detected_bbox`.
 - `status`: `detected`, `reviewed`, `ignored`, `manual`, `ocr_ready`, `ocr_reviewed`.
-- `source`: `machine_detection`, `reviewer_override`, `manual`, `imported`.
+- `source`: `machine_detection`, `reviewer_override`, `reviewer_manual`, `reviewer_manual_duplicate`, `imported`.
 - `review_status`: local review result such as `unreviewed`, `accepted`, `resized`, `rejected`, `manually_added`, or `ignored`.
 - `training_feedback`: compact audit metadata for future detector evaluation/training exports.
 - `notes`: free-form researcher note.
@@ -360,7 +362,8 @@ Initial selected-region OCR routing:
 - `image`, `diagram`, `photo`, `ignore`, and unknown types are skipped in this slice.
 
 OCR attempts are review artifacts, not canonical text. They should remain inspectable and replaceable.
-- Manual regions should have no `detected_bbox` and should set `source=manual`.
+- Manual regions should have no `detected_bbox` and should set `source=reviewer_manual`.
+- Manually drawn regions should include missed-positive feedback metadata for later detector evaluation.
 - Duplicated regions should be reviewer-created siblings with `source=reviewer_manual_duplicate`, no `detected_bbox`, and metadata pointing to the source region.
 - Rerunning recognition should replace only unreviewed `source=machine_detection` regions.
 - Rerunning recognition should preserve manual, reviewed, and ignored regions.

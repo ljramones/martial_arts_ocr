@@ -102,10 +102,13 @@ def test_add_update_ignore_delete_region_preserves_detected_fields(tmp_path):
     assert region["reviewed_type"] == "modern_japanese_vertical"
     assert region["effective_type"] == "modern_japanese_vertical"
     assert region["effective_bbox"] == [10, 20, 50, 90]
-    assert region["source"] == "manual"
+    assert region["source"] == "reviewer_manual"
     assert region["review_status"] == "manually_added"
     assert region["training_feedback"]["label"] == "manually_added"
+    assert region["training_feedback"]["feedback_type"] == "missed_positive"
     assert region["training_feedback"]["target_type"] == "modern_japanese_vertical"
+    assert region["metadata"]["feedback_type"] == "missed_positive"
+    assert region["metadata"]["manually_added"] is True
 
     # Simulate a machine-detected region, then verify reviewer edits do not
     # overwrite detected evidence.
@@ -238,6 +241,35 @@ def test_duplicate_region_left_right_clamps_to_page_bounds(tmp_path):
 
     assert left["reviewed_bbox"] == [0, 10, 40, 50]
     assert right["reviewed_bbox"] == [45, 10, 40, 50]
+
+
+def test_multiple_drawn_manual_regions_and_ignore_region_state(tmp_path):
+    source = tmp_path / "scans"
+    source.mkdir()
+    _write_image(source / "page.png", size=(160, 120))
+    store = ReviewWorkbenchStore(tmp_path / "runtime" / "review_projects", allowed_roots=[tmp_path])
+    state = store.create_project(source, project_id="manual_draw")
+    page_id = state["pages"][0]["page_id"]
+
+    first = store.add_region(state, page_id, {"reviewed_type": "image", "bbox": [10, 10, 30, 40]})
+    second = store.add_region(state, page_id, {"reviewed_type": "english_text", "bbox": [60, 15, 70, 20]})
+    ignored = store.add_region(state, page_id, {"reviewed_type": "ignore", "bbox": [0, 0, 12, 12]})
+
+    assert [first["region_id"], second["region_id"], ignored["region_id"]] == ["r_001", "r_002", "r_003"]
+    assert first["source"] == "reviewer_manual"
+    assert first["detected_bbox"] is None
+    assert first["reviewed_bbox"] == [10, 10, 30, 40]
+    assert first["effective_bbox"] == [10, 10, 30, 40]
+    assert first["metadata"]["feedback_type"] == "missed_positive"
+    assert second["source"] == "reviewer_manual"
+    assert ignored["status"] == "ignored"
+    assert ignored["ignored"] is True
+    assert ignored["effective_type"] == "ignore"
+    assert ignored["review_status"] == "ignored"
+
+    loaded = store.load_project("manual_draw")
+    loaded_regions = loaded["pages"][0]["regions"]
+    assert [region["source"] for region in loaded_regions] == ["reviewer_manual", "reviewer_manual", "reviewer_manual"]
 
 
 def test_add_region_ocr_attempt_records_page_and_region_links(tmp_path):
