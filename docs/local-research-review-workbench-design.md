@@ -59,12 +59,14 @@ MVP slice 4 implemented:
 MVP slice 5 implemented:
 
 - selected-region OCR button in the review panel;
+- selected-region OCR variants button for alternate PSM/preprocessing attempts;
 - OCR runs only for the selected region;
 - OCR crops from the effective-oriented page using the selected region's `effective_bbox`;
 - OCR route is chosen from the selected region's `effective_type`;
 - OCR attempts are stored in `project_state.json` under page-level `ocr_attempts`;
 - selected region keeps `ocr_attempt_ids` and `last_ocr_attempt_id`;
 - OCR output is shown for review without mutating source text or canonical fields.
+- variant attempts are grouped in metadata and remain review artifacts.
 
 Not implemented yet:
 
@@ -349,6 +351,16 @@ selected reviewed region
   -> route OCR from effective_type
   -> store OCR attempt
   -> show OCR output for review
+```
+
+Selected-region variant flow:
+
+```text
+selected reviewed region
+  -> Run Variants
+  -> run deterministic route/preprocessing variants for that region type
+  -> store each variant as a separate OCR attempt
+  -> select highest-scored attempt as the latest region OCR result
 ```
 
 Initial selected-region OCR routing:

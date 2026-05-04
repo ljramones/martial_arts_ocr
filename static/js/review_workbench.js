@@ -59,6 +59,7 @@
         nudgeUp: document.getElementById("review-nudge-up"),
         nudgeDown: document.getElementById("review-nudge-down"),
         runRegionOcr: document.getElementById("review-run-region-ocr"),
+        runRegionOcrVariants: document.getElementById("review-run-region-ocr-variants"),
         ocrStatus: document.getElementById("review-ocr-status"),
         ocrRoute: document.getElementById("review-ocr-route"),
         ocrConfidence: document.getElementById("review-ocr-confidence"),
@@ -116,6 +117,7 @@
     els.nudgeUp.addEventListener("click", () => nudgeSelectedRegion(0, -10));
     els.nudgeDown.addEventListener("click", () => nudgeSelectedRegion(0, 10));
     els.runRegionOcr.addEventListener("click", runSelectedRegionOcr);
+    els.runRegionOcrVariants.addEventListener("click", runSelectedRegionOcrVariants);
     [els.type, els.bboxX, els.bboxY, els.bboxW, els.bboxH, els.notes].forEach((element) => {
         element.addEventListener("input", updateSelectedFromPanel);
     });
@@ -595,6 +597,7 @@
             els.nudgeUp,
             els.nudgeDown,
             els.runRegionOcr,
+            els.runRegionOcrVariants,
             ...els.quickTypeButtons,
         ].forEach((element) => {
             element.disabled = !enabled;
@@ -829,6 +832,32 @@
             setStatus(error.message || "Region OCR failed.");
         } finally {
             els.runRegionOcr.disabled = !selectedRegion();
+        }
+    }
+
+    async function runSelectedRegionOcrVariants() {
+        const region = selectedRegion();
+        if (!state.project || !state.page || !region) return;
+        els.runRegionOcrVariants.disabled = true;
+        setStatus(`Running OCR variants for ${region.region_id}...`);
+        try {
+            const result = await requestJson(
+                `/api/review/projects/${encodeURIComponent(state.project.project_id)}/pages/${encodeURIComponent(state.page.page_id)}/regions/${encodeURIComponent(region.region_id)}/ocr/variants`,
+                { method: "POST" }
+            );
+            state.page = result.page;
+            state.selectedRegionId = region.region_id;
+            renderRegionList();
+            renderRecognitionDiagnostics();
+            renderOverlay();
+            renderSelectedRegion();
+            const count = result.attempts?.length || 0;
+            const best = result.best_attempt?.attempt_id || "none";
+            setStatus(`OCR variants generated ${count} attempt(s); selected ${best}.`);
+        } catch (error) {
+            setStatus(error.message || "Region OCR variants failed.");
+        } finally {
+            els.runRegionOcrVariants.disabled = !selectedRegion();
         }
     }
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from PIL import Image, ImageOps
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 try:
     import pytesseract
@@ -26,6 +26,7 @@ class RegionOCRRoute:
     psm: int | None
     preprocess_profile: str = "none"
     engine: str = "tesseract"
+    variant_id: str = "default"
     status: str = "ready"
     reason: str = ""
 
@@ -35,6 +36,7 @@ class RegionOCRRoute:
             "language": self.language,
             "psm": self.psm,
             "preprocess_profile": self.preprocess_profile,
+            "variant_id": self.variant_id,
             "status": self.status,
             "reason": self.reason,
         }
@@ -74,23 +76,84 @@ class RegionOCRService:
         self.text_cleaner = TextCleaner()
 
     def route_for_region_type(self, region_type: str | None) -> RegionOCRRoute:
+        routes = self.routes_for_region_type(region_type)
+        if routes:
+            return routes[0]
         region_type = str(region_type or "unknown_needs_review")
-        routes = {
-            "english_text": RegionOCRRoute(language="eng", psm=6),
-            "romanized_japanese_text": RegionOCRRoute(language="eng", psm=6),
-            "caption_label": RegionOCRRoute(language="eng", psm=7),
-            "modern_japanese_horizontal": RegionOCRRoute(language="jpn", psm=6, preprocess_profile="upscale_2x"),
-            "modern_japanese_vertical": RegionOCRRoute(language="jpn_vert", psm=5, preprocess_profile="upscale_2x"),
-            "mixed_english_japanese": RegionOCRRoute(language="eng+jpn", psm=6),
-        }
-        if region_type in routes:
-            return routes[region_type]
         return RegionOCRRoute(
             language=None,
             psm=None,
             status="skipped",
             reason=f"Region type {region_type} is not OCR-routable in this slice.",
         )
+
+    def routes_for_region_type(self, region_type: str | None) -> list[RegionOCRRoute]:
+        """Return deterministic review-mode variants for a region type."""
+        region_type = str(region_type or "unknown_needs_review")
+        routes = {
+            "english_text": [
+                RegionOCRRoute(language="eng", psm=6),
+                RegionOCRRoute(language="eng", psm=4, variant_id="psm_4"),
+                RegionOCRRoute(language="eng", psm=11, variant_id="psm_11"),
+                RegionOCRRoute(language="eng", psm=6, preprocess_profile="grayscale", variant_id="grayscale"),
+                RegionOCRRoute(language="eng", psm=6, preprocess_profile="threshold", variant_id="threshold"),
+                RegionOCRRoute(language="eng", psm=6, preprocess_profile="upscale_2x", variant_id="upscale_2x"),
+                RegionOCRRoute(language="eng", psm=6, preprocess_profile="contrast_sharpen", variant_id="contrast_sharpen"),
+            ],
+            "romanized_japanese_text": [
+                RegionOCRRoute(language="eng", psm=6),
+                RegionOCRRoute(language="eng", psm=4, variant_id="psm_4"),
+                RegionOCRRoute(language="eng", psm=11, variant_id="psm_11"),
+                RegionOCRRoute(language="eng", psm=6, preprocess_profile="upscale_2x", variant_id="upscale_2x"),
+                RegionOCRRoute(language="eng", psm=6, preprocess_profile="contrast_sharpen", variant_id="contrast_sharpen"),
+            ],
+            "caption_label": [
+                RegionOCRRoute(language="eng", psm=7),
+                RegionOCRRoute(language="eng", psm=6, variant_id="psm_6"),
+                RegionOCRRoute(language="eng", psm=11, variant_id="psm_11"),
+                RegionOCRRoute(language="eng", psm=7, preprocess_profile="upscale_2x", variant_id="upscale_2x"),
+            ],
+            "modern_japanese_horizontal": [
+                RegionOCRRoute(language="jpn", psm=6, preprocess_profile="upscale_2x"),
+                RegionOCRRoute(language="jpn", psm=6, preprocess_profile="threshold", variant_id="threshold"),
+                RegionOCRRoute(language="jpn", psm=7, preprocess_profile="upscale_2x", variant_id="psm_7_upscale_2x"),
+                RegionOCRRoute(language="eng+jpn", psm=6, preprocess_profile="upscale_2x", variant_id="eng_jpn_upscale_2x"),
+            ],
+            "modern_japanese_vertical": [
+                RegionOCRRoute(language="jpn_vert", psm=5, preprocess_profile="upscale_2x"),
+                RegionOCRRoute(language="jpn_vert", psm=5, preprocess_profile="threshold", variant_id="threshold"),
+                RegionOCRRoute(language="jpn_vert", psm=5, preprocess_profile="grayscale", variant_id="grayscale"),
+                RegionOCRRoute(language="jpn", psm=5, preprocess_profile="upscale_2x", variant_id="jpn_upscale_2x"),
+            ],
+            "mixed_english_japanese": [
+                RegionOCRRoute(language="eng+jpn", psm=6),
+                RegionOCRRoute(language="eng+jpn", psm=11, variant_id="psm_11"),
+                RegionOCRRoute(language="jpn", psm=6, preprocess_profile="upscale_2x", variant_id="jpn_upscale_2x"),
+                RegionOCRRoute(language="eng", psm=6, variant_id="eng_control"),
+            ],
+        }
+        return routes.get(region_type, [])
+
+    def run_variants(
+        self,
+        *,
+        image_path: str | Path,
+        bbox: list[int],
+        region_type: str,
+        region_id: str,
+    ) -> list[RegionOCRResult]:
+        routes = self.routes_for_region_type(region_type)
+        if not routes:
+            return [self.run(image_path=image_path, bbox=bbox, region_type=region_type, region_id=region_id)]
+        return [
+            self._run_route(
+                image_path=Path(image_path),
+                bbox=bbox,
+                region_id=region_id,
+                route=route,
+            )
+            for route in routes
+        ]
 
     def run(
         self,
@@ -120,9 +183,33 @@ class RegionOCRService:
                 metadata={"region_id": region_id, "error": "pytesseract is not installed"},
             )
 
+        return self._run_route(
+            image_path=Path(image_path),
+            bbox=bbox,
+            region_id=region_id,
+            route=route,
+        )
+
+    def _run_route(
+        self,
+        *,
+        image_path: Path,
+        bbox: list[int],
+        region_id: str,
+        route: RegionOCRRoute,
+    ) -> RegionOCRResult:
+        if pytesseract is None:
+            return RegionOCRResult(
+                text="",
+                cleaned_text="",
+                confidence=None,
+                route=route,
+                status="unavailable",
+                metadata={"region_id": region_id, "error": "pytesseract is not installed"},
+            )
         start = time.time()
         try:
-            crop = self._crop_image(Path(image_path), bbox)
+            crop = self._crop_image(image_path, bbox)
             crop = self._preprocess(crop, route.preprocess_profile)
             image_array = np.array(crop)
             config = f"--psm {route.psm} --oem 1 -c preserve_interword_spaces=1"
@@ -150,6 +237,7 @@ class RegionOCRService:
                     "crop_width": crop.width,
                     "crop_height": crop.height,
                     "config": config,
+                    "variant_id": route.variant_id,
                 },
             )
         except Exception as exc:
@@ -176,9 +264,33 @@ class RegionOCRService:
 
     @staticmethod
     def _preprocess(image: Image.Image, profile: str) -> Image.Image:
+        if profile == "grayscale":
+            return image.convert("L")
+        if profile == "threshold":
+            gray = image.convert("L")
+            return gray.point(lambda value: 255 if value > 170 else 0, mode="1").convert("L")
         if profile == "upscale_2x":
             return image.resize((image.width * 2, image.height * 2), Image.Resampling.LANCZOS)
+        if profile == "upscale_3x":
+            return image.resize((image.width * 3, image.height * 3), Image.Resampling.LANCZOS)
+        if profile == "contrast_sharpen":
+            enhanced = ImageEnhance.Contrast(image).enhance(1.6)
+            return enhanced.filter(ImageFilter.SHARPEN)
         return image
+
+
+def rank_region_ocr_results(results: list[RegionOCRResult]) -> list[RegionOCRResult]:
+    """Return variants from weakest to strongest so the best can be stored last."""
+    return sorted(results, key=_region_ocr_score)
+
+
+def _region_ocr_score(result: RegionOCRResult) -> tuple[int, float, int]:
+    text = (result.cleaned_text or result.text or "").strip()
+    return (
+        1 if result.status == "ok" and text else 0,
+        float(result.confidence or 0.0),
+        len(text),
+    )
 
 
 def _average_confidence(data: dict[str, Any]) -> float:

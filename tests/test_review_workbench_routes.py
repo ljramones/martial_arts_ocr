@@ -43,6 +43,7 @@ def test_review_page_route_loads(tmp_path):
     assert b"Draw Image Region" in response.data
     assert b"Draw Ignore Region" in response.data
     assert b"Region Inventory" in response.data
+    assert b"Run Variants" in response.data
 
 
 def test_review_project_routes_create_list_image_and_reload(tmp_path):
@@ -322,6 +323,56 @@ def test_review_region_ocr_route_stores_attempt_without_running_full_pipeline(tm
         (data_dir / "runtime" / "review_projects" / "region_ocr" / "project_state.json").read_text(encoding="utf-8")
     )
     assert saved["pages"][0]["ocr_attempts"][0]["attempt_id"] == "ocr_001"
+
+
+def test_review_region_ocr_variants_store_grouped_attempts_and_select_best(tmp_path):
+    app, data_dir, scans = _create_review_app(tmp_path)
+    _write_image(scans / "page.png", size=(220, 140))
+
+    class FakeRegionOCRService:
+        def run_variants(self, *, image_path, bbox, region_type, region_id):
+            return [
+                RegionOCRResult(
+                    text="Le opmgageet",
+                    cleaned_text="Le opmgageet",
+                    confidence=0.40,
+                    route=RegionOCRRoute(language="eng", psm=6),
+                    status="ok",
+                ),
+                RegionOCRResult(
+                    text="[Question.]\nAaaa yes.",
+                    cleaned_text="[Question.] Aaaa yes.",
+                    confidence=0.91,
+                    route=RegionOCRRoute(language="eng", psm=4, variant_id="psm_4"),
+                    status="ok",
+                ),
+            ]
+
+    app.config["REVIEW_REGION_OCR_SERVICE"] = FakeRegionOCRService()
+    client = app.test_client()
+    client.post("/api/review/projects", json={"source_folder": str(scans), "project_id": "region_ocr_variants"})
+    client.post(
+        "/api/review/projects/region_ocr_variants/pages/page_001/regions",
+        json={"reviewed_type": "english_text", "reviewed_bbox": [10, 12, 80, 24]},
+    )
+
+    response = client.post("/api/review/projects/region_ocr_variants/pages/page_001/regions/r_001/ocr/variants")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert len(payload["attempts"]) == 2
+    assert payload["best_attempt"]["cleaned_text"] == "[Question.] Aaaa yes."
+    assert payload["best_attempt"]["route"]["variant_id"] == "psm_4"
+    assert payload["attempts"][0]["metadata"]["variant_group_id"] == payload["variant_group_id"]
+    assert payload["attempts"][0]["metadata"]["is_variant"] is True
+    region = payload["page"]["regions"][0]
+    assert region["ocr_attempt_ids"] == ["ocr_001", "ocr_002"]
+    assert region["last_ocr_attempt_id"] == "ocr_002"
+
+    saved = json.loads(
+        (data_dir / "runtime" / "review_projects" / "region_ocr_variants" / "project_state.json").read_text(encoding="utf-8")
+    )
+    assert len(saved["pages"][0]["ocr_attempts"]) == 2
 
 
 def test_review_project_rejects_disallowed_source_folder(tmp_path):

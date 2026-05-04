@@ -33,7 +33,13 @@ from martial_arts_ocr.db.models import Document, Page, ProcessingResult
 from martial_arts_ocr.pipeline import PipelineRequest, WorkflowOrchestrator
 from martial_arts_ocr.pipeline.document_models import DocumentResult, PageResult
 from martial_arts_ocr.pipeline.extraction_service import ExtractionService, ExtractionServiceOptions
-from martial_arts_ocr.review import OrientationService, RegionOCRService, REGION_TYPES, ReviewWorkbenchStore
+from martial_arts_ocr.review import (
+    OrientationService,
+    RegionOCRService,
+    REGION_TYPES,
+    ReviewWorkbenchStore,
+    rank_region_ocr_results,
+)
 
 APP_EXTENSION_KEY = "martial_arts_ocr"
 
@@ -1026,6 +1032,63 @@ def api_review_region_ocr(project_id, page_id, region_id):
             ocr_result.to_attempt(),
         )
         return jsonify({"attempt": attempt, "page": store.get_page(state, page_id)}), 200
+    except PermissionError as exc:
+        return _review_json_error(exc, 403)
+    except (FileNotFoundError, KeyError) as exc:
+        return _review_json_error(exc, 404)
+    except Exception as exc:
+        return _review_json_error(exc, 400)
+
+
+@app.post("/api/review/projects/<project_id>/pages/<page_id>/regions/<region_id>/ocr/variants")
+def api_review_region_ocr_variants(project_id, page_id, region_id):
+    store = _review_workbench_store()
+    try:
+        state = store.load_project(project_id)
+        page = store.get_page(state, page_id)
+        region = store.get_region(page, region_id)
+        bbox = region.get("effective_bbox")
+        if not bbox:
+            return _review_json_error(ValueError("Region has no effective bbox"))
+        image_path = _effective_page_image_path(store, state, page_id)
+        results = _review_region_ocr_service().run_variants(
+            image_path=image_path,
+            bbox=bbox,
+            region_type=region.get("effective_type") or "unknown_needs_review",
+            region_id=region_id,
+        )
+        variant_group_id = f"ocr_variants_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        attempts = []
+        ranked_results = rank_region_ocr_results(results)
+        for index, result in enumerate(ranked_results, start=1):
+            attempt_payload = result.to_attempt()
+            metadata = dict(attempt_payload.get("metadata") or {})
+            metadata.update(
+                {
+                    "variant_group_id": variant_group_id,
+                    "variant_index": index,
+                    "variant_total": len(ranked_results),
+                    "is_variant": True,
+                }
+            )
+            attempt_payload["metadata"] = metadata
+            attempts.append(
+                store.add_region_ocr_attempt(
+                    state,
+                    page_id,
+                    region_id,
+                    attempt_payload,
+                )
+            )
+        best_attempt = attempts[-1] if attempts else None
+        return jsonify(
+            {
+                "attempts": attempts,
+                "best_attempt": best_attempt,
+                "variant_group_id": variant_group_id,
+                "page": store.get_page(state, page_id),
+            }
+        ), 200
     except PermissionError as exc:
         return _review_json_error(exc, 403)
     except (FileNotFoundError, KeyError) as exc:

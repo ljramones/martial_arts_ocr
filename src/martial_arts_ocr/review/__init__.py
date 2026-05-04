@@ -9,6 +9,7 @@ from martial_arts_ocr.review.region_ocr_service import (
     RegionOCRResult,
     RegionOCRRoute,
     RegionOCRService,
+    rank_region_ocr_results,
 )
 from martial_arts_ocr.review.workbench_state import (
     REGION_TYPES,
@@ -22,6 +23,7 @@ __all__ = [
     "RegionOCRResult",
     "RegionOCRRoute",
     "RegionOCRService",
+    "rank_region_ocr_results",
     "REGION_TYPES",
     "ReviewWorkbenchStore",
 ]

@@ -206,6 +206,10 @@ mixed_english_japanese        -> eng+jpn, PSM 6
 
 `image`, `diagram`, `photo`, `ignore`, and unknown regions are skipped in this slice. OCR attempts are review artifacts; they do not mutate source images, OCR text elsewhere, canonical Japanese fields, or runtime defaults.
 
+Use `Run Variants` when the default selected-region OCR is poor. This runs a small review-mode matrix for the selected region only, stores each output as a separate OCR attempt, and selects the highest-scored attempt as the latest region OCR result. Variants may include alternate PSMs and preprocessing such as grayscale, threshold, upscale, or contrast/sharpen depending on region type.
+
+Variant results are comparison evidence, not truth. Review the actual output before accepting or using it downstream.
+
 ## Duplicate and Nudge Regions
 
 If recognition finds one region in a repeated row but misses nearby siblings, prefer `Draw Image Region` for the missing boxes. The selected-region panel also has advanced duplicate/nudge controls:
