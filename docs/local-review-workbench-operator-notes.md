@@ -320,7 +320,9 @@ Formats:
 
 - `Review bundle`: multi-page audit/recovery artifacts.
 - `HTML`: clean research reconstruction with reviewed text and image crops.
-- `DOCX later` and `PDF later` are intentionally disabled in this slice.
+- `DOCX`: clean research reconstruction with reviewed text and image crops.
+- `PDF later` remains intentionally disabled.
+- `Include raw OCR appendix in DOCX`: optional. Leave it unchecked for the default readable DOCX. Check it only when the DOCX itself should include raw OCR evidence in a final appendix.
 
 Export v2 writes under:
 
@@ -353,7 +355,9 @@ The existing `Export Page` button and page-level endpoint remain available for t
 
 Export v2 still follows the same non-destructive rules: reviewed text is preferred for display/plain text, raw OCR is preserved in JSON/Markdown, source text is not mutated, ignored regions are skipped from text and crops by default, and generated exports are local runtime artifacts.
 
-DOCX export is a clean research reconstruction generated from the same Export v2 model. It includes page headings, reviewed/display text, raw OCR evidence, region metadata, and image/diagram crops where available. It is not a pixel-perfect reproduction of the scanned page.
+DOCX export is a clean research reconstruction generated from the same Export v2 model. It includes page headings, reviewed/display text, region metadata, and image/diagram crops where available. It is not a pixel-perfect reproduction of the scanned page.
+
+By default, DOCX omits full raw OCR from the main body for readability and includes a concise note that raw OCR is preserved in the review bundle. If `Include raw OCR appendix in DOCX` is selected, raw OCR evidence is placed in an appendix at the end of the DOCX rather than inline after each region. The review bundle JSON and Markdown artifacts always preserve raw OCR regardless of this DOCX option.
 
 ## Duplicate and Nudge Regions
 

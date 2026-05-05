@@ -44,6 +44,7 @@
         exportFormatBundle: document.getElementById("review-export-format-bundle"),
         exportFormatHtml: document.getElementById("review-export-format-html"),
         exportFormatDocx: document.getElementById("review-export-format-docx"),
+        exportDocxRawOcr: document.getElementById("review-export-docx-raw-ocr"),
         exportSummary: document.getElementById("review-export-summary"),
         addRegion: document.getElementById("review-add-region"),
         stage: document.getElementById("review-page-stage"),
@@ -967,6 +968,7 @@
                     body: JSON.stringify({
                         page_selection: pageSelection,
                         formats,
+                        options: exportOptions(formats),
                     }),
                 }
             );
@@ -1014,6 +1016,16 @@
             return { mode: "all" };
         }
         return null;
+    }
+
+    function exportOptions(formats) {
+        const options = {};
+        if (formats.includes("docx")) {
+            options.docx = {
+                include_raw_ocr: Boolean(els.exportDocxRawOcr && els.exportDocxRawOcr.checked),
+            };
+        }
+        return options;
     }
 
     async function saveSelectedRegion() {

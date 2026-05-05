@@ -1227,6 +1227,7 @@ def api_review_export_project(project_id):
     data = request.get_json() or {}
     page_selection = data.get("page_selection") or {}
     formats = data.get("formats") or ["review_bundle", "html"]
+    options = data.get("options") or {}
     store = _review_workbench_store()
     try:
         state = store.load_project(project_id)
@@ -1241,6 +1242,7 @@ def api_review_export_project(project_id):
             effective_image_paths=effective_image_paths,
             page_selection=page_selection,
             formats=formats,
+            options=options,
         )
         return jsonify(export_result), 200
     except PermissionError as exc:

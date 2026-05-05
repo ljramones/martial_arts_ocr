@@ -115,11 +115,13 @@ def export_project_review_v2(
     effective_image_paths: dict[str, Path],
     page_selection: dict[str, Any],
     formats: list[str],
+    options: dict[str, Any] | None = None,
     export_id: str | None = None,
 ) -> dict[str, Any]:
     """Write Export v2 artifacts for one or more reviewed workbench pages."""
 
     normalized_formats = _normalize_formats(formats)
+    normalized_options = _normalize_export_options(options)
     pages = resolve_page_selection(state, page_selection)
     created_at = _now()
     export_dir = _unique_export_dir(project_dir / "exports", export_id)
@@ -210,6 +212,7 @@ def export_project_review_v2(
         "created_at": created_at,
         "export_version": 2,
         "source_text_mutated": False,
+        "options": normalized_options,
         "page_selection": {
             "mode": page_selection.get("mode") or "current",
             "page_ids": [page.get("page_id") for page in pages],
@@ -229,7 +232,12 @@ def export_project_review_v2(
         html_paths["assets_dir"] = str(html_assets_dir)
     if "docx" in normalized_formats:
         docx_path = docx_dir / "document.docx"
-        _write_docx_document(document_model, docx_path, export_dir)
+        _write_docx_document(
+            document_model,
+            docx_path,
+            export_dir,
+            options=normalized_options.get("docx") or {},
+        )
         docx_paths["document"] = str(docx_path)
         docx_paths["assets_dir"] = str(docx_assets_dir)
 
@@ -241,6 +249,7 @@ def export_project_review_v2(
             "page_ids": [page.get("page_id") for page in pages],
         },
         "formats": normalized_formats,
+        "options": normalized_options,
         "source_text_mutated": False,
         "export_version": 2,
         "artifact_paths": {
@@ -710,7 +719,15 @@ def _render_html_document(document_model: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _write_docx_document(document_model: dict[str, Any], docx_path: Path, export_dir: Path) -> None:
+def _write_docx_document(
+    document_model: dict[str, Any],
+    docx_path: Path,
+    export_dir: Path,
+    *,
+    options: dict[str, Any] | None = None,
+) -> None:
+    docx_options = options or {}
+    include_raw_ocr = bool(docx_options.get("include_raw_ocr"))
     image_relationships: list[dict[str, Any]] = []
     body_parts = [
         _docx_paragraph(f"Workbench Review Export: {document_model.get('project_id') or ''}", bold=True),
@@ -719,6 +736,10 @@ def _write_docx_document(document_model: dict[str, Any], docx_path: Path, export
         _docx_paragraph("source_text_mutated=false"),
         _docx_paragraph("Raw OCR is preserved in the review bundle and page Markdown/JSON artifacts."),
     ]
+    if include_raw_ocr:
+        body_parts.append(_docx_paragraph("Raw OCR appendix: included at end of document."))
+    else:
+        body_parts.append(_docx_paragraph("DOCX main body omits full raw OCR by default for readability."))
     for page in document_model.get("pages") or []:
         body_parts.extend(
             [
@@ -772,10 +793,13 @@ def _write_docx_document(document_model: dict[str, Any], docx_path: Path, export
                 body_parts.append(_docx_image_paragraph(image_path, relationship_id, len(image_relationships)))
                 body_parts.append(_docx_paragraph(f"Crop: {block.get('docx_asset_path')}"))
             if block.get("raw_ocr"):
-                body_parts.append(_docx_paragraph("Raw / cleaned OCR evidence", bold=True))
-                body_parts.extend(_docx_text_paragraphs(str(block.get("raw_ocr"))))
+                body_parts.append(_docx_paragraph("Raw OCR evidence preserved in review bundle."))
             if block.get("notes"):
                 body_parts.append(_docx_paragraph(f"Notes: {block.get('notes')}"))
+    if include_raw_ocr:
+        appendix_parts = _docx_raw_ocr_appendix(document_model)
+        if appendix_parts:
+            body_parts.extend(appendix_parts)
     body_parts.append("<w:sectPr><w:pgSz w:w=\"12240\" w:h=\"15840\"/><w:pgMar w:top=\"1080\" w:right=\"1080\" w:bottom=\"1080\" w:left=\"1080\" w:header=\"720\" w:footer=\"720\" w:gutter=\"0\"/></w:sectPr>")
     document_xml = _docx_document_xml("\n".join(body_parts))
     docx_path.parent.mkdir(parents=True, exist_ok=True)
@@ -855,6 +879,37 @@ def _docx_paragraph(text: Any, *, bold: bool = False) -> str:
 def _docx_text_paragraphs(text: str) -> list[str]:
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     return [_docx_paragraph(line) for line in lines] or [_docx_paragraph("")]
+
+
+def _docx_raw_ocr_appendix(document_model: dict[str, Any]) -> list[str]:
+    appendix_parts = [_docx_paragraph("Appendix: Raw OCR Evidence", bold=True)]
+    raw_region_count = 0
+    for page in document_model.get("pages") or []:
+        for block in page.get("blocks") or []:
+            raw_ocr = str(block.get("raw_ocr") or "")
+            if not raw_ocr:
+                continue
+            raw_region_count += 1
+            display_text = str(block.get("text") or "")
+            appendix_parts.extend(
+                [
+                    _docx_paragraph(
+                        f"Page: {page.get('page_id') or ''} | Region: {block.get('region_id') or ''}",
+                        bold=True,
+                    ),
+                    _docx_paragraph(f"Type: {block.get('region_type') or block.get('type') or ''}"),
+                    _docx_paragraph(f"Review status: {block.get('review_status') or ''}"),
+                    _docx_paragraph(f"OCR route: {block.get('ocr_route') or ''}"),
+                ]
+            )
+            if raw_ocr.strip() == display_text.strip():
+                appendix_parts.append(_docx_paragraph("Raw OCR is identical to displayed text."))
+            else:
+                appendix_parts.append(_docx_paragraph("Raw OCR:", bold=True))
+                appendix_parts.extend(_docx_text_paragraphs(raw_ocr))
+    if raw_region_count == 0:
+        return []
+    return appendix_parts
 
 
 def _docx_image_paragraph(image_path: Path, relationship_id: str, image_index: int) -> str:
@@ -997,6 +1052,18 @@ def _normalize_formats(formats: list[str]) -> list[str]:
     if not normalized:
         raise ValueError("at least one export format is required")
     return normalized
+
+
+def _normalize_export_options(options: dict[str, Any] | None) -> dict[str, Any]:
+    raw_options = options or {}
+    docx_options = raw_options.get("docx") if isinstance(raw_options, dict) else {}
+    if not isinstance(docx_options, dict):
+        docx_options = {}
+    return {
+        "docx": {
+            "include_raw_ocr": bool(docx_options.get("include_raw_ocr", False)),
+        }
+    }
 
 
 def _page_range_ids(pages: list[dict[str, Any]], start: str, end: str) -> list[str]:

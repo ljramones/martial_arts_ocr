@@ -94,6 +94,7 @@ MVP slice 8 implemented:
 - multi-page review bundle with per-page JSON, Markdown, text, and crops;
 - readable HTML export with page sections, reviewed text, and crop assets;
 - DOCX export generated from the same shared Export v2 model;
+- readable DOCX is the default: raw OCR remains preserved in the review bundle, while DOCX includes raw OCR only in an optional appendix;
 - `export_manifest.json` recording pages, formats, version, and `source_text_mutated=false`;
 - compact UI export controls with PDF explicitly deferred.
 

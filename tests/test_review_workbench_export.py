@@ -244,6 +244,7 @@ def test_review_project_export_v2_writes_multi_page_bundle_and_html(tmp_path):
     assert manifest["export_version"] == 2
     assert manifest["page_selection"]["mode"] == "all"
     assert manifest["formats"] == ["review_bundle", "html", "docx"]
+    assert manifest["options"]["docx"]["include_raw_ocr"] is False
     assert manifest["source_text_mutated"] is False
     assert manifest["artifact_paths"]["docx"]["document"].endswith("document.docx")
 
@@ -302,8 +303,66 @@ def test_review_project_export_v2_writes_multi_page_bundle_and_html(tmp_path):
     assert "Workbench Review Export: export_v2" in document_xml
     assert "Page one reviewed" in document_xml
     assert "Page two caption" in document_xml
-    assert "Raw / cleaned OCR evidence" in document_xml
+    assert "DOCX main body omits full raw OCR by default for readability." in document_xml
+    assert "Raw OCR evidence preserved in review bundle." in document_xml
+    assert "Appendix: Raw OCR Evidence" not in document_xml
+    assert "Page one raw" not in document_xml
     assert "source_text_mutated=false" in document_xml
+
+
+def test_review_project_export_v2_docx_can_include_raw_ocr_appendix(tmp_path):
+    app, _data_dir, scans = _create_review_app(tmp_path)
+    _write_marker_image(scans / "page.png", size=(120, 90))
+
+    class FakeRegionOCRService:
+        def run(self, *, image_path, bbox, region_type, region_id):
+            return RegionOCRResult(
+                text="Raw OCR evidence line",
+                cleaned_text="Raw OCR evidence line",
+                confidence=0.8,
+                route=RegionOCRRoute(language="eng", psm=6),
+                status="ok",
+            )
+
+    app.config["REVIEW_REGION_OCR_SERVICE"] = FakeRegionOCRService()
+    client = app.test_client()
+    client.post("/api/review/projects", json={"source_folder": str(scans), "project_id": "export_docx_raw"})
+    client.post(
+        "/api/review/projects/export_docx_raw/pages/page_001/regions",
+        json={"reviewed_type": "english_text", "reviewed_bbox": [5, 5, 45, 20]},
+    )
+    client.post("/api/review/projects/export_docx_raw/pages/page_001/regions/r_001/ocr")
+    client.patch(
+        "/api/review/projects/export_docx_raw/pages/page_001/ocr_attempts/ocr_001",
+        json={"review_status": "edited", "reviewed_text": "Reviewed display text"},
+    )
+
+    response = client.post(
+        "/api/review/projects/export_docx_raw/export",
+        json={
+            "page_selection": {"mode": "all"},
+            "formats": ["review_bundle", "docx"],
+            "options": {"docx": {"include_raw_ocr": True}},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    export_dir = Path(payload["export_path"])
+    manifest = json.loads((export_dir / "export_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["options"]["docx"]["include_raw_ocr"] is True
+
+    page_review = json.loads(
+        (export_dir / "review_bundle" / "pages" / "page_001_review.json").read_text(encoding="utf-8")
+    )
+    assert page_review["regions"][0]["ocr"]["raw_text"] == "Raw OCR evidence line"
+
+    with zipfile.ZipFile(export_dir / "docx" / "document.docx") as archive:
+        document_xml = archive.read("word/document.xml").decode("utf-8")
+    assert "Reviewed display text" in document_xml
+    assert "Appendix: Raw OCR Evidence" in document_xml
+    assert "Page: page_001 | Region: r_001" in document_xml
+    assert "Raw OCR evidence line" in document_xml
 
 
 def test_review_project_export_v2_supports_selected_and_range_modes(tmp_path):

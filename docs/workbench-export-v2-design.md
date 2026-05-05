@@ -588,7 +588,8 @@ Implementation status:
 - Supported formats: `review_bundle`, `html`, and `docx`.
 - Generated artifacts include `export_manifest.json`, `project_state_snapshot.json`, `document_export_model.json`, multi-page review bundle pages/crops, and `html/document.html` with assets.
 - HTML polish pass added a document header, page table of contents, page metadata summaries, clearer region blocks, crop captions, visible uncertainty badges, and collapsible raw OCR evidence.
-- DOCX export pass added `docx/document.docx` from the same shared export model, including reviewed text, raw OCR evidence, region metadata, and image crops.
+- DOCX export pass added `docx/document.docx` from the same shared export model, including reviewed text, region metadata, and image crops.
+- DOCX polish pass made readable DOCX the default: full raw OCR is omitted from the DOCX main body unless `options.docx.include_raw_ocr=true`, in which case raw OCR appears in a separated appendix. The review bundle JSON/Markdown artifacts still preserve full raw OCR evidence.
 - `pdf` remains unsupported and should be rejected by the backend until a later phase.
 
 ## Future Backlog
