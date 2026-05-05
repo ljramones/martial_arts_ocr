@@ -44,6 +44,7 @@ def test_review_page_route_loads(tmp_path):
     assert b"Draw Ignore Region" in response.data
     assert b"Region Inventory" in response.data
     assert b"Run Variants" in response.data
+    assert b"OCR Reviewed Text Regions" in response.data
     assert b"Export Page" in response.data
     assert b"Export Selection" in response.data
     assert b"Selected pages" in response.data
@@ -421,6 +422,152 @@ def test_review_ocr_attempt_review_route_preserves_raw_and_stores_reviewed_text(
         (data_dir / "runtime" / "review_projects" / "ocr_review_route" / "project_state.json").read_text(encoding="utf-8")
     )
     assert saved["pages"][0]["ocr_attempts"][0]["reviewed_text"] == "[Question.]\nAaaa yes."
+
+
+def test_review_page_ocr_reviewed_regions_creates_attempts_and_skips_non_text(tmp_path):
+    app, _data_dir, scans = _create_review_app(tmp_path)
+    _write_image(scans / "page.png", size=(260, 180))
+
+    class FakeRegionOCRService:
+        def __init__(self):
+            self.calls = []
+
+        def run(self, *, image_path, bbox, region_type, region_id):
+            self.calls.append(
+                {
+                    "image_path": Path(image_path),
+                    "bbox": bbox,
+                    "region_type": region_type,
+                    "region_id": region_id,
+                }
+            )
+            return RegionOCRResult(
+                text=f"text for {region_id}",
+                cleaned_text=f"text for {region_id}",
+                confidence=0.8,
+                route=RegionOCRRoute(language="eng", psm=6),
+                status="ok",
+            )
+
+    service = FakeRegionOCRService()
+    app.config["REVIEW_REGION_OCR_SERVICE"] = service
+    client = app.test_client()
+    client.post("/api/review/projects", json={"source_folder": str(scans), "project_id": "ocr_all"})
+    for region_type, bbox in [
+        ("english_text", [10, 12, 80, 24]),
+        ("caption_label", [15, 60, 90, 20]),
+        ("diagram", [110, 20, 70, 80]),
+        ("ignore", [5, 100, 60, 20]),
+        ("unknown_needs_review", [90, 100, 40, 30]),
+    ]:
+        client.post(
+            "/api/review/projects/ocr_all/pages/page_001/regions",
+            json={"reviewed_type": region_type, "reviewed_bbox": bbox},
+        )
+
+    response = client.post("/api/review/projects/ocr_all/pages/page_001/ocr-reviewed-regions")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["attempted_count"] == 2
+    assert payload["skipped_count"] == 3
+    assert payload["error_count"] == 0
+    assert payload["created_attempt_ids"] == ["ocr_001", "ocr_002"]
+    assert [call["region_id"] for call in service.calls] == ["r_001", "r_002"]
+    assert [call["region_type"] for call in service.calls] == ["english_text", "caption_label"]
+    skipped = {item["region_id"]: item["reason"] for item in payload["skipped"]}
+    assert skipped == {
+        "r_003": "non_text_region",
+        "r_004": "ignored_region",
+        "r_005": "non_text_region",
+    }
+    page = payload["page"]
+    assert len(page["ocr_attempts"]) == 2
+    assert page["ocr_attempts"][0]["source_text_mutated"] is False
+    assert page["regions"][0]["last_ocr_attempt_id"] == "ocr_001"
+    assert page["regions"][1]["last_ocr_attempt_id"] == "ocr_002"
+    assert "last_ocr_attempt_id" not in page["regions"][2]
+
+
+def test_review_page_ocr_reviewed_regions_preserves_reviewed_text(tmp_path):
+    app, data_dir, scans = _create_review_app(tmp_path)
+    _write_image(scans / "page.png", size=(220, 140))
+
+    class FakeRegionOCRService:
+        def run(self, *, image_path, bbox, region_type, region_id):
+            return RegionOCRResult(
+                text="new OCR text",
+                cleaned_text="new OCR text",
+                confidence=0.7,
+                route=RegionOCRRoute(language="eng", psm=6),
+                status="ok",
+            )
+
+    app.config["REVIEW_REGION_OCR_SERVICE"] = FakeRegionOCRService()
+    client = app.test_client()
+    client.post("/api/review/projects", json={"source_folder": str(scans), "project_id": "ocr_all_preserve"})
+    client.post(
+        "/api/review/projects/ocr_all_preserve/pages/page_001/regions",
+        json={"reviewed_type": "english_text", "reviewed_bbox": [10, 12, 80, 24]},
+    )
+    client.post("/api/review/projects/ocr_all_preserve/pages/page_001/regions/r_001/ocr")
+    client.patch(
+        "/api/review/projects/ocr_all_preserve/pages/page_001/ocr_attempts/ocr_001",
+        json={"review_status": "edited", "reviewed_text": "Reviewed correction"},
+    )
+
+    response = client.post("/api/review/projects/ocr_all_preserve/pages/page_001/ocr-reviewed-regions")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["attempted_count"] == 0
+    assert payload["skipped"] == [{"region_id": "r_001", "reason": "reviewed_ocr_exists"}]
+    page = payload["page"]
+    assert len(page["ocr_attempts"]) == 1
+    assert page["ocr_attempts"][0]["reviewed_text"] == "Reviewed correction"
+    assert page["ocr_attempts"][0]["source_text_mutated"] is False
+
+    saved = json.loads(
+        (data_dir / "runtime" / "review_projects" / "ocr_all_preserve" / "project_state.json").read_text(encoding="utf-8")
+    )
+    assert saved["pages"][0]["ocr_attempts"][0]["reviewed_text"] == "Reviewed correction"
+
+
+def test_review_page_ocr_reviewed_regions_continues_after_region_error(tmp_path):
+    app, _data_dir, scans = _create_review_app(tmp_path)
+    _write_image(scans / "page.png", size=(220, 140))
+
+    class FakeRegionOCRService:
+        def run(self, *, image_path, bbox, region_type, region_id):
+            if region_id == "r_001":
+                raise RuntimeError("OCR failed for test")
+            return RegionOCRResult(
+                text="second region text",
+                cleaned_text="second region text",
+                confidence=0.72,
+                route=RegionOCRRoute(language="eng", psm=6),
+                status="ok",
+            )
+
+    app.config["REVIEW_REGION_OCR_SERVICE"] = FakeRegionOCRService()
+    client = app.test_client()
+    client.post("/api/review/projects", json={"source_folder": str(scans), "project_id": "ocr_all_errors"})
+    for bbox in ([10, 12, 80, 24], [10, 60, 80, 24]):
+        client.post(
+            "/api/review/projects/ocr_all_errors/pages/page_001/regions",
+            json={"reviewed_type": "english_text", "reviewed_bbox": bbox},
+        )
+
+    response = client.post("/api/review/projects/ocr_all_errors/pages/page_001/ocr-reviewed-regions")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["attempted_count"] == 1
+    assert payload["error_count"] == 1
+    assert payload["errors"][0]["region_id"] == "r_001"
+    assert "OCR failed for test" in payload["errors"][0]["error"]
+    assert payload["created_attempt_ids"] == ["ocr_001"]
+    assert payload["page"]["ocr_attempts"][0]["region_id"] == "r_002"
 
 
 def test_review_project_rejects_disallowed_source_folder(tmp_path):

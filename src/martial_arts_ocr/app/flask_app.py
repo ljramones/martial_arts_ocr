@@ -45,6 +45,15 @@ from martial_arts_ocr.review import (
 )
 
 APP_EXTENSION_KEY = "martial_arts_ocr"
+OCR_ALL_TEXT_REGION_TYPES = {
+    "english_text",
+    "romanized_japanese_text",
+    "modern_japanese_horizontal",
+    "modern_japanese_vertical",
+    "mixed_english_japanese",
+    "caption_label",
+}
+OCR_ALL_REVIEWED_STATUSES = {"accepted", "edited"}
 
 config = get_config()
 # Initialize Flask app
@@ -470,6 +479,25 @@ def _review_region_ocr_service() -> RegionOCRService:
     if injected_service is not None:
         return injected_service
     return RegionOCRService()
+
+
+def _region_ocr_all_skip_reason(region: dict, page_attempts: list[dict]) -> str | None:
+    region_id = str(region.get("region_id") or "")
+    region_type = str(region.get("effective_type") or region.get("reviewed_type") or "")
+    if region.get("ignored") or region.get("status") == "ignored" or region_type == "ignore":
+        return "ignored_region"
+    if region_type not in OCR_ALL_TEXT_REGION_TYPES:
+        return "non_text_region"
+    if not region.get("effective_bbox"):
+        return "no_effective_bbox"
+    for attempt in page_attempts:
+        if attempt.get("region_id") != region_id:
+            continue
+        if str(attempt.get("review_status") or "") in OCR_ALL_REVIEWED_STATUSES:
+            return "reviewed_ocr_exists"
+        if str(attempt.get("reviewed_text") or "").strip():
+            return "reviewed_text_exists"
+    return None
 
 
 def _review_json_error(exc: Exception, status_code: int = 400):
@@ -1089,6 +1117,62 @@ def api_review_region_ocr_variants(project_id, page_id, region_id):
                 "attempts": attempts,
                 "best_attempt": best_attempt,
                 "variant_group_id": variant_group_id,
+                "page": store.get_page(state, page_id),
+            }
+        ), 200
+    except PermissionError as exc:
+        return _review_json_error(exc, 403)
+    except (FileNotFoundError, KeyError) as exc:
+        return _review_json_error(exc, 404)
+    except Exception as exc:
+        return _review_json_error(exc, 400)
+
+
+@app.post("/api/review/projects/<project_id>/pages/<page_id>/ocr-reviewed-regions")
+def api_review_page_ocr_reviewed_regions(project_id, page_id):
+    store = _review_workbench_store()
+    try:
+        state = store.load_project(project_id)
+        page = store.get_page(state, page_id)
+        image_path = _effective_page_image_path(store, state, page_id)
+        service = _review_region_ocr_service()
+        attempts = list(page.get("ocr_attempts") or [])
+        created_attempts = []
+        skipped = []
+        errors = []
+        for region in page.get("regions", []):
+            region_id = str(region.get("region_id") or "")
+            skip_reason = _region_ocr_all_skip_reason(region, attempts)
+            if skip_reason:
+                skipped.append({"region_id": region_id, "reason": skip_reason})
+                continue
+            try:
+                ocr_result = service.run(
+                    image_path=image_path,
+                    bbox=region.get("effective_bbox"),
+                    region_type=region.get("effective_type") or "unknown_needs_review",
+                    region_id=region_id,
+                )
+                attempt = store.add_region_ocr_attempt(
+                    state,
+                    page_id,
+                    region_id,
+                    ocr_result.to_attempt(),
+                )
+                created_attempts.append(attempt)
+                attempts.append(attempt)
+            except Exception as exc:  # keep page-level batch action moving
+                errors.append({"region_id": region_id, "error": str(exc)})
+        return jsonify(
+            {
+                "page_id": page_id,
+                "attempted_count": len(created_attempts),
+                "skipped_count": len(skipped),
+                "error_count": len(errors),
+                "created_attempt_ids": [attempt["attempt_id"] for attempt in created_attempts],
+                "created_attempts": created_attempts,
+                "skipped": skipped,
+                "errors": errors,
                 "page": store.get_page(state, page_id),
             }
         ), 200

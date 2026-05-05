@@ -96,6 +96,15 @@ MVP slice 8 implemented:
 - `export_manifest.json` recording pages, formats, version, and `source_text_mutated=false`;
 - compact UI export controls with DOCX/PDF explicitly deferred.
 
+MVP slice 9 implemented:
+
+- page-level `OCR Reviewed Text Regions` action;
+- OCR is limited to reviewed/effective text-like region types;
+- image, diagram, photo, ignored, unknown/needs-review, and bbox-less regions are skipped;
+- regions with accepted/edited OCR or existing `reviewed_text` are skipped by default;
+- OCR attempts are stored exactly like selected-region OCR attempts;
+- reviewer corrections remain authoritative and `source_text_mutated=false` remains explicit.
+
 Not implemented yet:
 
 - translation;

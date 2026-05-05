@@ -210,6 +210,25 @@ Use `Run Variants` when the default selected-region OCR is poor. This runs a sma
 
 Variant results are comparison evidence, not truth. Review the actual output before accepting or using it downstream.
 
+## OCR Reviewed Text Regions
+
+Click `OCR Reviewed Text Regions` after region review when a page has several reviewed text-like regions. This page-level action reuses the same selected-region OCR routing and storage path, but applies it to eligible regions in one batch.
+
+Eligible region types:
+
+```text
+english_text
+romanized_japanese_text
+modern_japanese_horizontal
+modern_japanese_vertical
+mixed_english_japanese
+caption_label
+```
+
+The batch action skips non-text regions, ignored regions, unknown/needs-review regions, regions without an `effective_bbox`, and any region that already has accepted/edited OCR or `reviewed_text`. It does not overwrite reviewer corrections.
+
+The response summary reports attempts created, skipped regions, and per-region errors. A per-region OCR failure should not stop the rest of the page batch.
+
 ## Review OCR Attempts
 
 The OCR panel separates machine output from reviewed text:

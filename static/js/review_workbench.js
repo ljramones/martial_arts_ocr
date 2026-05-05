@@ -70,6 +70,7 @@
         nudgeDown: document.getElementById("review-nudge-down"),
         runRegionOcr: document.getElementById("review-run-region-ocr"),
         runRegionOcrVariants: document.getElementById("review-run-region-ocr-variants"),
+        runPageOcrReviewed: document.getElementById("review-run-page-ocr-reviewed"),
         ocrStatus: document.getElementById("review-ocr-status"),
         ocrRoute: document.getElementById("review-ocr-route"),
         ocrConfidence: document.getElementById("review-ocr-confidence"),
@@ -135,6 +136,7 @@
     els.nudgeDown.addEventListener("click", () => nudgeSelectedRegion(0, 10));
     els.runRegionOcr.addEventListener("click", runSelectedRegionOcr);
     els.runRegionOcrVariants.addEventListener("click", runSelectedRegionOcrVariants);
+    els.runPageOcrReviewed.addEventListener("click", runPageOcrReviewedRegions);
     els.ocrAccept.addEventListener("click", () => updateSelectedOcrAttempt("accepted"));
     els.ocrSaveReviewed.addEventListener("click", () => updateSelectedOcrAttempt("edited"));
     els.ocrReject.addEventListener("click", () => updateSelectedOcrAttempt("rejected"));
@@ -241,6 +243,7 @@
         els.orientationOverride.disabled = false;
         els.saveOrientation.disabled = false;
         els.recognize.disabled = false;
+        els.runPageOcrReviewed.disabled = false;
         els.exportPage.disabled = false;
         els.exportV2.disabled = false;
         els.exportPageMode.disabled = false;
@@ -277,6 +280,7 @@
         els.orientationOverride.disabled = true;
         els.saveOrientation.disabled = true;
         els.recognize.disabled = true;
+        els.runPageOcrReviewed.disabled = true;
         els.exportPage.disabled = true;
         els.exportV2.disabled = !hasProject;
         els.exportPageMode.disabled = !hasProject;
@@ -1027,6 +1031,31 @@
             setStatus(error.message || "Region OCR variants failed.");
         } finally {
             els.runRegionOcrVariants.disabled = !selectedRegion();
+        }
+    }
+
+    async function runPageOcrReviewedRegions() {
+        if (!state.project || !state.page) return;
+        els.runPageOcrReviewed.disabled = true;
+        setStatus("Running OCR for reviewed text regions...");
+        try {
+            const result = await requestJson(
+                `/api/review/projects/${encodeURIComponent(state.project.project_id)}/pages/${encodeURIComponent(state.page.page_id)}/ocr-reviewed-regions`,
+                { method: "POST" }
+            );
+            state.page = result.page;
+            renderRegionList();
+            renderRecognitionDiagnostics();
+            renderOverlay();
+            renderSelectedRegion();
+            const attempted = result.attempted_count || 0;
+            const skipped = result.skipped_count || 0;
+            const errors = result.error_count || 0;
+            setStatus(`OCR reviewed text regions: ${attempted} attempt(s), ${skipped} skipped, ${errors} error(s).`);
+        } catch (error) {
+            setStatus(error.message || "OCR reviewed text regions failed.");
+        } finally {
+            els.runPageOcrReviewed.disabled = !state.page;
         }
     }
 
