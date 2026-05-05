@@ -485,11 +485,14 @@ def _build_page_model(
                 "bbox": region.get("effective_bbox"),
                 "text": ocr.get("preferred_text") or "",
                 "raw_ocr": ocr.get("cleaned_text") or ocr.get("raw_text") or "",
+                "ocr_route": ocr.get("route"),
                 "review_status": ocr.get("review_status") or region.get("review_status"),
                 "region_type": region.get("effective_type"),
                 "source": region.get("source"),
+                "status": region.get("status"),
                 "asset_path": asset_path,
                 "notes": region.get("notes") or "",
+                "needs_review": _block_needs_review(region, ocr),
                 "source_text_mutated": bool(ocr.get("source_text_mutated")),
             }
         )
@@ -531,6 +534,7 @@ def _page_review_document(
 
 
 def _render_html_document(document_model: dict[str, Any]) -> str:
+    pages = list(document_model.get("pages") or [])
     lines = [
         "<!doctype html>",
         "<html lang=\"en\">",
@@ -538,49 +542,185 @@ def _render_html_document(document_model: dict[str, Any]) -> str:
         "  <meta charset=\"utf-8\">",
         "  <title>Workbench Review Export</title>",
         "  <style>",
-        "    body { font-family: system-ui, -apple-system, sans-serif; line-height: 1.45; margin: 2rem; color: #202124; }",
-        "    .page { border-top: 1px solid #bbb; margin-top: 2rem; padding-top: 1rem; }",
-        "    .block { margin: 1rem 0; }",
-        "    .meta { color: #666; font-size: 0.9rem; }",
-        "    pre { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #f6f7f8; padding: 0.75rem; }",
-        "    img { max-width: 100%; height: auto; border: 1px solid #ddd; }",
-        "    .warning { color: #8a5a00; }",
+        "    :root { color-scheme: light; --ink: #202124; --muted: #62717f; --line: #d9e1e8; --panel: #f7f9fb; --warn-bg: #fff8e5; --warn: #7c5700; --ok-bg: #eaf6ef; --ok: #25633f; }",
+        "    body { background: #ffffff; color: var(--ink); font-family: system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; line-height: 1.5; margin: 0; }",
+        "    main { margin: 0 auto; max-width: 1040px; padding: 2rem; }",
+        "    header.document-header { border-bottom: 2px solid var(--line); margin-bottom: 1.5rem; padding-bottom: 1rem; }",
+        "    h1 { font-size: 1.8rem; margin: 0 0 0.5rem; }",
+        "    h2 { font-size: 1.35rem; margin: 0; }",
+        "    h3 { font-size: 1rem; margin: 0; }",
+        "    .summary-grid { display: grid; gap: 0.65rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-top: 1rem; }",
+        "    .summary-item { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.65rem; }",
+        "    .summary-item strong { display: block; font-size: 0.78rem; text-transform: uppercase; color: var(--muted); }",
+        "    nav.toc { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; margin: 1rem 0 2rem; padding: 1rem; }",
+        "    nav.toc ol { margin: 0.5rem 0 0; padding-left: 1.25rem; }",
+        "    .page { border-top: 3px solid #2f5f7d; margin-top: 2rem; padding-top: 1rem; }",
+        "    .page-header { display: grid; gap: 0.5rem; grid-template-columns: 1fr; margin-bottom: 1rem; }",
+        "    .page-meta, .region-meta { color: var(--muted); font-size: 0.9rem; }",
+        "    .warning-list { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.75rem 0; }",
+        "    .badge { border-radius: 999px; display: inline-block; font-size: 0.78rem; font-weight: 700; padding: 0.18rem 0.5rem; }",
+        "    .badge.warning { background: var(--warn-bg); color: var(--warn); }",
+        "    .badge.audit { background: #e8f1f8; color: #24506d; }",
+        "    .badge.ok { background: var(--ok-bg); color: var(--ok); }",
+        "    .region-block { border: 1px solid var(--line); border-radius: 7px; margin: 1rem 0; overflow: hidden; }",
+        "    .region-header { align-items: start; background: var(--panel); display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: space-between; padding: 0.75rem 0.9rem; }",
+        "    .region-body { padding: 0.9rem; }",
+        "    .reviewed-text { white-space: pre-wrap; background: #ffffff; border-left: 4px solid #2f7d52; margin: 0.75rem 0; padding: 0.75rem 0.9rem; }",
+        "    details.raw-ocr { margin-top: 0.75rem; }",
+        "    details.raw-ocr summary { cursor: pointer; color: #24506d; font-weight: 700; }",
+        "    pre { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #f3f5f7; border-radius: 5px; overflow-x: auto; padding: 0.75rem; }",
+        "    figure { margin: 0.75rem 0; }",
+        "    img { max-width: 100%; height: auto; border: 1px solid #cfd8df; border-radius: 4px; }",
+        "    figcaption { color: var(--muted); font-size: 0.86rem; margin-top: 0.35rem; }",
+        "    .muted { color: var(--muted); }",
+        "    @media print { main { max-width: none; padding: 1rem; } .region-block { break-inside: avoid; } nav.toc { break-after: page; } }",
         "  </style>",
         "</head>",
         "<body>",
-        f"  <h1>Workbench Review Export: {escape(str(document_model.get('project_id') or ''))}</h1>",
-        f"  <p class=\"meta\">Created: {escape(str(document_model.get('created_at') or ''))} · source_text_mutated=false</p>",
+        "<main>",
+        "  <header class=\"document-header\">",
+        f"    <h1>Workbench Review Export: {escape(str(document_model.get('project_id') or ''))}</h1>",
+        "    <div class=\"summary-grid\">",
+        _html_summary_item("Created", document_model.get("created_at")),
+        _html_summary_item("Pages", len(pages)),
+        _html_summary_item("Export version", document_model.get("export_version")),
+        _html_summary_item("Formats", ", ".join(str(item) for item in document_model.get("formats_requested") or [])),
+        _html_summary_item("Source text mutated", "false"),
+        "    </div>",
+        "    <p><span class=\"badge ok\">source_text_mutated=false</span> <span class=\"badge audit\">raw OCR preserved in review bundle</span></p>",
+        "  </header>",
+        "  <nav class=\"toc\" aria-label=\"Page table of contents\">",
+        "    <h2>Pages</h2>",
+        "    <ol>",
     ]
-    for page in document_model.get("pages", []):
+    for page in pages:
+        page_label = _page_label(page)
+        lines.append(
+            f"      <li><a href=\"#{escape(str(page.get('page_id')))}\">"
+            f"Page {escape(str(page.get('page_index') or ''))} - {escape(page_label)}</a></li>"
+        )
+    lines.extend(["    </ol>", "  </nav>"])
+    for page in pages:
+        page_label = _page_label(page)
+        blocks = list(page.get("blocks") or [])
+        image_count = sum(1 for block in blocks if block.get("type") == "image")
+        text_count = sum(1 for block in blocks if block.get("type") in {"text", "caption"})
         lines.extend(
             [
                 f"  <section class=\"page\" id=\"{escape(str(page.get('page_id')))}\">",
-                f"    <h2>{escape(str(page.get('page_id')))}</h2>",
-                f"    <p class=\"meta\">Source: {escape(str(page.get('source_path') or ''))}</p>",
+                "    <div class=\"page-header\">",
+                f"      <h2>Page {escape(str(page.get('page_index') or ''))} - {escape(page_label)}</h2>",
+                f"      <div class=\"page-meta\">Page ID: <code>{escape(str(page.get('page_id')))}</code> · Source: <code>{escape(str(page.get('source_path') or ''))}</code></div>",
+                f"      <div class=\"page-meta\">Orientation: {_html_orientation(page.get('orientation') or {})}</div>",
+                f"      <div class=\"page-meta\">Regions: {len(blocks)} total · {text_count} text/caption · {image_count} image/diagram/photo</div>",
+                "    </div>",
             ]
         )
-        for warning in page.get("warnings") or []:
-            lines.append(f"    <p class=\"warning\">Warning: {escape(str(warning))}</p>")
-        for block in page.get("blocks", []):
+        warnings = page.get("warnings") or []
+        if warnings:
+            lines.append("    <div class=\"warning-list\" aria-label=\"Page warnings\">")
+            for warning in warnings:
+                lines.append(f"      <span class=\"badge warning\">{escape(str(warning))}</span>")
+            lines.append("    </div>")
+        for block in blocks:
             if block.get("type") == "ignored":
                 continue
+            badges = _html_block_badges(block)
             lines.extend(
                 [
-                    "    <section class=\"block\">",
-                    f"      <h3>{escape(str(block.get('region_id')))} - {escape(str(block.get('region_type') or block.get('type') or ''))}</h3>",
-                    f"      <p class=\"meta\">BBox: {escape(str(block.get('bbox')))} · Status: {escape(str(block.get('review_status') or ''))}</p>",
+                    "    <section class=\"region-block\">",
+                    "      <div class=\"region-header\">",
+                    f"        <h3>{escape(str(block.get('region_id')))} - {escape(str(block.get('region_type') or block.get('type') or ''))}</h3>",
+                    f"        <div>{badges}</div>",
+                    "      </div>",
+                    "      <div class=\"region-body\">",
+                    f"        <div class=\"region-meta\">BBox: <code>{escape(str(block.get('bbox')))}</code> · Source: {escape(str(block.get('source') or ''))} · Status: {escape(str(block.get('status') or ''))}</div>",
                 ]
             )
+            if block.get("ocr_route"):
+                lines.append(f"        <div class=\"region-meta\">OCR route: <code>{escape(str(block.get('ocr_route')))}</code></div>")
             if block.get("asset_path"):
-                lines.append(f"      <img src=\"{escape(str(block.get('asset_path')))}\" alt=\"{escape(str(block.get('region_id')))} crop\">")
+                lines.extend(
+                    [
+                        "        <figure>",
+                        f"          <img src=\"{escape(str(block.get('asset_path')))}\" alt=\"{escape(str(block.get('region_id')))} crop\">",
+                        f"          <figcaption>Crop asset: <code>{escape(str(block.get('asset_path')))}</code></figcaption>",
+                        "        </figure>",
+                    ]
+                )
             if block.get("text"):
-                lines.extend(["      <pre>", escape(str(block.get("text"))), "      </pre>"])
-            elif not block.get("asset_path") and block.get("notes"):
-                lines.append(f"      <p>{escape(str(block.get('notes')))}</p>")
-            lines.append("    </section>")
+                lines.extend(
+                    [
+                        "        <h4>Reviewed / Display Text</h4>",
+                        "        <div class=\"reviewed-text\">",
+                        escape(str(block.get("text"))),
+                        "        </div>",
+                    ]
+                )
+            elif block.get("type") in {"text", "caption"}:
+                lines.append("        <p class=\"muted\">No reviewed or OCR text available for this region.</p>")
+            if block.get("raw_ocr"):
+                lines.extend(
+                    [
+                        "        <details class=\"raw-ocr\">",
+                        "          <summary>Raw / cleaned OCR evidence</summary>",
+                        "          <pre>",
+                        escape(str(block.get("raw_ocr"))),
+                        "          </pre>",
+                        "        </details>",
+                    ]
+                )
+            if block.get("notes"):
+                lines.append(f"        <p class=\"muted\">Notes: {escape(str(block.get('notes')))}</p>")
+            if block.get("type") == "image" and not block.get("asset_path"):
+                lines.append("        <p><span class=\"badge warning\">crop_missing</span></p>")
+            lines.extend(["      </div>", "    </section>"])
         lines.append("  </section>")
-    lines.extend(["</body>", "</html>", ""])
+    lines.extend(["</main>", "</body>", "</html>", ""])
     return "\n".join(lines)
+
+
+def _html_summary_item(label: str, value: Any) -> str:
+    return (
+        "      <div class=\"summary-item\">"
+        f"<strong>{escape(label)}</strong>"
+        f"{escape(str(value if value is not None else ''))}"
+        "</div>"
+    )
+
+
+def _page_label(page: dict[str, Any]) -> str:
+    return str(page.get("filename") or page.get("page_id") or "page")
+
+
+def _html_orientation(orientation: dict[str, Any]) -> str:
+    if not orientation:
+        return "not recorded"
+    detected = orientation.get("detected_rotation_degrees")
+    effective = orientation.get("effective_rotation_degrees")
+    status = orientation.get("status") or ""
+    source = orientation.get("source") or ""
+    return escape(
+        f"detected={detected}°, correction={effective}°, status={status}, source={source}"
+    )
+
+
+def _html_block_badges(block: dict[str, Any]) -> str:
+    badges = [
+        _html_badge(str(block.get("type") or "unknown"), "audit"),
+    ]
+    review_status = block.get("review_status")
+    if review_status:
+        badges.append(_html_badge(str(review_status), "audit"))
+    if block.get("needs_review"):
+        badges.append(_html_badge("needs_review", "warning"))
+    if block.get("source_text_mutated"):
+        badges.append(_html_badge("source_text_mutated=true", "warning"))
+    return " ".join(badges)
+
+
+def _html_badge(label: str, kind: str) -> str:
+    return f"<span class=\"badge {escape(kind)}\">{escape(label)}</span>"
 
 
 def _render_text_export(regions: list[dict[str, Any]]) -> str:
@@ -634,6 +774,16 @@ def _block_type(region: dict[str, Any]) -> str:
     if region_type in TEXT_REGION_TYPES:
         return "text"
     return "unknown"
+
+
+def _block_needs_review(region: dict[str, Any], ocr: dict[str, Any]) -> bool:
+    metadata = region.get("metadata") or {}
+    return bool(
+        metadata.get("needs_review")
+        or region.get("status") in {"detected", "needs_review"}
+        or region.get("review_status") in {"unreviewed", "needs_review"}
+        or ocr.get("review_status") in {"unreviewed", "needs_review"}
+    )
 
 
 def _page_review_status(exported_regions: list[dict[str, Any]]) -> str:

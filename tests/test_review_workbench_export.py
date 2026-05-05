@@ -170,7 +170,7 @@ def test_review_page_export_does_not_require_ocr_attempts(tmp_path):
 
 
 def test_review_project_export_v2_writes_multi_page_bundle_and_html(tmp_path):
-    app, _data_dir, scans = _create_review_app(tmp_path)
+    app, data_dir, scans = _create_review_app(tmp_path)
     _write_marker_image(scans / "page_a.png", size=(120, 90))
     _write_marker_image(scans / "page_b.png", size=(110, 80))
 
@@ -217,6 +217,14 @@ def test_review_project_export_v2_writes_multi_page_bundle_and_html(tmp_path):
         "/api/review/projects/export_v2/pages/page_002/ocr_attempts/ocr_001",
         json={"review_status": "accepted", "reviewed_text": "Page two caption"},
     )
+    state_path = data_dir / "runtime" / "review_projects" / "export_v2" / "project_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    page_001 = next(page for page in state["pages"] if page["page_id"] == "page_001")
+    diagram = next(region for region in page_001["regions"] if region["region_id"] == "r_002")
+    diagram["metadata"]["needs_review"] = True
+    diagram["review_status"] = "unreviewed"
+    diagram["status"] = "detected"
+    state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
     response = client.post(
         "/api/review/projects/export_v2/export",
@@ -263,8 +271,21 @@ def test_review_project_export_v2_writes_multi_page_bundle_and_html(tmp_path):
     assert page_002_text == "Page two caption\n"
 
     html = (export_dir / "html" / "document.html").read_text(encoding="utf-8")
+    assert "Workbench Review Export: export_v2" in html
+    assert "Source text mutated" in html
+    assert "source_text_mutated=false" in html
+    assert "<nav class=\"toc\"" in html
+    assert "Page 1 - page_a.png" in html
+    assert "Page 2 - page_b.png" in html
+    assert "reading_order_uncertain" in html
+    assert "needs_review" in html
+    assert "Reviewed / Display Text" in html
     assert "Page one reviewed" in html
     assert "Page two caption" in html
+    assert "Raw / cleaned OCR evidence" in html
+    assert "Page one raw" in html
+    assert "OCR route:" in html
+    assert "Crop asset:" in html
     assert "assets/page_001_region_r_002.png" in html
     assert (export_dir / "html" / "assets" / "page_001_region_r_002.png").exists()
 
