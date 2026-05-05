@@ -52,6 +52,46 @@
     margin-top: 0.75rem;
 }
 
+.review-export-range {
+    display: grid;
+    gap: 0.4rem;
+    grid-template-columns: auto 1fr;
+    margin-top: 0.55rem;
+}
+
+.review-card #review-export-selected-pages {
+    min-height: 5.5rem;
+}
+
+.review-export-range label {
+    align-self: center;
+    margin: 0;
+}
+
+.review-export-formats {
+    border: 1px solid #d8e0e7;
+    border-radius: 4px;
+    margin-top: 0.75rem;
+    padding: 0.65rem;
+}
+
+.review-export-formats legend {
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0 0.25rem;
+}
+
+.review-export-formats label {
+    align-items: center;
+    display: flex;
+    gap: 0.4rem;
+    margin: 0.35rem 0;
+}
+
+.review-export-formats input {
+    width: auto;
+}
+
 .review-tool-row {
     align-items: center;
     background: #ffffff;

@@ -167,3 +167,143 @@ def test_review_page_export_does_not_require_ocr_attempts(tmp_path):
     assert review["regions"][0]["ocr"]["latest_attempt_id"] is None
     assert review["regions"][0]["ocr"]["preferred_text"] == ""
     assert Path(payload["files"]["page_text"]).read_text(encoding="utf-8") == ""
+
+
+def test_review_project_export_v2_writes_multi_page_bundle_and_html(tmp_path):
+    app, _data_dir, scans = _create_review_app(tmp_path)
+    _write_marker_image(scans / "page_a.png", size=(120, 90))
+    _write_marker_image(scans / "page_b.png", size=(110, 80))
+
+    class FakeRegionOCRService:
+        def run(self, *, image_path, bbox, region_type, region_id):
+            text_by_region = {
+                "r_001": "Page one raw",
+                "r_001_b": "unused",
+            }
+            return RegionOCRResult(
+                text=text_by_region.get(region_id, f"{region_id} raw"),
+                cleaned_text=text_by_region.get(region_id, f"{region_id} cleaned"),
+                confidence=0.8,
+                route=RegionOCRRoute(language="eng", psm=6),
+                status="ok",
+            )
+
+    app.config["REVIEW_REGION_OCR_SERVICE"] = FakeRegionOCRService()
+    client = app.test_client()
+    client.post("/api/review/projects", json={"source_folder": str(scans), "project_id": "export_v2"})
+    client.post(
+        "/api/review/projects/export_v2/pages/page_001/regions",
+        json={"reviewed_type": "english_text", "reviewed_bbox": [5, 5, 45, 20]},
+    )
+    client.post(
+        "/api/review/projects/export_v2/pages/page_001/regions",
+        json={"reviewed_type": "diagram", "reviewed_bbox": [10, 30, 30, 25]},
+    )
+    client.post(
+        "/api/review/projects/export_v2/pages/page_001/regions",
+        json={"reviewed_type": "ignore", "reviewed_bbox": [70, 5, 20, 20]},
+    )
+    client.post(
+        "/api/review/projects/export_v2/pages/page_002/regions",
+        json={"reviewed_type": "caption_label", "reviewed_bbox": [4, 8, 35, 18]},
+    )
+    client.post("/api/review/projects/export_v2/pages/page_001/regions/r_001/ocr")
+    client.patch(
+        "/api/review/projects/export_v2/pages/page_001/ocr_attempts/ocr_001",
+        json={"review_status": "edited", "reviewed_text": "Page one reviewed"},
+    )
+    client.post("/api/review/projects/export_v2/pages/page_002/regions/r_001/ocr")
+    client.patch(
+        "/api/review/projects/export_v2/pages/page_002/ocr_attempts/ocr_001",
+        json={"review_status": "accepted", "reviewed_text": "Page two caption"},
+    )
+
+    response = client.post(
+        "/api/review/projects/export_v2/export",
+        json={"page_selection": {"mode": "all"}, "formats": ["review_bundle", "html"]},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    export_dir = Path(payload["export_path"])
+    assert payload["page_ids"] == ["page_001", "page_002"]
+    assert Path(payload["manifest_path"]).exists()
+    assert (export_dir / "project_state_snapshot.json").exists()
+    assert (export_dir / "document_export_model.json").exists()
+
+    manifest = json.loads((export_dir / "export_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["export_version"] == 2
+    assert manifest["page_selection"]["mode"] == "all"
+    assert manifest["formats"] == ["review_bundle", "html"]
+    assert manifest["source_text_mutated"] is False
+
+    page_001_json = export_dir / "review_bundle" / "pages" / "page_001_review.json"
+    page_002_json = export_dir / "review_bundle" / "pages" / "page_002_review.json"
+    assert page_001_json.exists()
+    assert page_002_json.exists()
+    page_001_review = json.loads(page_001_json.read_text(encoding="utf-8"))
+    text_region = next(region for region in page_001_review["regions"] if region["region_id"] == "r_001")
+    assert text_region["ocr"]["raw_text"] == "Page one raw"
+    assert text_region["ocr"]["reviewed_text"] == "Page one reviewed"
+    assert text_region["ocr"]["preferred_text"] == "Page one reviewed"
+    assert text_region["ocr"]["source_text_mutated"] is False
+
+    ignored = next(region for region in page_001_review["regions"] if region["region_id"] == "r_003")
+    assert ignored["ignored"] is True
+    assert ignored["crop_path"] is None
+
+    crop = export_dir / "review_bundle" / "crops" / "page_001_region_r_002.png"
+    assert crop.exists()
+    with Image.open(crop) as image:
+        assert image.size == (30, 25)
+
+    page_001_text = (export_dir / "review_bundle" / "pages" / "page_001_text.txt").read_text(encoding="utf-8")
+    assert page_001_text == "Page one reviewed\n"
+    page_002_text = (export_dir / "review_bundle" / "pages" / "page_002_text.txt").read_text(encoding="utf-8")
+    assert page_002_text == "Page two caption\n"
+
+    html = (export_dir / "html" / "document.html").read_text(encoding="utf-8")
+    assert "Page one reviewed" in html
+    assert "Page two caption" in html
+    assert "assets/page_001_region_r_002.png" in html
+    assert (export_dir / "html" / "assets" / "page_001_region_r_002.png").exists()
+
+
+def test_review_project_export_v2_supports_selected_and_range_modes(tmp_path):
+    app, _data_dir, scans = _create_review_app(tmp_path)
+    _write_marker_image(scans / "a.png", size=(40, 30))
+    _write_marker_image(scans / "b.png", size=(40, 30))
+    _write_marker_image(scans / "c.png", size=(40, 30))
+    client = app.test_client()
+    client.post("/api/review/projects", json={"source_folder": str(scans), "project_id": "export_v2_select"})
+
+    selected_response = client.post(
+        "/api/review/projects/export_v2_select/export",
+        json={"page_selection": {"mode": "selected", "page_ids": ["page_002"]}, "formats": ["review_bundle"]},
+    )
+    assert selected_response.status_code == 200
+    assert selected_response.get_json()["page_ids"] == ["page_002"]
+
+    range_response = client.post(
+        "/api/review/projects/export_v2_select/export",
+        json={
+            "page_selection": {"mode": "range", "range": {"start": "page_003", "end": "page_001"}},
+            "formats": ["html"],
+        },
+    )
+    assert range_response.status_code == 200
+    assert range_response.get_json()["page_ids"] == ["page_001", "page_002", "page_003"]
+
+
+def test_review_project_export_v2_rejects_unsupported_formats(tmp_path):
+    app, _data_dir, scans = _create_review_app(tmp_path)
+    _write_marker_image(scans / "page.png", size=(40, 30))
+    client = app.test_client()
+    client.post("/api/review/projects", json={"source_folder": str(scans), "project_id": "export_v2_bad"})
+
+    response = client.post(
+        "/api/review/projects/export_v2_bad/export",
+        json={"page_selection": {"mode": "all"}, "formats": ["docx"]},
+    )
+
+    assert response.status_code == 400

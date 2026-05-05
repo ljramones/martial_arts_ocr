@@ -86,6 +86,16 @@ MVP slice 7 implemented:
 - raw OCR text and `source_text_mutated=false` remain preserved in JSON review artifacts;
 - crops use the effective-oriented page image and reviewed/effective region bbox.
 
+MVP slice 8 implemented:
+
+- project-level Export v2 endpoint beside the backward-compatible page-level export endpoint;
+- page selection for current page, selected pages, page range, and all pages;
+- shared document/page export model written as `document_export_model.json`;
+- multi-page review bundle with per-page JSON, Markdown, text, and crops;
+- readable HTML export with page sections, reviewed text, and crop assets;
+- `export_manifest.json` recording pages, formats, version, and `source_text_mutated=false`;
+- compact UI export controls with DOCX/PDF explicitly deferred.
+
 Not implemented yet:
 
 - translation;

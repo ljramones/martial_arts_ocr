@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,9 @@ TEXT_REGION_TYPES = {
     "mixed_english_japanese",
     "caption_label",
 }
+
+IMAGE_REGION_TYPES = {"image", "diagram", "photo"}
+EXPORT_V2_FORMATS = {"review_bundle", "html"}
 
 
 def export_page_review(
@@ -103,16 +107,217 @@ def export_page_review(
     }
 
 
+def export_project_review_v2(
+    *,
+    state: dict[str, Any],
+    project_dir: Path,
+    effective_image_paths: dict[str, Path],
+    page_selection: dict[str, Any],
+    formats: list[str],
+    export_id: str | None = None,
+) -> dict[str, Any]:
+    """Write Export v2 artifacts for one or more reviewed workbench pages."""
+
+    normalized_formats = _normalize_formats(formats)
+    pages = resolve_page_selection(state, page_selection)
+    created_at = _now()
+    export_dir = _unique_export_dir(project_dir / "exports", export_id)
+    snapshot_path = export_dir / "project_state_snapshot.json"
+    snapshot_path.write_text(
+        json.dumps(state, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    review_bundle_paths: dict[str, str] = {}
+    html_paths: dict[str, str] = {}
+    review_pages_dir = export_dir / "review_bundle" / "pages"
+    review_crops_dir = export_dir / "review_bundle" / "crops"
+    html_dir = export_dir / "html"
+    html_assets_dir = html_dir / "assets"
+
+    if "review_bundle" in normalized_formats:
+        review_pages_dir.mkdir(parents=True, exist_ok=True)
+        review_crops_dir.mkdir(parents=True, exist_ok=True)
+        review_bundle_paths["root"] = str(export_dir / "review_bundle")
+    if "html" in normalized_formats:
+        html_assets_dir.mkdir(parents=True, exist_ok=True)
+        html_paths["root"] = str(html_dir)
+
+    page_models = []
+    for page_index, page in enumerate(pages, start=1):
+        page_id = str(page.get("page_id"))
+        image_path = effective_image_paths[page_id]
+        with Image.open(image_path) as image:
+            effective_image = image.convert("RGB")
+            review_regions = [
+                _export_region(
+                    region,
+                    list(page.get("ocr_attempts") or []),
+                    effective_image,
+                    review_crops_dir,
+                    crop_filename_prefix=f"{page_id}_",
+                    crop_path_prefix="crops",
+                    write_crop="review_bundle" in normalized_formats,
+                )
+                for region in page.get("regions", [])
+            ]
+            page_model = _build_page_model(
+                state=state,
+                page=page,
+                page_index=page_index,
+                exported_regions=review_regions,
+                effective_image=effective_image,
+                html_assets_dir=html_assets_dir,
+                write_html_assets="html" in normalized_formats,
+            )
+        page_models.append(page_model)
+
+        if "review_bundle" in normalized_formats:
+            page_review = _page_review_document(
+                state=state,
+                page=page,
+                exported_regions=review_regions,
+                created_at=created_at,
+                format_version=2,
+            )
+            (review_pages_dir / f"{page_id}_review.json").write_text(
+                json.dumps(page_review, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            (review_pages_dir / f"{page_id}_review.md").write_text(
+                _render_markdown(page_review),
+                encoding="utf-8",
+            )
+            (review_pages_dir / f"{page_id}_text.txt").write_text(
+                _render_text_export(review_regions),
+                encoding="utf-8",
+            )
+
+    document_model = {
+        "project_id": state.get("project_id"),
+        "source_folder": state.get("source_folder"),
+        "pages": page_models,
+        "formats_requested": normalized_formats,
+        "created_at": created_at,
+        "export_version": 2,
+        "source_text_mutated": False,
+        "page_selection": {
+            "mode": page_selection.get("mode") or "current",
+            "page_ids": [page.get("page_id") for page in pages],
+        },
+        "warnings": _document_warnings(page_models),
+    }
+    export_model_path = export_dir / "document_export_model.json"
+    export_model_path.write_text(
+        json.dumps(document_model, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    if "html" in normalized_formats:
+        html_path = html_dir / "document.html"
+        html_path.write_text(_render_html_document(document_model), encoding="utf-8")
+        html_paths["document"] = str(html_path)
+        html_paths["assets_dir"] = str(html_assets_dir)
+
+    manifest = {
+        "project_id": state.get("project_id"),
+        "created_at": created_at,
+        "page_selection": {
+            "mode": page_selection.get("mode") or "current",
+            "page_ids": [page.get("page_id") for page in pages],
+        },
+        "formats": normalized_formats,
+        "source_text_mutated": False,
+        "export_version": 2,
+        "artifact_paths": {
+            "project_state_snapshot": str(snapshot_path),
+            "document_export_model": str(export_model_path),
+            "review_bundle": review_bundle_paths or None,
+            "html": html_paths or None,
+        },
+    }
+    manifest_path = export_dir / "export_manifest.json"
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    return {
+        "export_id": export_dir.name,
+        "export_path": str(export_dir),
+        "manifest_path": str(manifest_path),
+        "formats": {
+            "review_bundle": review_bundle_paths.get("root") if review_bundle_paths else None,
+            "html": html_paths.get("document") if html_paths else None,
+        },
+        "page_ids": [page.get("page_id") for page in pages],
+        "summary": {
+            "page_count": len(pages),
+            "format_count": len(normalized_formats),
+            "created_at": created_at,
+            "source_text_mutated": False,
+        },
+    }
+
+
+def resolve_page_selection(
+    state: dict[str, Any],
+    page_selection: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Resolve Export v2 page selection to project-ordered page records."""
+
+    pages = list(state.get("pages") or [])
+    page_by_id = {str(page.get("page_id")): page for page in pages}
+    mode = str(page_selection.get("mode") or "current").strip()
+
+    if mode in {"current", "current_page"}:
+        page_ids = [str(page_id) for page_id in page_selection.get("page_ids") or []]
+        if not page_ids and page_selection.get("page_id"):
+            page_ids = [str(page_selection["page_id"])]
+        if len(page_ids) != 1:
+            raise ValueError("current page export requires exactly one page_id")
+    elif mode == "selected":
+        page_ids = [str(page_id) for page_id in page_selection.get("page_ids") or []]
+    elif mode == "range":
+        page_range = page_selection.get("range") or {}
+        start = str(page_range.get("start") or page_selection.get("start") or "")
+        end = str(page_range.get("end") or page_selection.get("end") or "")
+        page_ids = _page_range_ids(pages, start, end)
+    elif mode == "all":
+        page_ids = [str(page.get("page_id")) for page in pages]
+    else:
+        raise ValueError(f"Unsupported page selection mode: {mode}")
+
+    if not page_ids:
+        raise ValueError("export page selection is empty")
+    missing = [page_id for page_id in page_ids if page_id not in page_by_id]
+    if missing:
+        raise ValueError(f"Unknown export page id(s): {', '.join(missing)}")
+
+    requested = set(page_ids)
+    return [page for page in pages if str(page.get("page_id")) in requested]
+
+
 def _export_region(
     region: dict[str, Any],
     attempts: list[dict[str, Any]],
     effective_image: Image.Image,
     crops_dir: Path,
+    *,
+    crop_filename_prefix: str = "",
+    crop_path_prefix: str = "crops",
+    write_crop: bool = True,
 ) -> dict[str, Any]:
     attempt = _latest_attempt_for_region(region, attempts)
     crop_path = None
-    if not _is_ignored_region(region) and region.get("effective_bbox"):
-        crop_path = _write_crop(region, effective_image, crops_dir)
+    if write_crop and not _is_ignored_region(region) and region.get("effective_bbox"):
+        crop_path = _write_crop(
+            region,
+            effective_image,
+            crops_dir,
+            filename_prefix=crop_filename_prefix,
+            path_prefix=crop_path_prefix,
+        )
 
     raw_text = attempt.get("text") if attempt else None
     cleaned_text = attempt.get("cleaned_text") if attempt else None
@@ -174,7 +379,14 @@ def _preferred_text(attempt: dict[str, Any] | None) -> str:
     return str(attempt.get("cleaned_text") or attempt.get("text") or "")
 
 
-def _write_crop(region: dict[str, Any], image: Image.Image, crops_dir: Path) -> str | None:
+def _write_crop(
+    region: dict[str, Any],
+    image: Image.Image,
+    crops_dir: Path,
+    *,
+    filename_prefix: str = "",
+    path_prefix: str = "crops",
+) -> str | None:
     bbox = region.get("effective_bbox")
     if not isinstance(bbox, list) or len(bbox) != 4:
         return None
@@ -184,9 +396,12 @@ def _write_crop(region: dict[str, Any], image: Image.Image, crops_dir: Path) -> 
     width = max(1, min(width, image.width - x))
     height = max(1, min(height, image.height - y))
     crop = image.crop((x, y, x + width, y + height))
-    filename = f"region_{_safe_filename(region.get('region_id') or 'unknown')}.png"
+    filename = (
+        f"{_safe_filename_prefix(filename_prefix)}"
+        f"region_{_safe_filename(region.get('region_id') or 'unknown')}.png"
+    )
     crop.save(crops_dir / filename)
-    return f"crops/{filename}"
+    return f"{path_prefix}/{filename}"
 
 
 def _render_markdown(review: dict[str, Any]) -> str:
@@ -236,6 +451,138 @@ def _render_markdown(review: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _build_page_model(
+    *,
+    state: dict[str, Any],
+    page: dict[str, Any],
+    page_index: int,
+    exported_regions: list[dict[str, Any]],
+    effective_image: Image.Image,
+    html_assets_dir: Path,
+    write_html_assets: bool,
+) -> dict[str, Any]:
+    blocks = []
+    assets = []
+    for region in sorted(exported_regions, key=lambda item: _reading_order_key(item.get("effective_bbox"))):
+        block_type = _block_type(region)
+        asset_path = None
+        if write_html_assets and block_type == "image" and not _is_ignored_region(region):
+            asset_path = _write_crop(
+                region,
+                effective_image,
+                html_assets_dir,
+                filename_prefix=f"{page.get('page_id')}_",
+                path_prefix="assets",
+            )
+            if asset_path:
+                assets.append(asset_path)
+        ocr = region.get("ocr") or {}
+        blocks.append(
+            {
+                "block_id": f"{page.get('page_id')}_{region.get('region_id')}",
+                "type": block_type,
+                "region_id": region.get("region_id"),
+                "bbox": region.get("effective_bbox"),
+                "text": ocr.get("preferred_text") or "",
+                "raw_ocr": ocr.get("cleaned_text") or ocr.get("raw_text") or "",
+                "review_status": ocr.get("review_status") or region.get("review_status"),
+                "region_type": region.get("effective_type"),
+                "source": region.get("source"),
+                "asset_path": asset_path,
+                "notes": region.get("notes") or "",
+                "source_text_mutated": bool(ocr.get("source_text_mutated")),
+            }
+        )
+    return {
+        "project_id": state.get("project_id"),
+        "page_id": page.get("page_id"),
+        "page_index": page_index,
+        "source_path": page.get("source_path"),
+        "filename": page.get("filename"),
+        "orientation": page.get("orientation") or {},
+        "review_status": _page_review_status(exported_regions),
+        "blocks": blocks,
+        "assets": assets,
+        "warnings": _page_warnings(page, exported_regions, blocks),
+    }
+
+
+def _page_review_document(
+    *,
+    state: dict[str, Any],
+    page: dict[str, Any],
+    exported_regions: list[dict[str, Any]],
+    created_at: str,
+    format_version: int,
+) -> dict[str, Any]:
+    return {
+        "project_id": state.get("project_id"),
+        "page_id": page.get("page_id"),
+        "source_path": page.get("source_path"),
+        "filename": page.get("filename"),
+        "orientation": page.get("orientation") or {},
+        "regions": exported_regions,
+        "export_metadata": {
+            "created_at": created_at,
+            "format_version": format_version,
+            "source_text_mutated": False,
+        },
+    }
+
+
+def _render_html_document(document_model: dict[str, Any]) -> str:
+    lines = [
+        "<!doctype html>",
+        "<html lang=\"en\">",
+        "<head>",
+        "  <meta charset=\"utf-8\">",
+        "  <title>Workbench Review Export</title>",
+        "  <style>",
+        "    body { font-family: system-ui, -apple-system, sans-serif; line-height: 1.45; margin: 2rem; color: #202124; }",
+        "    .page { border-top: 1px solid #bbb; margin-top: 2rem; padding-top: 1rem; }",
+        "    .block { margin: 1rem 0; }",
+        "    .meta { color: #666; font-size: 0.9rem; }",
+        "    pre { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #f6f7f8; padding: 0.75rem; }",
+        "    img { max-width: 100%; height: auto; border: 1px solid #ddd; }",
+        "    .warning { color: #8a5a00; }",
+        "  </style>",
+        "</head>",
+        "<body>",
+        f"  <h1>Workbench Review Export: {escape(str(document_model.get('project_id') or ''))}</h1>",
+        f"  <p class=\"meta\">Created: {escape(str(document_model.get('created_at') or ''))} · source_text_mutated=false</p>",
+    ]
+    for page in document_model.get("pages", []):
+        lines.extend(
+            [
+                f"  <section class=\"page\" id=\"{escape(str(page.get('page_id')))}\">",
+                f"    <h2>{escape(str(page.get('page_id')))}</h2>",
+                f"    <p class=\"meta\">Source: {escape(str(page.get('source_path') or ''))}</p>",
+            ]
+        )
+        for warning in page.get("warnings") or []:
+            lines.append(f"    <p class=\"warning\">Warning: {escape(str(warning))}</p>")
+        for block in page.get("blocks", []):
+            if block.get("type") == "ignored":
+                continue
+            lines.extend(
+                [
+                    "    <section class=\"block\">",
+                    f"      <h3>{escape(str(block.get('region_id')))} - {escape(str(block.get('region_type') or block.get('type') or ''))}</h3>",
+                    f"      <p class=\"meta\">BBox: {escape(str(block.get('bbox')))} · Status: {escape(str(block.get('review_status') or ''))}</p>",
+                ]
+            )
+            if block.get("asset_path"):
+                lines.append(f"      <img src=\"{escape(str(block.get('asset_path')))}\" alt=\"{escape(str(block.get('region_id')))} crop\">")
+            if block.get("text"):
+                lines.extend(["      <pre>", escape(str(block.get("text"))), "      </pre>"])
+            elif not block.get("asset_path") and block.get("notes"):
+                lines.append(f"      <p>{escape(str(block.get('notes')))}</p>")
+            lines.append("    </section>")
+        lines.append("  </section>")
+    lines.extend(["</body>", "</html>", ""])
+    return "\n".join(lines)
+
+
 def _render_text_export(regions: list[dict[str, Any]]) -> str:
     text_regions = [
         region
@@ -249,6 +596,77 @@ def _render_text_export(regions: list[dict[str, Any]]) -> str:
         for region in text_regions
     ]
     return "\n\n".join(chunk for chunk in chunks if chunk) + ("\n" if any(chunks) else "")
+
+
+def _normalize_formats(formats: list[str]) -> list[str]:
+    requested = [str(item) for item in (formats or ["review_bundle"])]
+    unsupported = [item for item in requested if item not in EXPORT_V2_FORMATS]
+    if unsupported:
+        raise ValueError(f"Unsupported export format(s): {', '.join(unsupported)}")
+    normalized = []
+    for item in requested:
+        if item not in normalized:
+            normalized.append(item)
+    if not normalized:
+        raise ValueError("at least one export format is required")
+    return normalized
+
+
+def _page_range_ids(pages: list[dict[str, Any]], start: str, end: str) -> list[str]:
+    page_ids = [str(page.get("page_id")) for page in pages]
+    if start not in page_ids or end not in page_ids:
+        raise ValueError("range start/end page IDs must exist")
+    start_index = page_ids.index(start)
+    end_index = page_ids.index(end)
+    if start_index > end_index:
+        start_index, end_index = end_index, start_index
+    return page_ids[start_index:end_index + 1]
+
+
+def _block_type(region: dict[str, Any]) -> str:
+    if _is_ignored_region(region):
+        return "ignored"
+    region_type = region.get("effective_type")
+    if region_type in IMAGE_REGION_TYPES:
+        return "image"
+    if region_type == "caption_label":
+        return "caption"
+    if region_type in TEXT_REGION_TYPES:
+        return "text"
+    return "unknown"
+
+
+def _page_review_status(exported_regions: list[dict[str, Any]]) -> str:
+    if any(region.get("review_status") in {"unreviewed", None} for region in exported_regions):
+        return "needs_review"
+    return "reviewed"
+
+
+def _page_warnings(
+    page: dict[str, Any],
+    exported_regions: list[dict[str, Any]],
+    blocks: list[dict[str, Any]],
+) -> list[str]:
+    warnings = []
+    if page.get("regions_stale"):
+        warnings.append("regions_stale")
+    if any(region.get("review_status") == "unreviewed" for region in exported_regions):
+        warnings.append("regions_unreviewed")
+    if any(block.get("type") in {"text", "caption"} and not block.get("text") for block in blocks):
+        warnings.append("ocr_unreviewed")
+    if not any(block.get("type") in {"text", "caption"} for block in blocks):
+        warnings.append("no_text_regions")
+    warnings.append("reading_order_uncertain")
+    return warnings
+
+
+def _document_warnings(page_models: list[dict[str, Any]]) -> list[str]:
+    warnings = []
+    if any(page.get("warnings") for page in page_models):
+        warnings.append("page_warnings_present")
+    if not page_models:
+        warnings.append("no_pages_exported")
+    return warnings
 
 
 def _reading_order_key(bbox: Any) -> tuple[int, int]:
@@ -279,6 +697,13 @@ def _unique_export_dir(root: Path, export_id: str | None) -> Path:
 
 def _safe_filename(value: str) -> str:
     return "".join(char if char.isalnum() or char in "._-" else "_" for char in str(value)).strip("._-") or "export"
+
+
+def _safe_filename_prefix(value: str) -> str:
+    if not value:
+        return ""
+    safe = "".join(char if char.isalnum() or char in "._-" else "_" for char in str(value))
+    return safe if safe.endswith("_") else f"{safe}_"
 
 
 def _now() -> str:

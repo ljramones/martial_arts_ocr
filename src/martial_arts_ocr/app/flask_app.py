@@ -39,7 +39,9 @@ from martial_arts_ocr.review import (
     REGION_TYPES,
     ReviewWorkbenchStore,
     export_page_review,
+    export_project_review_v2,
     rank_region_ocr_results,
+    resolve_page_selection,
 )
 
 APP_EXTENSION_KEY = "martial_arts_ocr"
@@ -1126,6 +1128,35 @@ def api_review_export_page(project_id, page_id):
             page=page,
             project_dir=store.project_dir(project_id),
             effective_image_path=image_path,
+        )
+        return jsonify(export_result), 200
+    except PermissionError as exc:
+        return _review_json_error(exc, 403)
+    except (FileNotFoundError, KeyError) as exc:
+        return _review_json_error(exc, 404)
+    except Exception as exc:
+        return _review_json_error(exc, 400)
+
+
+@app.post("/api/review/projects/<project_id>/export")
+def api_review_export_project(project_id):
+    data = request.get_json() or {}
+    page_selection = data.get("page_selection") or {}
+    formats = data.get("formats") or ["review_bundle", "html"]
+    store = _review_workbench_store()
+    try:
+        state = store.load_project(project_id)
+        selected_pages = resolve_page_selection(state, page_selection)
+        effective_image_paths = {
+            page["page_id"]: _effective_page_image_path(store, state, page["page_id"])
+            for page in selected_pages
+        }
+        export_result = export_project_review_v2(
+            state=state,
+            project_dir=store.project_dir(project_id),
+            effective_image_paths=effective_image_paths,
+            page_selection=page_selection,
+            formats=formats,
         )
         return jsonify(export_result), 200
     except PermissionError as exc:

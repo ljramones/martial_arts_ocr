@@ -264,6 +264,52 @@ Export behavior:
 
 Generated exports live under `data/runtime/` and should not be committed.
 
+## Export v2: Multi-Page Bundle And HTML
+
+Use `Export Selection` when you want a multi-page research artifact.
+
+Page selection modes:
+
+- `Current page`: exports the selected page.
+- `Selected pages`: exports the highlighted page IDs in the selected-pages list.
+- `Page range`: exports all pages between the chosen start and end page IDs, using project page order.
+- `All pages`: exports every page in the project.
+
+Formats:
+
+- `Review bundle`: multi-page audit/recovery artifacts.
+- `HTML`: clean research reconstruction with reviewed text and image crops.
+- `DOCX later` and `PDF later` are intentionally disabled in this slice.
+
+Export v2 writes under:
+
+```text
+data/runtime/review_projects/<project_id>/exports/<timestamp>/
+```
+
+Initial v2 structure:
+
+```text
+export_manifest.json
+project_state_snapshot.json
+document_export_model.json
+review_bundle/
+  pages/
+    page_<page_id>_review.json
+    page_<page_id>_review.md
+    page_<page_id>_text.txt
+  crops/
+    page_<page_id>_region_<region_id>.png
+html/
+  document.html
+  assets/
+    page_<page_id>_region_<region_id>.png
+```
+
+The existing `Export Page` button and page-level endpoint remain available for the simpler current-page bundle. `Export Selection` uses the project-level Export v2 endpoint and can produce the review bundle and HTML in one run.
+
+Export v2 still follows the same non-destructive rules: reviewed text is preferred for display/plain text, raw OCR is preserved in JSON/Markdown, source text is not mutated, ignored regions are skipped from text and crops by default, and generated exports are local runtime artifacts.
+
 ## Duplicate and Nudge Regions
 
 If recognition finds one region in a repeated row but misses nearby siblings, prefer `Draw Image Region` for the missing boxes. The selected-region panel also has advanced duplicate/nudge controls:

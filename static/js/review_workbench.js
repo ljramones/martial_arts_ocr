@@ -34,6 +34,14 @@
         orientationWarning: document.getElementById("review-orientation-warning"),
         recognize: document.getElementById("review-recognize-page"),
         exportPage: document.getElementById("review-export-page"),
+        exportV2: document.getElementById("review-export-v2"),
+        exportPageMode: document.getElementById("review-export-page-mode"),
+        exportSelectedPages: document.getElementById("review-export-selected-pages"),
+        exportRangeStart: document.getElementById("review-export-range-start"),
+        exportRangeEnd: document.getElementById("review-export-range-end"),
+        exportFormats: document.getElementById("review-export-formats"),
+        exportFormatBundle: document.getElementById("review-export-format-bundle"),
+        exportFormatHtml: document.getElementById("review-export-format-html"),
         exportSummary: document.getElementById("review-export-summary"),
         addRegion: document.getElementById("review-add-region"),
         stage: document.getElementById("review-page-stage"),
@@ -104,6 +112,8 @@
     els.saveOrientation.addEventListener("click", saveOrientationOverride);
     els.recognize.addEventListener("click", recognizePage);
     els.exportPage.addEventListener("click", exportPageReview);
+    els.exportV2.addEventListener("click", exportSelectionReview);
+    els.exportPageMode.addEventListener("change", updateExportControls);
     els.addRegion.addEventListener("click", addManualRegion);
     els.save.addEventListener("click", saveSelectedRegion);
     els.ignore.addEventListener("click", ignoreSelectedRegion);
@@ -179,6 +189,7 @@
         renderRecognitionDiagnostics();
         renderSelectedRegion();
         clearViewer();
+        renderExportControls();
     }
 
     function setTool(tool) {
@@ -224,12 +235,16 @@
         renderRecognitionDiagnostics();
         renderOverlay();
         renderSelectedRegion();
+        renderExportControls();
         els.addRegion.disabled = false;
         els.detectOrientation.disabled = false;
         els.orientationOverride.disabled = false;
         els.saveOrientation.disabled = false;
         els.recognize.disabled = false;
         els.exportPage.disabled = false;
+        els.exportV2.disabled = false;
+        els.exportPageMode.disabled = false;
+        els.exportFormats.disabled = false;
         els.exportSummary.textContent = "No export generated.";
     }
 
@@ -249,6 +264,7 @@
     }
 
     function clearViewer() {
+        const hasProject = Boolean(state.project);
         els.stage.classList.add("is-empty");
         els.image.hidden = true;
         els.overlay.hidden = true;
@@ -262,9 +278,45 @@
         els.saveOrientation.disabled = true;
         els.recognize.disabled = true;
         els.exportPage.disabled = true;
+        els.exportV2.disabled = !hasProject;
+        els.exportPageMode.disabled = !hasProject;
+        els.exportSelectedPages.disabled = true;
+        els.exportRangeStart.disabled = true;
+        els.exportRangeEnd.disabled = true;
+        els.exportFormats.disabled = !hasProject;
         els.exportSummary.textContent = "No export generated.";
         renderOrientation();
         renderRecognitionDiagnostics();
+    }
+
+    function renderExportControls() {
+        const pages = state.project?.pages || [];
+        [els.exportSelectedPages, els.exportRangeStart, els.exportRangeEnd].forEach((select) => {
+            select.innerHTML = "";
+            for (const page of pages) {
+                const option = document.createElement("option");
+                option.value = page.page_id;
+                option.textContent = `${page.page_id} ${page.filename || ""}`.trim();
+                select.appendChild(option);
+            }
+        });
+        if (state.page) {
+            Array.from(els.exportSelectedPages.options).forEach((option) => {
+                option.selected = option.value === state.page.page_id;
+            });
+            els.exportRangeStart.value = state.page.page_id;
+            els.exportRangeEnd.value = state.page.page_id;
+        }
+        updateExportControls();
+    }
+
+    function updateExportControls() {
+        const hasProject = Boolean(state.project);
+        const isSelected = els.exportPageMode.value === "selected";
+        const isRange = els.exportPageMode.value === "range";
+        els.exportSelectedPages.disabled = !hasProject || !isSelected;
+        els.exportRangeStart.disabled = !hasProject || !isRange;
+        els.exportRangeEnd.disabled = !hasProject || !isRange;
     }
 
     function reloadPageImage() {
@@ -788,6 +840,76 @@
         } finally {
             els.exportPage.disabled = !state.page;
         }
+    }
+
+    async function exportSelectionReview() {
+        if (!state.project) return;
+        const formats = [];
+        if (els.exportFormatBundle.checked) formats.push("review_bundle");
+        if (els.exportFormatHtml.checked) formats.push("html");
+        if (!formats.length) {
+            setStatus("Choose at least one export format.");
+            return;
+        }
+        const pageSelection = exportPageSelection();
+        if (!pageSelection) return;
+        els.exportV2.disabled = true;
+        setStatus("Exporting selected reviewed pages...");
+        try {
+            const result = await requestJson(
+                `/api/review/projects/${encodeURIComponent(state.project.project_id)}/export`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        page_selection: pageSelection,
+                        formats,
+                    }),
+                }
+            );
+            const summary = result.summary || {};
+            els.exportSummary.textContent = [
+                `Export v2: ${result.export_path || "-"}`,
+                `pages=${summary.page_count ?? 0}`,
+                `formats=${formats.join(",")}`,
+            ].join(" · ");
+            setStatus(`Exported ${summary.page_count ?? 0} page(s).`);
+        } catch (error) {
+            setStatus(error.message || "Export v2 failed.");
+        } finally {
+            els.exportV2.disabled = !state.project;
+        }
+    }
+
+    function exportPageSelection() {
+        const mode = els.exportPageMode.value || "current";
+        if (mode === "current") {
+            if (!state.page) {
+                setStatus("Select a page before exporting current page.");
+                return null;
+            }
+            return { mode: "current", page_ids: [state.page.page_id] };
+        }
+        if (mode === "range") {
+            return {
+                mode: "range",
+                range: {
+                    start: els.exportRangeStart.value,
+                    end: els.exportRangeEnd.value,
+                },
+            };
+        }
+        if (mode === "selected") {
+            const pageIds = Array.from(els.exportSelectedPages.selectedOptions).map((option) => option.value);
+            if (!pageIds.length) {
+                setStatus("Choose at least one selected page.");
+                return null;
+            }
+            return { mode: "selected", page_ids: pageIds };
+        }
+        if (mode === "all") {
+            return { mode: "all" };
+        }
+        return null;
     }
 
     async function saveSelectedRegion() {

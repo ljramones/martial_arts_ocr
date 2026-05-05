@@ -581,6 +581,14 @@ Explicitly defer:
 
 This slice should prove the shared model, page selection, manifest, and HTML output on reviewed real pages before adding publishing formats.
 
+Implementation status:
+
+- Phase 1 implemented project-level Export v2 beside the existing page-level endpoint.
+- Supported page selections: current page, selected pages, page range, and all pages.
+- Supported formats: `review_bundle` and `html`.
+- Generated artifacts include `export_manifest.json`, `project_state_snapshot.json`, `document_export_model.json`, multi-page review bundle pages/crops, and `html/document.html` with assets.
+- `docx` and `pdf` remain unsupported and should be rejected by the backend until later phases.
+
 ## Future Backlog
 
 - DOCX export.

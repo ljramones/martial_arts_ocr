@@ -81,9 +81,32 @@
 
         <section class="review-card">
             <h3>Export</h3>
-            <p class="review-muted">Writes reviewed page JSON, Markdown, text, and crops under the local runtime project folder.</p>
+            <p class="review-muted">Writes reviewed page artifacts under the local runtime project folder.</p>
+            <label for="review-export-page-mode">Pages</label>
+            <select id="review-export-page-mode" disabled>
+                <option value="current">Current page</option>
+                <option value="selected">Selected pages</option>
+                <option value="range">Page range</option>
+                <option value="all">All pages</option>
+            </select>
+            <label for="review-export-selected-pages">Selected page IDs</label>
+            <select id="review-export-selected-pages" multiple disabled></select>
+            <div class="review-export-range">
+                <label for="review-export-range-start">From</label>
+                <select id="review-export-range-start" disabled></select>
+                <label for="review-export-range-end">To</label>
+                <select id="review-export-range-end" disabled></select>
+            </div>
+            <fieldset class="review-export-formats" id="review-export-formats" disabled>
+                <legend>Formats</legend>
+                <label><input id="review-export-format-bundle" type="checkbox" checked> Review bundle</label>
+                <label><input id="review-export-format-html" type="checkbox" checked> HTML</label>
+                <label><input type="checkbox" disabled> DOCX later</label>
+                <label><input type="checkbox" disabled> PDF later</label>
+            </fieldset>
             <div class="review-button-row">
                 <button id="review-export-page" class="btn btn-primary btn-sm" type="button" disabled>Export Page</button>
+                <button id="review-export-v2" class="btn btn-secondary btn-sm" type="button" disabled>Export Selection</button>
             </div>
             <p id="review-export-summary" class="review-muted">No export generated.</p>
         </section>

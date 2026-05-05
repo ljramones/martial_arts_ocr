@@ -45,6 +45,8 @@ def test_review_page_route_loads(tmp_path):
     assert b"Region Inventory" in response.data
     assert b"Run Variants" in response.data
     assert b"Export Page" in response.data
+    assert b"Export Selection" in response.data
+    assert b"Selected pages" in response.data
 
 
 def test_review_project_routes_create_list_image_and_reload(tmp_path):

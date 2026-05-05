@@ -15,7 +15,11 @@ from martial_arts_ocr.review.workbench_state import (
     REGION_TYPES,
     ReviewWorkbenchStore,
 )
-from martial_arts_ocr.review.workbench_export import export_page_review
+from martial_arts_ocr.review.workbench_export import (
+    export_page_review,
+    export_project_review_v2,
+    resolve_page_selection,
+)
 
 __all__ = [
     "ORIENTATION_CONVENTION",
@@ -28,4 +32,6 @@ __all__ = [
     "REGION_TYPES",
     "ReviewWorkbenchStore",
     "export_page_review",
+    "export_project_review_v2",
+    "resolve_page_selection",
 ]
