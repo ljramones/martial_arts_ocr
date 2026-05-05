@@ -22,6 +22,9 @@
 - [Local Review Workbench Operator Notes](local-review-workbench-operator-notes.md):
   how to run the first local page viewer and editable overlay prototype, where
   `project_state.json` lives, and what not to commit.
+- [Workbench Export v2 Design](workbench-export-v2-design.md): design for
+  multi-page review bundle and HTML export, with later DOCX/PDF support built
+  on a shared export model.
 - [Review Feedback to Algorithm Improvement Plan](review-feedback-to-algorithm-improvement-plan.md):
   plan for using accepted, resized, rejected, ignored, and manually added
   workbench regions as future detector evaluation/training evidence.
