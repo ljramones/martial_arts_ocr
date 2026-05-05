@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import zipfile
 from pathlib import Path
 
 from PIL import Image
@@ -228,7 +229,7 @@ def test_review_project_export_v2_writes_multi_page_bundle_and_html(tmp_path):
 
     response = client.post(
         "/api/review/projects/export_v2/export",
-        json={"page_selection": {"mode": "all"}, "formats": ["review_bundle", "html"]},
+        json={"page_selection": {"mode": "all"}, "formats": ["review_bundle", "html", "docx"]},
     )
 
     assert response.status_code == 200
@@ -242,8 +243,9 @@ def test_review_project_export_v2_writes_multi_page_bundle_and_html(tmp_path):
     manifest = json.loads((export_dir / "export_manifest.json").read_text(encoding="utf-8"))
     assert manifest["export_version"] == 2
     assert manifest["page_selection"]["mode"] == "all"
-    assert manifest["formats"] == ["review_bundle", "html"]
+    assert manifest["formats"] == ["review_bundle", "html", "docx"]
     assert manifest["source_text_mutated"] is False
+    assert manifest["artifact_paths"]["docx"]["document"].endswith("document.docx")
 
     page_001_json = export_dir / "review_bundle" / "pages" / "page_001_review.json"
     page_002_json = export_dir / "review_bundle" / "pages" / "page_002_review.json"
@@ -289,6 +291,20 @@ def test_review_project_export_v2_writes_multi_page_bundle_and_html(tmp_path):
     assert "assets/page_001_region_r_002.png" in html
     assert (export_dir / "html" / "assets" / "page_001_region_r_002.png").exists()
 
+    docx_path = export_dir / "docx" / "document.docx"
+    assert docx_path.exists()
+    assert payload["formats"]["docx"] == str(docx_path)
+    with zipfile.ZipFile(docx_path) as archive:
+        names = set(archive.namelist())
+        assert "word/document.xml" in names
+        assert "word/media/page_001_region_r_002.png" in names
+        document_xml = archive.read("word/document.xml").decode("utf-8")
+    assert "Workbench Review Export: export_v2" in document_xml
+    assert "Page one reviewed" in document_xml
+    assert "Page two caption" in document_xml
+    assert "Raw / cleaned OCR evidence" in document_xml
+    assert "source_text_mutated=false" in document_xml
+
 
 def test_review_project_export_v2_supports_selected_and_range_modes(tmp_path):
     app, _data_dir, scans = _create_review_app(tmp_path)
@@ -324,7 +340,7 @@ def test_review_project_export_v2_rejects_unsupported_formats(tmp_path):
 
     response = client.post(
         "/api/review/projects/export_v2_bad/export",
-        json={"page_selection": {"mode": "all"}, "formats": ["docx"]},
+        json={"page_selection": {"mode": "all"}, "formats": ["pdf"]},
     )
 
     assert response.status_code == 400

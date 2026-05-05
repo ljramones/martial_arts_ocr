@@ -93,8 +93,9 @@ MVP slice 8 implemented:
 - shared document/page export model written as `document_export_model.json`;
 - multi-page review bundle with per-page JSON, Markdown, text, and crops;
 - readable HTML export with page sections, reviewed text, and crop assets;
+- DOCX export generated from the same shared Export v2 model;
 - `export_manifest.json` recording pages, formats, version, and `source_text_mutated=false`;
-- compact UI export controls with DOCX/PDF explicitly deferred.
+- compact UI export controls with PDF explicitly deferred.
 
 MVP slice 9 implemented:
 
@@ -116,7 +117,7 @@ MVP slice 10 implemented:
 Not implemented yet:
 
 - translation;
-- DOCX/PDF export;
+- PDF export;
 - canonical Japanese field promotion;
 - database-backed review projects.
 

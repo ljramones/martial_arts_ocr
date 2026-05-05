@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import zipfile
 from datetime import datetime
 from html import escape
 from pathlib import Path
@@ -21,7 +22,7 @@ TEXT_REGION_TYPES = {
 }
 
 IMAGE_REGION_TYPES = {"image", "diagram", "photo"}
-EXPORT_V2_FORMATS = {"review_bundle", "html"}
+EXPORT_V2_FORMATS = {"review_bundle", "html", "docx"}
 
 
 def export_page_review(
@@ -134,6 +135,8 @@ def export_project_review_v2(
     review_crops_dir = export_dir / "review_bundle" / "crops"
     html_dir = export_dir / "html"
     html_assets_dir = html_dir / "assets"
+    docx_dir = export_dir / "docx"
+    docx_assets_dir = docx_dir / "assets"
 
     if "review_bundle" in normalized_formats:
         review_pages_dir.mkdir(parents=True, exist_ok=True)
@@ -142,6 +145,10 @@ def export_project_review_v2(
     if "html" in normalized_formats:
         html_assets_dir.mkdir(parents=True, exist_ok=True)
         html_paths["root"] = str(html_dir)
+    docx_paths: dict[str, str] = {}
+    if "docx" in normalized_formats:
+        docx_assets_dir.mkdir(parents=True, exist_ok=True)
+        docx_paths["root"] = str(docx_dir)
 
     page_models = []
     for page_index, page in enumerate(pages, start=1):
@@ -169,6 +176,8 @@ def export_project_review_v2(
                 effective_image=effective_image,
                 html_assets_dir=html_assets_dir,
                 write_html_assets="html" in normalized_formats,
+                docx_assets_dir=docx_assets_dir,
+                write_docx_assets="docx" in normalized_formats,
             )
         page_models.append(page_model)
 
@@ -218,6 +227,11 @@ def export_project_review_v2(
         html_path.write_text(_render_html_document(document_model), encoding="utf-8")
         html_paths["document"] = str(html_path)
         html_paths["assets_dir"] = str(html_assets_dir)
+    if "docx" in normalized_formats:
+        docx_path = docx_dir / "document.docx"
+        _write_docx_document(document_model, docx_path, export_dir)
+        docx_paths["document"] = str(docx_path)
+        docx_paths["assets_dir"] = str(docx_assets_dir)
 
     manifest = {
         "project_id": state.get("project_id"),
@@ -234,6 +248,7 @@ def export_project_review_v2(
             "document_export_model": str(export_model_path),
             "review_bundle": review_bundle_paths or None,
             "html": html_paths or None,
+            "docx": docx_paths or None,
         },
     }
     manifest_path = export_dir / "export_manifest.json"
@@ -249,6 +264,7 @@ def export_project_review_v2(
         "formats": {
             "review_bundle": review_bundle_paths.get("root") if review_bundle_paths else None,
             "html": html_paths.get("document") if html_paths else None,
+            "docx": docx_paths.get("document") if docx_paths else None,
         },
         "page_ids": [page.get("page_id") for page in pages],
         "summary": {
@@ -460,6 +476,8 @@ def _build_page_model(
     effective_image: Image.Image,
     html_assets_dir: Path,
     write_html_assets: bool,
+    docx_assets_dir: Path,
+    write_docx_assets: bool,
 ) -> dict[str, Any]:
     blocks = []
     assets = []
@@ -476,6 +494,17 @@ def _build_page_model(
             )
             if asset_path:
                 assets.append(asset_path)
+        docx_asset_path = None
+        if write_docx_assets and block_type == "image" and not _is_ignored_region(region):
+            docx_asset_path = _write_crop(
+                region,
+                effective_image,
+                docx_assets_dir,
+                filename_prefix=f"{page.get('page_id')}_",
+                path_prefix="docx/assets",
+            )
+            if docx_asset_path:
+                assets.append(docx_asset_path)
         ocr = region.get("ocr") or {}
         blocks.append(
             {
@@ -491,6 +520,7 @@ def _build_page_model(
                 "source": region.get("source"),
                 "status": region.get("status"),
                 "asset_path": asset_path,
+                "docx_asset_path": docx_asset_path,
                 "notes": region.get("notes") or "",
                 "needs_review": _block_needs_review(region, ocr),
                 "source_text_mutated": bool(ocr.get("source_text_mutated")),
@@ -680,6 +710,86 @@ def _render_html_document(document_model: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _write_docx_document(document_model: dict[str, Any], docx_path: Path, export_dir: Path) -> None:
+    image_relationships: list[dict[str, Any]] = []
+    body_parts = [
+        _docx_paragraph(f"Workbench Review Export: {document_model.get('project_id') or ''}", bold=True),
+        _docx_paragraph(f"Created: {document_model.get('created_at') or ''}"),
+        _docx_paragraph(f"Pages: {len(document_model.get('pages') or [])}"),
+        _docx_paragraph("source_text_mutated=false"),
+        _docx_paragraph("Raw OCR is preserved in the review bundle and page Markdown/JSON artifacts."),
+    ]
+    for page in document_model.get("pages") or []:
+        body_parts.extend(
+            [
+                _docx_paragraph(f"Page {page.get('page_index') or ''} - {_page_label(page)}", bold=True),
+                _docx_paragraph(f"Page ID: {page.get('page_id') or ''}"),
+                _docx_paragraph(f"Source: {page.get('source_path') or ''}"),
+                _docx_paragraph(f"Orientation: {_plain_orientation(page.get('orientation') or {})}"),
+            ]
+        )
+        warnings = page.get("warnings") or []
+        if warnings:
+            body_parts.append(_docx_paragraph("Warnings: " + ", ".join(str(warning) for warning in warnings), bold=True))
+        for block in page.get("blocks") or []:
+            if block.get("type") == "ignored":
+                continue
+            body_parts.extend(
+                [
+                    _docx_paragraph(
+                        f"Region {block.get('region_id') or ''} - {block.get('region_type') or block.get('type') or ''}",
+                        bold=True,
+                    ),
+                    _docx_paragraph(
+                        " | ".join(
+                            [
+                                f"BBox: {block.get('bbox')}",
+                                f"Source: {block.get('source') or ''}",
+                                f"Status: {block.get('status') or ''}",
+                                f"Review: {block.get('review_status') or ''}",
+                            ]
+                        )
+                    ),
+                ]
+            )
+            if block.get("ocr_route"):
+                body_parts.append(_docx_paragraph(f"OCR route: {block.get('ocr_route')}"))
+            if block.get("text"):
+                body_parts.append(_docx_paragraph("Reviewed / Display Text", bold=True))
+                body_parts.extend(_docx_text_paragraphs(str(block.get("text"))))
+            elif block.get("type") in {"text", "caption"}:
+                body_parts.append(_docx_paragraph("No reviewed or OCR text available for this region."))
+            if block.get("docx_asset_path"):
+                relationship_id = f"rId{len(image_relationships) + 1}"
+                image_path = export_dir / str(block.get("docx_asset_path"))
+                image_relationships.append(
+                    {
+                        "relationship_id": relationship_id,
+                        "source_path": image_path,
+                        "target": f"media/{image_path.name}",
+                    }
+                )
+                body_parts.append(_docx_image_paragraph(image_path, relationship_id, len(image_relationships)))
+                body_parts.append(_docx_paragraph(f"Crop: {block.get('docx_asset_path')}"))
+            if block.get("raw_ocr"):
+                body_parts.append(_docx_paragraph("Raw / cleaned OCR evidence", bold=True))
+                body_parts.extend(_docx_text_paragraphs(str(block.get("raw_ocr"))))
+            if block.get("notes"):
+                body_parts.append(_docx_paragraph(f"Notes: {block.get('notes')}"))
+    body_parts.append("<w:sectPr><w:pgSz w:w=\"12240\" w:h=\"15840\"/><w:pgMar w:top=\"1080\" w:right=\"1080\" w:bottom=\"1080\" w:left=\"1080\" w:header=\"720\" w:footer=\"720\" w:gutter=\"0\"/></w:sectPr>")
+    document_xml = _docx_document_xml("\n".join(body_parts))
+    docx_path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(docx_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", _docx_content_types(image_relationships))
+        archive.writestr("_rels/.rels", _docx_package_relationships())
+        archive.writestr("word/document.xml", document_xml)
+        archive.writestr("word/_rels/document.xml.rels", _docx_document_relationships(image_relationships))
+        for relationship in image_relationships:
+            source_path = Path(relationship["source_path"])
+            if source_path.exists():
+                archive.write(source_path, f"word/{relationship['target']}")
+
+
 def _html_summary_item(label: str, value: Any) -> str:
     return (
         "      <div class=\"summary-item\">"
@@ -702,6 +812,143 @@ def _html_orientation(orientation: dict[str, Any]) -> str:
     source = orientation.get("source") or ""
     return escape(
         f"detected={detected}°, correction={effective}°, status={status}, source={source}"
+    )
+
+
+def _plain_orientation(orientation: dict[str, Any]) -> str:
+    if not orientation:
+        return "not recorded"
+    return (
+        f"detected={orientation.get('detected_rotation_degrees')} degrees, "
+        f"correction={orientation.get('effective_rotation_degrees')} degrees, "
+        f"status={orientation.get('status') or ''}, "
+        f"source={orientation.get('source') or ''}"
+    )
+
+
+def _xml_escape(value: Any) -> str:
+    return escape(str(value if value is not None else ""), quote=True)
+
+
+def _docx_document_xml(body_xml: str) -> str:
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+        'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        f"<w:body>{body_xml}</w:body>"
+        "</w:document>"
+    )
+
+
+def _docx_paragraph(text: Any, *, bold: bool = False) -> str:
+    run_properties = "<w:rPr><w:b/></w:rPr>" if bold else ""
+    return (
+        "<w:p><w:r>"
+        f"{run_properties}<w:t xml:space=\"preserve\">{_xml_escape(text)}</w:t>"
+        "</w:r></w:p>"
+    )
+
+
+def _docx_text_paragraphs(text: str) -> list[str]:
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    return [_docx_paragraph(line) for line in lines] or [_docx_paragraph("")]
+
+
+def _docx_image_paragraph(image_path: Path, relationship_id: str, image_index: int) -> str:
+    cx, cy = _docx_image_extent(image_path)
+    name = _xml_escape(image_path.name)
+    return (
+        "<w:p><w:r><w:drawing>"
+        '<wp:inline distT="0" distB="0" distL="0" distR="0">'
+        f'<wp:extent cx="{cx}" cy="{cy}"/>'
+        f'<wp:docPr id="{image_index}" name="{name}"/>'
+        '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        "<pic:pic>"
+        "<pic:nvPicPr>"
+        f'<pic:cNvPr id="{image_index}" name="{name}"/>'
+        "<pic:cNvPicPr/>"
+        "</pic:nvPicPr>"
+        "<pic:blipFill>"
+        f'<a:blip r:embed="{relationship_id}"/>'
+        "<a:stretch><a:fillRect/></a:stretch>"
+        "</pic:blipFill>"
+        "<pic:spPr>"
+        '<a:xfrm><a:off x="0" y="0"/>'
+        f'<a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+        "</pic:spPr>"
+        "</pic:pic>"
+        "</a:graphicData></a:graphic>"
+        "</wp:inline>"
+        "</w:drawing></w:r></w:p>"
+    )
+
+
+def _docx_image_extent(image_path: Path) -> tuple[int, int]:
+    max_width_emu = int(5.8 * 914400)
+    fallback = int(2.5 * 914400)
+    try:
+        with Image.open(image_path) as image:
+            width, height = image.size
+    except Exception:
+        return fallback, fallback
+    if width <= 0 or height <= 0:
+        return fallback, fallback
+    width_emu = int(width / 96 * 914400)
+    height_emu = int(height / 96 * 914400)
+    if width_emu > max_width_emu:
+        scale = max_width_emu / width_emu
+        width_emu = max_width_emu
+        height_emu = int(height_emu * scale)
+    return max(1, width_emu), max(1, height_emu)
+
+
+def _docx_content_types(image_relationships: list[dict[str, Any]]) -> str:
+    extensions = {Path(item["target"]).suffix.lower().lstrip(".") for item in image_relationships}
+    defaults = [
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
+        '<Default Extension="xml" ContentType="application/xml"/>',
+    ]
+    if "png" in extensions:
+        defaults.append('<Default Extension="png" ContentType="image/png"/>')
+    if "jpg" in extensions or "jpeg" in extensions:
+        defaults.append('<Default Extension="jpg" ContentType="image/jpeg"/>')
+        defaults.append('<Default Extension="jpeg" ContentType="image/jpeg"/>')
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        + "".join(defaults)
+        + '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+        + "</Types>"
+    )
+
+
+def _docx_package_relationships() -> str:
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+        "</Relationships>"
+    )
+
+
+def _docx_document_relationships(image_relationships: list[dict[str, Any]]) -> str:
+    relationships = [
+        (
+            f'<Relationship Id="{_xml_escape(item["relationship_id"])}" '
+            'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
+            f'Target="{_xml_escape(item["target"])}"/>'
+        )
+        for item in image_relationships
+    ]
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        + "".join(relationships)
+        + "</Relationships>"
     )
 
 

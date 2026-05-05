@@ -43,6 +43,7 @@
         exportFormats: document.getElementById("review-export-formats"),
         exportFormatBundle: document.getElementById("review-export-format-bundle"),
         exportFormatHtml: document.getElementById("review-export-format-html"),
+        exportFormatDocx: document.getElementById("review-export-format-docx"),
         exportSummary: document.getElementById("review-export-summary"),
         addRegion: document.getElementById("review-add-region"),
         stage: document.getElementById("review-page-stage"),
@@ -949,6 +950,7 @@
         const formats = [];
         if (els.exportFormatBundle.checked) formats.push("review_bundle");
         if (els.exportFormatHtml.checked) formats.push("html");
+        if (els.exportFormatDocx.checked) formats.push("docx");
         if (!formats.length) {
             setStatus("Choose at least one export format.");
             return;

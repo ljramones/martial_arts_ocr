@@ -345,11 +345,15 @@ html/
   document.html
   assets/
     page_<page_id>_region_<region_id>.png
+docx/
+  document.docx
 ```
 
-The existing `Export Page` button and page-level endpoint remain available for the simpler current-page bundle. `Export Selection` uses the project-level Export v2 endpoint and can produce the review bundle and HTML in one run.
+The existing `Export Page` button and page-level endpoint remain available for the simpler current-page bundle. `Export Selection` uses the project-level Export v2 endpoint and can produce the review bundle, HTML, and DOCX in one run.
 
 Export v2 still follows the same non-destructive rules: reviewed text is preferred for display/plain text, raw OCR is preserved in JSON/Markdown, source text is not mutated, ignored regions are skipped from text and crops by default, and generated exports are local runtime artifacts.
+
+DOCX export is a clean research reconstruction generated from the same Export v2 model. It includes page headings, reviewed/display text, raw OCR evidence, region metadata, and image/diagram crops where available. It is not a pixel-perfect reproduction of the scanned page.
 
 ## Duplicate and Nudge Regions
 
