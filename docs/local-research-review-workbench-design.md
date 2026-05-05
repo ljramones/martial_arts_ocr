@@ -105,6 +105,14 @@ MVP slice 9 implemented:
 - OCR attempts are stored exactly like selected-region OCR attempts;
 - reviewer corrections remain authoritative and `source_text_mutated=false` remains explicit.
 
+MVP slice 10 implemented:
+
+- current-page OCR attempt review queue;
+- default queue filter is pending/unreviewed attempts;
+- queue navigation selects the associated region and OCR attempt;
+- `Accept & Next`, `Save Edit & Next`, and `Reject & Next` reuse the existing OCR review endpoint;
+- queue behavior changes review navigation only, not OCR, export, or source-text semantics.
+
 Not implemented yet:
 
 - translation;

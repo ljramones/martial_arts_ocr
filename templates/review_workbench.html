@@ -221,6 +221,29 @@
                 <button id="review-run-region-ocr-variants" class="btn btn-secondary btn-sm" type="button" disabled>Run Variants</button>
                 <button id="review-run-page-ocr-reviewed" class="btn btn-secondary btn-sm" type="button" disabled>OCR Reviewed Text Regions</button>
             </div>
+            <div class="review-subsection">
+                <h4>OCR Review Queue</h4>
+                <div class="review-button-row">
+                    <label for="review-ocr-queue-filter">Filter</label>
+                    <select id="review-ocr-queue-filter">
+                        <option value="unreviewed">Pending</option>
+                        <option value="accepted">Accepted</option>
+                        <option value="edited">Edited</option>
+                        <option value="rejected">Rejected</option>
+                        <option value="all">All</option>
+                    </select>
+                    <span id="review-ocr-queue-count" class="review-muted">Pending: 0</span>
+                </div>
+                <div class="review-button-row">
+                    <button id="review-ocr-queue-prev" class="btn btn-secondary btn-sm" type="button" disabled>Previous</button>
+                    <button id="review-ocr-queue-next" class="btn btn-secondary btn-sm" type="button" disabled>Next</button>
+                </div>
+                <div class="review-button-row">
+                    <button id="review-ocr-accept-next" class="btn btn-secondary btn-sm" type="button" disabled>Accept &amp; Next</button>
+                    <button id="review-ocr-save-reviewed-next" class="btn btn-primary btn-sm" type="button" disabled>Save Edit &amp; Next</button>
+                    <button id="review-ocr-reject-next" class="btn btn-danger btn-sm" type="button" disabled>Reject &amp; Next</button>
+                </div>
+            </div>
             <dl class="review-audit review-ocr-summary">
                 <dt>Status</dt><dd id="review-ocr-status">-</dd>
                 <dt>Route</dt><dd id="review-ocr-route">-</dd>

@@ -251,6 +251,28 @@ source_text_mutated=false
 
 Use reviewed text for cases where the scan is legible to a human but OCR misses a dirty or typewritten line. For example, if OCR misses `[Question.]`, enter the corrected line in `Reviewed text` and save it as edited. This does not mutate the OCR attempt's raw text, page image, region bbox, or canonical document fields.
 
+## Review OCR Attempt Queue
+
+After running `OCR Reviewed Text Regions`, use the current-page OCR review queue to move through generated attempts without manually selecting each region first.
+
+Default filter:
+
+```text
+Pending / unreviewed
+```
+
+Queue controls:
+
+```text
+Previous
+Next
+Accept & Next
+Save Edit & Next
+Reject & Next
+```
+
+Selecting an OCR attempt in the queue selects its region on the page and populates the existing OCR panel. The queue does not run OCR, change OCR routes, or alter export behavior; it only accelerates review of attempts already stored in `project_state.json`.
+
 ## Export Reviewed Page State
 
 Click `Export Page` after reviewing regions and OCR attempts for the selected page.

@@ -7,6 +7,7 @@
         project: null,
         page: null,
         selectedRegionId: null,
+        selectedOcrAttemptId: null,
         drag: null,
         draw: null,
         tool: "select_move",
@@ -71,6 +72,10 @@
         runRegionOcr: document.getElementById("review-run-region-ocr"),
         runRegionOcrVariants: document.getElementById("review-run-region-ocr-variants"),
         runPageOcrReviewed: document.getElementById("review-run-page-ocr-reviewed"),
+        ocrQueueFilter: document.getElementById("review-ocr-queue-filter"),
+        ocrQueueCount: document.getElementById("review-ocr-queue-count"),
+        ocrQueuePrev: document.getElementById("review-ocr-queue-prev"),
+        ocrQueueNext: document.getElementById("review-ocr-queue-next"),
         ocrStatus: document.getElementById("review-ocr-status"),
         ocrRoute: document.getElementById("review-ocr-route"),
         ocrConfidence: document.getElementById("review-ocr-confidence"),
@@ -79,6 +84,9 @@
         ocrAccept: document.getElementById("review-ocr-accept"),
         ocrSaveReviewed: document.getElementById("review-ocr-save-reviewed"),
         ocrReject: document.getElementById("review-ocr-reject"),
+        ocrAcceptNext: document.getElementById("review-ocr-accept-next"),
+        ocrSaveReviewedNext: document.getElementById("review-ocr-save-reviewed-next"),
+        ocrRejectNext: document.getElementById("review-ocr-reject-next"),
         detectedType: document.getElementById("review-detected-type"),
         effectiveType: document.getElementById("review-effective-type"),
         detectedBbox: document.getElementById("review-detected-bbox"),
@@ -137,9 +145,18 @@
     els.runRegionOcr.addEventListener("click", runSelectedRegionOcr);
     els.runRegionOcrVariants.addEventListener("click", runSelectedRegionOcrVariants);
     els.runPageOcrReviewed.addEventListener("click", runPageOcrReviewedRegions);
+    els.ocrQueueFilter.addEventListener("change", () => {
+        state.selectedOcrAttemptId = null;
+        renderOcrQueue();
+    });
+    els.ocrQueuePrev.addEventListener("click", () => selectRelativeOcrQueueAttempt(-1));
+    els.ocrQueueNext.addEventListener("click", () => selectRelativeOcrQueueAttempt(1));
     els.ocrAccept.addEventListener("click", () => updateSelectedOcrAttempt("accepted"));
     els.ocrSaveReviewed.addEventListener("click", () => updateSelectedOcrAttempt("edited"));
     els.ocrReject.addEventListener("click", () => updateSelectedOcrAttempt("rejected"));
+    els.ocrAcceptNext.addEventListener("click", () => updateSelectedOcrAttempt("accepted", true));
+    els.ocrSaveReviewedNext.addEventListener("click", () => updateSelectedOcrAttempt("edited", true));
+    els.ocrRejectNext.addEventListener("click", () => updateSelectedOcrAttempt("rejected", true));
     [els.type, els.bboxX, els.bboxY, els.bboxW, els.bboxH, els.notes].forEach((element) => {
         element.addEventListener("input", updateSelectedFromPanel);
     });
@@ -183,6 +200,7 @@
         state.project = project;
         state.page = null;
         state.selectedRegionId = null;
+        state.selectedOcrAttemptId = null;
         els.projectId.value = project.project_id || "";
         setStatus(`Loaded ${project.project_id}`);
         renderPageList();
@@ -221,6 +239,7 @@
         const page = await requestJson(`/api/review/projects/${encodeURIComponent(state.project.project_id)}/pages/${encodeURIComponent(pageId)}`);
         state.page = page;
         state.selectedRegionId = null;
+        state.selectedOcrAttemptId = null;
         els.stage.classList.remove("is-empty");
         els.emptyState.hidden = true;
         els.image.hidden = false;
@@ -237,6 +256,7 @@
         renderRecognitionDiagnostics();
         renderOverlay();
         renderSelectedRegion();
+        renderOcrQueue();
         renderExportControls();
         els.addRegion.disabled = false;
         els.detectOrientation.disabled = false;
@@ -275,6 +295,7 @@
         els.image.removeAttribute("src");
         els.overlay.innerHTML = "";
         state.imageLayout = null;
+        state.selectedOcrAttemptId = null;
         els.addRegion.disabled = true;
         els.detectOrientation.disabled = true;
         els.orientationOverride.disabled = true;
@@ -291,6 +312,7 @@
         els.exportSummary.textContent = "No export generated.";
         renderOrientation();
         renderRecognitionDiagnostics();
+        renderOcrQueue();
     }
 
     function renderExportControls() {
@@ -635,13 +657,35 @@
 
     function selectRegion(regionId) {
         state.selectedRegionId = regionId;
+        state.selectedOcrAttemptId = null;
         renderRegionList();
         renderOverlay();
         renderSelectedRegion();
+        renderOcrQueue();
     }
 
     function selectedRegion() {
         return (state.page?.regions || []).find((region) => region.region_id === state.selectedRegionId) || null;
+    }
+
+    function pageOcrAttempts() {
+        return state.page?.ocr_attempts || [];
+    }
+
+    function attemptForId(attemptId) {
+        return pageOcrAttempts().find((attempt) => attempt.attempt_id === attemptId) || null;
+    }
+
+    function currentOcrAttemptForRegion(region) {
+        if (!region) return null;
+        const selectedAttempt = attemptForId(state.selectedOcrAttemptId);
+        if (selectedAttempt?.region_id === region.region_id) {
+            return selectedAttempt;
+        }
+        const attemptId = region.last_ocr_attempt_id;
+        return pageOcrAttempts().find((item) => item.attempt_id === attemptId)
+            || [...pageOcrAttempts()].reverse().find((item) => item.region_id === region.region_id)
+            || null;
     }
 
     function renderSelectedRegion() {
@@ -708,10 +752,7 @@
     }
 
     function renderRegionOcr(region) {
-        const attempts = state.page?.ocr_attempts || [];
-        const attemptId = region?.last_ocr_attempt_id;
-        const attempt = attempts.find((item) => item.attempt_id === attemptId)
-            || [...attempts].reverse().find((item) => item.region_id === region?.region_id);
+        const attempt = currentOcrAttemptForRegion(region);
         if (!region || !attempt) {
             els.ocrStatus.textContent = region ? "Not run" : "-";
             els.ocrRoute.textContent = "-";
@@ -722,8 +763,10 @@
             [els.ocrAccept, els.ocrSaveReviewed, els.ocrReject].forEach((element) => {
                 element.disabled = true;
             });
+            renderOcrQueue();
             return;
         }
+        state.selectedOcrAttemptId = attempt.attempt_id;
         const route = attempt.route || {};
         els.ocrStatus.textContent = [attempt.status || "-", attempt.review_status || "unreviewed"].join(" / ");
         els.ocrRoute.textContent = [
@@ -739,6 +782,61 @@
         [els.ocrAccept, els.ocrSaveReviewed, els.ocrReject].forEach((element) => {
             element.disabled = false;
         });
+        renderOcrQueue();
+    }
+
+    function ocrQueueAttempts() {
+        const filter = els.ocrQueueFilter.value || "unreviewed";
+        return pageOcrAttempts().filter((attempt) => {
+            const reviewStatus = attempt.review_status || "unreviewed";
+            return filter === "all" || reviewStatus === filter;
+        });
+    }
+
+    function renderOcrQueue() {
+        const filter = els.ocrQueueFilter.value || "unreviewed";
+        const queue = ocrQueueAttempts();
+        const currentIndex = queue.findIndex((attempt) => attempt.attempt_id === state.selectedOcrAttemptId);
+        const label = filter === "unreviewed" ? "Pending" : filter.charAt(0).toUpperCase() + filter.slice(1);
+        const position = currentIndex >= 0 ? ` (${currentIndex + 1}/${queue.length})` : "";
+        els.ocrQueueCount.textContent = `${label}: ${queue.length}${position}`;
+        const hasQueue = queue.length > 0;
+        const hasAttempt = Boolean(currentOcrAttemptForRegion(selectedRegion()));
+        els.ocrQueuePrev.disabled = !hasQueue;
+        els.ocrQueueNext.disabled = !hasQueue;
+        els.ocrAcceptNext.disabled = !hasAttempt;
+        els.ocrSaveReviewedNext.disabled = !hasAttempt;
+        els.ocrRejectNext.disabled = !hasAttempt;
+    }
+
+    function selectOcrAttempt(attempt) {
+        if (!attempt) return;
+        const region = (state.page?.regions || []).find((item) => item.region_id === attempt.region_id);
+        if (!region) {
+            setStatus(`OCR attempt ${attempt.attempt_id} has no matching region.`);
+            return;
+        }
+        state.selectedRegionId = region.region_id;
+        state.selectedOcrAttemptId = attempt.attempt_id;
+        renderRegionList();
+        renderOverlay();
+        renderSelectedRegion();
+        renderOcrQueue();
+        setStatus(`Selected OCR attempt ${attempt.attempt_id} for ${region.region_id}.`);
+    }
+
+    function selectRelativeOcrQueueAttempt(direction) {
+        const queue = ocrQueueAttempts();
+        if (!queue.length) {
+            setStatus("No OCR attempts match the queue filter.");
+            return;
+        }
+        const currentIndex = queue.findIndex((attempt) => attempt.attempt_id === state.selectedOcrAttemptId);
+        let nextIndex = direction < 0 ? queue.length - 1 : 0;
+        if (currentIndex >= 0) {
+            nextIndex = (currentIndex + direction + queue.length) % queue.length;
+        }
+        selectOcrAttempt(queue[nextIndex]);
     }
 
     function renderRegionMetadata(region) {
@@ -1059,16 +1157,22 @@
         }
     }
 
-    async function updateSelectedOcrAttempt(reviewStatus) {
+    async function updateSelectedOcrAttempt(reviewStatus, advanceAfterSave = false) {
         const region = selectedRegion();
-        if (!state.project || !state.page || !region?.last_ocr_attempt_id) return;
+        const attempt = currentOcrAttemptForRegion(region);
+        if (!state.project || !state.page || !region || !attempt) return;
+        const queue = ocrQueueAttempts();
+        const currentIndex = queue.findIndex((item) => item.attempt_id === attempt.attempt_id);
+        const nextAttempt = advanceAfterSave && queue.length > 1 && currentIndex >= 0
+            ? queue[(currentIndex + 1) % queue.length]
+            : null;
         const payload = {
             review_status: reviewStatus,
             reviewed_text: reviewStatus === "rejected" ? "" : els.ocrReviewedText.value,
         };
         try {
             const result = await requestJson(
-                `/api/review/projects/${encodeURIComponent(state.project.project_id)}/pages/${encodeURIComponent(state.page.page_id)}/ocr_attempts/${encodeURIComponent(region.last_ocr_attempt_id)}`,
+                `/api/review/projects/${encodeURIComponent(state.project.project_id)}/pages/${encodeURIComponent(state.page.page_id)}/ocr_attempts/${encodeURIComponent(attempt.attempt_id)}`,
                 {
                     method: "PATCH",
                     body: JSON.stringify(payload),
@@ -1076,10 +1180,17 @@
             );
             state.page = result.page;
             state.selectedRegionId = region.region_id;
+            state.selectedOcrAttemptId = result.attempt.attempt_id;
             renderRegionList();
             renderOverlay();
             renderSelectedRegion();
             setStatus(`OCR attempt ${result.attempt.attempt_id} marked ${result.attempt.review_status}.`);
+            if (nextAttempt) {
+                const refreshedNextAttempt = attemptForId(nextAttempt.attempt_id);
+                if (refreshedNextAttempt) selectOcrAttempt(refreshedNextAttempt);
+            } else {
+                renderOcrQueue();
+            }
         } catch (error) {
             setStatus(error.message || "OCR review update failed.");
         }

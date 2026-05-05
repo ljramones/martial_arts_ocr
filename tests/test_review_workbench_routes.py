@@ -45,6 +45,8 @@ def test_review_page_route_loads(tmp_path):
     assert b"Region Inventory" in response.data
     assert b"Run Variants" in response.data
     assert b"OCR Reviewed Text Regions" in response.data
+    assert b"OCR Review Queue" in response.data
+    assert b"Accept &amp; Next" in response.data
     assert b"Export Page" in response.data
     assert b"Export Selection" in response.data
     assert b"Selected pages" in response.data
